@@ -126,7 +126,13 @@ class AircraftObservation:
     # Type/category from the receiver itself (not DB join)
     category: Optional[str] = None    # ADS-B emitter category, e.g. "A3", "B6"
     aircraft_type: Optional[str] = None  # readsb-only: ICAO type designator
-    band: str = "1090"                # "1090" | "978"
+    band: str                         # "1090" | "978" — REQUIRED, no default
+                                      #   (silent miscategorization is a footgun)
+
+    # Position-quality fields from dump1090/readsb (used by Phase 3 multi-receiver
+    # canonical-position selection; Phase 1 just stores them).
+    nic: Optional[int] = None         # Navigation Integrity Category (0–11)
+    nac_p: Optional[int] = None       # Navigation Accuracy Category, position
 
 
 class ReceiverSource:
@@ -134,6 +140,10 @@ class ReceiverSource:
       - HttpJsonReceiver  (dump1090-fa, dump1090-mutability, readsb, dump978-fa)
       - FileReceiver      (replay a recorded aircraft.json for testing)
       - TestReceiver      (synthetic data for unit tests)
+
+    Pull-based interface: the merger owns the polling cadence and calls fetch()
+    per receiver on its own timer. Receivers do not self-pace; they handle a
+    single request per fetch() call and return.
     """
     name: str
     band: str
@@ -142,31 +152,45 @@ class ReceiverSource:
         """One-shot fetch of receiver location. Cached by caller."""
         ...
 
-    async def observations(self) -> AsyncIterator[list[AircraftObservation]]:
-        """Yields a fresh list every poll cycle. Handles its own retry/backoff.
+    async def fetch(self) -> list[AircraftObservation]:
+        """Single poll cycle.
 
-        Yields an empty list on transient failure rather than raising —
-        the merger should keep running if one receiver is flaky.
+        Fail-fast semantics: one HTTP request, no internal retry. On transient
+        failure (timeout, connect error, malformed JSON, schema drift) returns
+        an empty list AND increments an internal consecutive-failure counter
+        exposed via health(). After 3 consecutive failures, health() reports
+        online=False until the next successful fetch resets the counter.
+
+        This keeps single-poll latency under the 1s budget every cycle and
+        makes flakiness immediately visible via metrics, instead of being
+        smoothed away by hidden retries.
         """
         ...
 
     async def health(self) -> dict:
         """Status for diagnostics. Required keys:
-          online: bool
+          online: bool                 # False after 3 consecutive fetch failures
           last_success: datetime
-          aircraft_count: int
+          consecutive_failures: int    # resets on first success
+          aircraft_count: int          # last successful fetch's count
           messages_per_sec: float
         Implementations may include extras.
         """
         ...
 ```
 
+**Slow-poll skip policy.** If a receiver's `fetch()` is still in flight when the
+merger's next tick fires, the merger skips that tick for that receiver and
+increments a `slow_polls_total{receiver=...}` Prometheus counter. No queueing,
+no parallel polls. A warning is logged at 5+ skipped within one minute.
+
 **Key design decisions:**
 
 - **`AircraftObservation` is per-receiver, not deduplicated.** The merger downstream produces canonical aircraft from N observations. Keeping observations separate preserves "which receivers saw this" data and lets us pick the best position when receivers disagree.
 - **Units are baked into field names.** `alt_baro_ft`, `ground_speed_kt`, `vertical_rate_fpm`. dump1090 already uses these units; making them explicit prevents future confusion.
 - **`observed_at` is when *we* polled, not when the receiver saw it.** dump1090's `now` field is the receiver's clock and may be skewed. We trust our own clock for staleness math; the receiver's `seen` deltas tell us how stale relative to it.
-- **`band` is first-class.** 1090 vs 978 affects merging logic and is genuinely user-visible.
+- **`band` is first-class and required.** 1090 vs 978 affects merging logic and is genuinely user-visible. No default — config errors fail at validation.
+- **`fetch()` is pull-based and fail-fast.** Retries do not live inside `fetch()`. If the merger needs different cadence, it changes its own timer.
 - **`health()` returns dict, not a typed object.** Standardize required keys, allow implementation-specific extras.
 
 #### Receiver path auto-detection
@@ -196,9 +220,24 @@ Loaded into in-memory dict keyed by hex (lowercase). Service runs without them �
 **Design constraints:**
 
 - Combined memory footprint: roughly 50–80 MB. Acceptable for HA add-on context.
-- Refresh must not block the main event loop. Run in a thread executor.
-- Cache to disk so service can come up without network access.
+- Refresh must not block the main event loop. Run in a thread executor (`asyncio.to_thread`).
+- Cache to disk via atomic write-then-rename — one big sequential write per refresh, gentle on SD cards.
 - Never let a failed refresh wipe an existing in-memory copy.
+
+**Snapshot-on-enrich:** the in-memory dict is replaced atomically on refresh
+(`self._db_dict = new_dict`). To avoid torn reads when an enrichment cycle does
+multiple lookups across a refresh boundary, every enrichment function captures
+a local reference at entry:
+
+```python
+async def enrich(self, state: AircraftState) -> None:
+    db = self._db_dict          # snapshot; immune to subsequent rebinding
+    meta = db.get(state.hex, {})
+    # ... further reads from `db`, never from self._db_dict
+```
+
+Python dict-name rebinding is atomic; a function holding the prior reference is
+unaffected by the swap. No lock, no `ContextVar` needed.
 
 ### 3. Multi-source merger
 
@@ -226,16 +265,29 @@ class AircraftState:
     # Enrichment results (populated by enricher, not merger)
     flags: set[str] = field(default_factory=set)
     db_metadata: dict = field(default_factory=dict)
-    distance_nm: Optional[float] = None
-    bearing_deg: Optional[float] = None
+    distance_to: dict[str, float] = field(default_factory=dict)  # watchpoint name → nm
+    bearing_to: dict[str, float] = field(default_factory=dict)   # watchpoint name → deg
+
+    # Predictive (Phase 2c reserves the schema; Phase 5 implements with airport
+    # exclusion zones, altitude floor/ceiling, and orbit detection to avoid
+    # false-positive alerts on approach traffic at nearby airports).
+    predicted_eta_to_home_s: Optional[float] = None       # always None pre-Phase-5
+    predicted_closest_approach_nm: Optional[float] = None # always None pre-Phase-5
 ```
 
-**Canonical position selection.** When the same hex appears on multiple receivers in the same poll cycle, pick canonical position by:
+**Canonical position selection (Phase 3).** When the same hex appears on multiple receivers in the same poll cycle, pick canonical position by:
 
 1. Prefer observations with `seen_pos_age_s` < 5 (fresh position)
-2. Among those, prefer highest `rssi_dbfs` (strongest signal)
-3. Among those, prefer the closer receiver (better geometry)
-4. Tiebreak: deterministic (alphabetical receiver name) so behavior is stable
+2. Among those, prefer higher `nic` (Navigation Integrity Category — aircraft-broadcast position quality)
+3. Among those, prefer higher `nac_p` (Navigation Accuracy Category, position)
+4. Among those, prefer freshest `seen_pos_age_s`
+5. Among those, prefer highest `rssi_dbfs` (signal strength as a fallback proxy)
+6. Tiebreak: alphabetical receiver name (deterministic)
+
+Rationale: `nic`/`nac_p` are the aircraft's own self-reported position quality.
+`rssi_dbfs` is a proxy for it at best — a nearby receiver getting a multipath
+signal can have stronger RSSI but worse positional accuracy than a clean
+line-of-sight receiver further out.
 
 **Aircraft expiry.** Drop from state when no receiver has seen the hex for `expiry_s` (default 60s). On expiry, publish a "removed" event so consumers can clean up.
 
@@ -245,17 +297,22 @@ class AircraftState:
 
 After the merger updates `AircraftState`, run enrichment:
 
-1. **DB join.** Look up hex in Mictronics + ADSBex, populate `db_metadata` with merged fields (registration, type code, operator, military flag, etc.). Conflicts resolved by source priority (ADSBex's `mil` flag wins over Mictronics if they disagree, since ADSBex updates more frequently for military).
-2. **Geometry.** Compute distance/bearing from a configured "home" point (defaults to first receiver's location). Haversine is fine; vincenty is overkill.
-3. **Flag evaluation.** Apply each flag rule from config; populate `state.flags`.
-4. **Alert evaluation.** Apply each alert rule; produce alert events for state transitions (rule entered/exited).
+1. **DB join (Phase 2a).** Look up hex in Mictronics + ADSBex, populate `db_metadata` with merged fields (registration, type code, operator, military flag, etc.). Conflicts resolved by source priority (ADSBex's `mil` flag wins over Mictronics if they disagree, since ADSBex updates more frequently for military).
+2. **Geometry.** Compute distance/bearing from each configured watchpoint (see Configuration). Haversine is fine; vincenty is overkill. `state.distance_to` and `state.bearing_to` are dicts keyed by watchpoint name.
+3. **Flag evaluation (Phase 2a).** Apply each flag rule from config; populate `state.flags`.
+4. **Alert evaluation (Phase 2a).** Apply each alert rule; produce alert events for state transitions (rule entered/exited). After EXIT, a per-rule cooldown (default 60s) blocks re-ENTER for the same hex to prevent thrashing alerts when a flag oscillates.
+
+**Phase 2 implementation slices:**
+- **2a:** DB loader + flag rules + alert rules + alert ENTER/EXIT semantics.
+- **2b:** SQLite journal (`first_seen` durability, history-aware alerts).
+- **2c:** Photo enrichment + predictive schema fields (impl deferred to Phase 5).
 
 **Flag rules are declarative.** Adding a new flag is a config change, not a code change:
 
 ```yaml
 flags:
   military:
-    sources: ["mictronics:mil", "adsbexchange:mil"]   # OR logic
+    sources: ["mictronics:mil", "adsbexchange:mil"]   # OR logic across sources
   callsign_prefix:
     patterns: ["RCH", "SAM", "EVAC", "MEDEVAC"]
 ```
@@ -267,9 +324,17 @@ alerts:
   rules:
     - name: "military_close"
       match:
-        flags: ["military"]
-        max_distance_nm: 30
+        flags: ["military"]            # list within key = OR
+        max_distance_nm: 30            # different keys = AND
+        watchpoint: "home"
 ```
+
+**`match` block semantics (locked):**
+- **Different top-level keys** in the same `match` are combined with **AND** (all must be true).
+- **Lists within a single key** are combined with **OR** (any item satisfies).
+- Example: `flags: [a, b], category: [A7]` means `(a OR b) AND A7`.
+
+This is a load-bearing spec — get it right in v1 so future config changes don't ambiguously redefine it.
 
 ### 5. MQTT publisher
 
@@ -303,17 +368,45 @@ adsb/
 
 **Publication strategy:**
 
-- **`adsb/aircraft/<hex>`** publishes on every state change. High volume; users who don't want it can ignore the wildcard topic. Retained so late subscribers see current state. Use `null` payload to clear on aircraft expiry.
-- **`adsb/summary/*`** publishes on change with throttling (max 1/sec). This is what casual HA users will bind to — stable handful of entities rather than one per aircraft.
-- **`adsb/alert/<rule>/<hex>`** publishes on rule entry, cleared (null retained) on rule exit. Lets HA automations trigger on retain → null transitions for "alert ended" logic.
+- **`adsb/aircraft/<hex>`** publishes on every state change. **Power-user wildcard topic only.** This is NOT auto-discovered as HA entities — turning every aircraft into a discovered entity would melt HA's entity registry within a single busy day. Users who want per-aircraft data subscribe with their own consumer (Grafana, Node-RED, custom scripts). Retained, so late subscribers see current state; `null` payload clears on aircraft expiry. Per-aircraft publishes are min-throttled to one per second per hex to absorb bursty receiver outputs.
+- **`adsb/summary/*`** publishes on change with throttling (max 1/sec across all summary topics). This is what casual HA users bind to — a stable handful of entities rather than one per aircraft.
+- **`adsb/alert/<rule>/<hex>`** publishes on rule ENTER, cleared (null retained) on rule EXIT. After EXIT, a per-rule cooldown (default 60s) blocks re-ENTER for the same hex.
 
-**HA discovery payloads** publish on the configured discovery prefix and create:
+**HA discovery payloads** publish on the configured discovery prefix and create
+**only the following entities** (locked — adding per-aircraft entities is an
+explicit anti-goal):
 
 - Per-receiver: `binary_sensor` for status, `sensor` for message rate, `sensor` for aircraft count.
 - Service-wide: `sensor` for nearest aircraft (state = distance, attributes = full aircraft), `sensor` for total count, `sensor` per flag for count-by-flag.
 - Per-alert-rule: `binary_sensor` that's `on` when the rule matches anything.
 
-This gives users a working HA experience with zero template writing.
+This gives users a working HA experience with zero template writing while
+keeping HA's entity registry bounded.
+
+**Discovery republish on connect.** On every successful broker connect (cold
+start *and* reconnect after disconnect), the service republishes its full
+discovery payload set. This is idempotent over retained topics and protects
+against the case where the broker was restarted and lost its retained state —
+HA would otherwise carry stale entities forever.
+
+**Graceful shutdown protocol (locked).** On SIGTERM (or other clean exit),
+the service distinguishes itself from a crash:
+
+```python
+async with aiomqtt.Client(host, will=Will(topic="adsb/status", payload=b"offline", retain=True)) as client:
+    try:
+        # ... main run loop ...
+    finally:
+        # Clean shutdown: publish offline non-retained, then exit context.
+        # __aexit__ sends MQTT DISCONNECT before TCP close, which suppresses
+        # the LWT will-message. HA observes a clean offline state.
+        await client.publish("adsb/status", b"offline", retain=False)
+        # context exit happens here automatically
+```
+
+If the process crashes (no clean `__aexit__`), the broker fires the LWT and HA
+observes the retained `offline`. Distinguishing "user stopped service" from
+"service crashed" is a load-bearing UX detail.
 
 ---
 
@@ -326,9 +419,22 @@ service:
   poll_interval_s: 1.0          # default; receivers can override
   http_timeout_s: 5.0
   log_level: "info"
-  home_location:                # for distance/bearing calculation
-    lat: 30.3322                # falls back to first receiver if absent
+  log_destination: "stdout"     # "stdout" (default — captured by HA add-on
+                                # supervisor / journald / Docker) or "file"
+                                # (rotation-capped, opt-in)
+
+# Watchpoints replace the singular home_location: a list of named geographic
+# points distance/bearing/alert rules can reference. Default config has one
+# entry named "home" — backward-compatible feel.
+watchpoints:
+  - name: "home"
+    lat: 30.3322
     lon: -97.9853
+    elevation_m: 200            # optional; used for max_alt_agl_ft
+  # Additional watchpoints (optional):
+  # - name: "office"
+  #   lat: ...
+  #   lon: ...
 
 mqtt:
   broker: "homeassistant.home.arpa"
@@ -339,8 +445,16 @@ mqtt:
   discovery_prefix: "homeassistant"
   discovery_enabled: true
   tls: false
+  publish_aircraft_min_interval_s: 1.0   # per-hex throttle for adsb/aircraft/<hex>
+  publish_summary_min_interval_s: 1.0    # global throttle for adsb/summary/*
 
-databases:
+# Optional Prometheus /metrics endpoint (Phase 1).
+prometheus:
+  enabled: false                # off by default
+  bind: "127.0.0.1"             # localhost only by default
+  port: 9090
+
+databases:                       # Phase 2a
   cache_dir: "/data/db"
   refresh_interval_h: 168       # weekly
   sources:
@@ -350,6 +464,22 @@ databases:
     - name: "adsbexchange"
       url: "https://downloads.adsbexchange.com/downloads/basic-ac-db.json.gz"
       enabled: true
+
+journal:                         # Phase 2b — SQLite observation journal
+  path: "/data/journal.db"
+  # Cadence: write rows only on flag-state changes and alert ENTER/EXIT
+  # transitions, not every poll. Coalesce writes via a 30s timer or 50-event
+  # threshold (whichever first). WAL mode + synchronous=NORMAL keep SD-card
+  # write amplification low.
+  retention_observations_days: 90 # auto-prune older observation rows; aircraft
+                                  # summary rows (hex, first_seen) kept forever
+  every_poll: false               # opt-in; default off because it generates
+                                  # ~4M rows/day per receiver
+
+photos:                          # Phase 2c — Planespotters photo enrichment
+  enabled: false                 # off by default
+  cache_ttl_days: 30
+  inject_into: ["alerts"]        # alert payloads only; not the wildcard topic
 
 receivers:
   - name: "home-1090"
@@ -389,15 +519,20 @@ publish:
 
   alerts:
     enabled: true
+    cooldown_s: 60               # min seconds between EXIT and re-ENTER for
+                                  # the same (rule, hex). Prevents thrashing
+                                  # when a flag oscillates near a threshold.
     rules:
       - name: "military_close"
         match:
-          flags: ["military"]
-          max_distance_nm: 30
+          flags: ["military"]              # OR within key
+          max_distance_nm: 30              # AND across keys
+          watchpoint: "home"               # which watchpoint distance is from
       - name: "interesting_close"
         match:
           flags: ["interesting", "privacy"]
           max_distance_nm: 15
+          watchpoint: "home"
       - name: "emergency_anywhere"
         match:
           flags: ["emergency_squawk"]
@@ -406,14 +541,24 @@ publish:
           category: ["A7"]
           max_alt_agl_ft: 2000
           max_distance_nm: 10
+          watchpoint: "home"
 ```
 
 **Notes:**
 
-- `max_alt_agl_ft` is approximated as MSL minus receiver elevation in v1. True AGL needs a DEM; document the limitation, especially for hilly terrain.
-- `home_location` is separate from any receiver — users with multiple sites want distance from their actual home, not from a receiver.
+- `max_alt_agl_ft` is approximated as MSL minus the watchpoint's `elevation_m` in v1. True AGL needs a DEM; document the limitation, especially for hilly terrain.
+- Watchpoints are first-class. Each rule's `watchpoint` key picks which one its `max_distance_nm` is measured from. Default is `"home"` if omitted and there's exactly one watchpoint named `home`; otherwise required.
 - Per-receiver `enabled: false` lets users keep config while disabling without deleting.
 - Auth is generic — `type: header` lets users put arbitrary headers in (Cloudflare Access, custom tokens). Future-proofs.
+
+**Note on schema versioning during pre-public phases (1–3):** the published MQTT
+payload does NOT include a `schema_version` field during Phases 1–3. Daniel is
+the only user during this period; breaking-change tolerance is high, and
+locking a versioned contract before the field set has seen real usage would
+risk pinning mistakes. Schema lock + `schema_version: 1` is a Phase 4
+prerequisite alongside Docker / add-on packaging. Pydantic models still serve
+as the canonical serializer through Phases 1–3 (consistency, type safety) but
+their shape is allowed to evolve freely.
 
 ---
 
@@ -482,40 +627,82 @@ If all four work without code changes, the universality goal is met.
 
 ### Phase 1: Core service (single receiver)
 
-- `ReceiverSource` abstraction + `HttpJsonReceiver` implementation
-- Basic `AircraftState` tracking (no merger yet — single source)
-- MQTT publisher with `aircraft/<hex>` and `summary/*` topics
-- HA discovery for summary entities
-- Config loading and validation
-- systemd-friendly logging
-- pip-installable
+- `ReceiverSource` abstraction + `HttpJsonReceiver` implementation (pull-based `fetch()` with fail-fast semantics; consecutive-failure threshold tracked in `health()`)
+- Basic `AircraftState` tracking (no merger yet — single source). State machine: NEW → ACTIVE → STALE → PURGED
+- MQTT publisher with `aircraft/<hex>` and `summary/*` topics, graceful-shutdown protocol, discovery republish on connect
+- HA discovery for summary + per-receiver + per-alert entities (NOT per-aircraft)
+- Watchpoints as first-class config (default single entry "home")
+- Optional Prometheus `/metrics` endpoint (off by default)
+- Config loading and validation (Pydantic v2, strict mode, fail-fast on bad config)
+- Default logging to stdout (HA add-on supervisor / journald / Docker captures)
+- pip-installable (HA Container / HA Core / non-HA users; HAOS users wait for Phase 4 add-on)
 
-**Done when:** a user can `pip install`, write a config with one receiver, and see their nearest aircraft as a HA entity.
+**Done when:** a user can `pip install`, write a config with one receiver and one watchpoint, and see their nearest aircraft as a HA entity.
 
-### Phase 2: Enrichment
+### Phase 2: Enrichment (split into 2a / 2b / 2c)
 
-- Database loader (Mictronics + ADSBex) with weekly refresh
+Each slice ships independently and gathers feedback before the next.
+
+**Phase 2a: Rule engine.**
+- Database loader (Mictronics + ADSBex) with weekly refresh, atomic dict swap, snapshot-on-enrich pattern
 - Flag rule evaluation
-- Alert rule evaluation with state-transition detection
-- Per-flag MQTT topics + discovery
+- Alert rule evaluation with ENTER/EXIT state-transition detection
+- Per-rule cooldown (default 60s) to suppress thrashing
+- Per-alert MQTT topics + HA discovery binary_sensors
 
 **Done when:** military aircraft appear on `adsb/alert/military_close/<hex>` with full DB metadata in the payload.
+
+**Phase 2b: Durable history.**
+- SQLite observation journal at `/data/journal.db` (WAL + synchronous=NORMAL, coalesced writes every 30s or 50 events, hand-rolled `PRAGMA user_version` migrations)
+- Cadence: write only on flag-state changes and alert ENTER/EXIT — NOT every poll (SD-card friendliness)
+- `first_seen` durable across restarts; history-aware alert rules ("first time this month")
+- Mandatory retention on observation rows (default 90 days); aircraft summary rows kept forever
+
+**Done when:** restarting the service preserves `first_seen` for every previously-observed hex.
+
+**Phase 2c: Delight.**
+- Planespotters photo enrichment (off by default, cached, fails-soft, photo URL injected into alert payloads only)
+- Predictive `predicted_eta_to_home_s` and `predicted_closest_approach_nm` schema fields on `AircraftState` (always None during Phase 2c — implementation deferred to Phase 5 to avoid false-positive alerts on airport approach traffic)
+
+**Done when:** alert payloads carry photo URLs (when configured) and `AircraftState` exposes the predictive fields as `None` placeholders.
 
 ### Phase 3: Multi-receiver merger
 
 - Multiple `HttpJsonReceiver` instances running concurrently
-- Merger with canonical position selection
+- Merger with canonical position selection (NIC → NAC_p → seen_pos_age_s → RSSI → receiver name)
 - Per-receiver health topics + discovery
 - 1090 + 978 band merging
 
-**Done when:** two receivers feeding the same hex produce one canonical aircraft with `seen_by: [...]` populated.
+**Done when:** two receivers feeding the same hex produce one canonical aircraft with `seen_by: [...]` populated and the canonical pick is deterministic.
 
 ### Phase 4: Distribution
 
-- Multi-arch Docker image
-- HA add-on wrapper
-- Add-on repository
-- Documentation site / README
+#### Phase 4 prerequisites (lock before starting Phase 4)
+
+- **Artifacts to publish:**
+  - HA add-on Docker image (one per arch: amd64, aarch64, armv7) via HA's official `image-builder` GitHub Action
+  - Standalone Docker image (multi-arch manifest pointing to the same per-arch images) on `ghcr.io`
+  - pip wheel + sdist on PyPI
+- **Single Dockerfile** with `ARG BUILD_FROM=ghcr.io/home-assistant/{arch}-base-python:3.13`. The HA add-on `config.yaml` injects the arch-specific value; standalone Docker users supply their own (or use the same HA base).
+- **Drop:** `armhf` and `i386` (HA itself is dropping them; supporting them is wasted CI time).
+- **GitHub Actions workflows:**
+  - `release-on-tag.yml` — triggers PyPI publish + multi-arch image build/push on git tag.
+  - `ci.yml` — runs unit + integration tests on push (testcontainers + Mosquitto fixture).
+- **Supply-chain checks (pre-Phase-4 audit):**
+  - Mictronics / ADSBex DB hash verification (TOFU + warn-on-change).
+  - Mictronics / ADSBex license review (ADSBex basic is CC-BY-NC; clarify redistribution implications for Docker image).
+  - Pydantic v2 + `pydantic-core` armv7 wheel availability check on a real Pi 3 — fall back to source-build inside the Dockerfile if no wheel ships in time. HA's armv7 base image includes a Rust toolchain.
+- **HAOS-vs-pip user guidance** in README: HAOS users install via the add-on store; pip is for HA Container, HA Core, CLI consumers, and Grafana folks. Do NOT tell HAOS users to `pip install`.
+- **Schema lock:** before tagging the first public release, freeze the published MQTT payload schema and add a `schema_version: 1` field to the payload. Pydantic models become a stable contract.
+
+#### Phase 4 execution
+
+- HA add-on wrapper (s6-overlay + bashio, supervisor entrypoint, options-to-config translation)
+- Add-on repository for HA's `repository.yaml` mechanism
+- Standalone Docker image
+- pip wheel
+- README: install paths, config reference, MQTT topic reference, HA setup walkthrough
+- `purge-discovery` CLI for clean uninstall (clears all retained discovery topics)
 
 **Done when:** a user adds the add-on repo URL to HA, clicks install, fills in the config UI, and gets working entities without touching a terminal.
 
@@ -523,20 +710,19 @@ If all four work without code changes, the universality goal is met.
 
 - True AGL via DEM (interesting for hilly terrain)
 - Orbit detection (sustained turn rate + low forward progress)
-- Predictive alerts (aircraft heading toward a configured point)
-- Historical recording (sqlite of every aircraft seen)
-- Photo lookup via Planespotters API
+- Predictive inbound alert *implementation* (schema reserved in Phase 2c). Requires airport-proximity exclusion zones, altitude floor/ceiling, ground-speed cruise filter, and orbit/turn detection to avoid false-positive alerts on every Southwest 737 on final into the nearest Class B airport.
 - Custom Lovelace card (separate HACS package)
+- Web UI for service status via HA add-on ingress (deferred to v1.1 / Phase 4.5)
 
 ---
 
 ## Open design questions
 
-1. **State persistence.** Should `AircraftState` survive service restarts? Probably not for v1 (aircraft turnover is fast, restart is rare), but worth confirming.
-2. **Per-receiver position offsets.** If two receivers report slightly different positions for the same aircraft (multilateration disagreement), do we average or pick one? Current design picks one (canonical). Averaging is more accurate but harder to explain.
-3. **Rate limiting.** Do we need to throttle MQTT publishes per-aircraft? At 1Hz poll × 50 aircraft × multiple receivers, we're at a few hundred messages/sec. Mosquitto handles this fine; HA's MQTT integration may not love it. Worth measuring.
-4. **Configuration reload.** SIGHUP to reload config without restart? Nice-to-have, not v1.
-5. **Web UI.** Add-ons can have a web UI via ingress. A simple status page (receivers online, current aircraft count, recent alerts) would be useful for debugging. Probably v2.
+1. ~~**State persistence.**~~ **Resolved (Phase 2b):** SQLite journal at `/data/journal.db` persists `first_seen` and flag-state transitions. Restart preserves the durable history; in-flight `AircraftState` is rebuilt from the next poll.
+2. ~~**Per-receiver position offsets.**~~ **Resolved (Phase 3):** pick canonical via NIC → NAC_p → seen_pos_age_s → RSSI → receiver name. Averaging is rejected; explicit-over-clever.
+3. ~~**Rate limiting.**~~ **Resolved (Phase 1):** per-hex publish min-interval (default 1s) and global summary throttle (default 1s). HA receives no per-aircraft entities — only summary + per-alert — so HA's MQTT integration doesn't see the high-cardinality stream.
+4. **Configuration reload.** SIGHUP to reload config without restart? Nice-to-have, not v1. Deferred.
+5. ~~**Web UI.**~~ **Deferred to v1.1 / Phase 4.5** (TODOS). Single status page via HA add-on ingress. Useful for debugging, but separate frontend project; defer until MQTT path is proven over a quarter of real use.
 
 ---
 

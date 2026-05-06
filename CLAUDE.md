@@ -112,10 +112,14 @@ adsb-enrich/
 │       ├── enrichment.py      # flag + alert rule evaluation
 │       ├── mqtt/
 │       │   ├── __init__.py
-│       │   ├── client.py      # connection management
-│       │   ├── discovery.py   # HA MQTT discovery payloads
-│       │   └── publisher.py   # topic routing + retention
-│       └── geo.py             # haversine, bearing
+│       │   ├── client.py      # connection management, graceful shutdown
+│       │   ├── discovery.py   # HA MQTT discovery payloads (republish on connect)
+│       │   ├── publisher.py   # topic routing, retention, throttling
+│       │   └── payloads.py    # Pydantic models for published JSON payloads
+│       │                      # (kept separate from models.py — this is the
+│       │                      # external API surface; models.py is internal)
+│       ├── geo.py             # haversine, bearing
+│       └── metrics.py         # Prometheus /metrics exposition (Phase 1, optional)
 ├── tests/
 │   ├── conftest.py
 │   ├── fixtures/              # captured aircraft.json samples
@@ -136,7 +140,8 @@ Add modules as needed; don't pre-create empty files.
 - **Capture real `aircraft.json` samples.** `tests/fixtures/` should have real data including edge cases (military aircraft, emergency squawks, on-ground aircraft, missing position, multiple receivers seeing the same hex).
 - **Async tests use `pytest-asyncio`.** `@pytest.mark.asyncio` on test functions. Use the `auto` mode in `pyproject.toml` so we don't have to mark every test.
 - **Time is a fixture.** Don't use real time in tests. Use `freezegun` or a `Clock` protocol passed into components.
-- **No network in tests.** Ever. If a test needs network, it's an integration test and lives in `tests/integration/` with a marker that's skipped by default.
+- **No network in tests.** Ever. If a test needs network, it's an integration test and lives in `tests/integration/` with a marker (`@pytest.mark.integration`) that's skipped by default. Run with `uv run pytest -m integration`.
+- **Integration tests use testcontainers + Mosquitto** for the broker. Session-scoped pytest fixture spins up the container once per test session. CI runners need Docker; locally `docker pull eclipse-mosquitto` is a one-time cost. Required for: graceful-shutdown LWT semantics, broker reconnect, discovery republish, retained-state recovery.
 - **Coverage target: 80%** on `src/adsb_enrich/`. Don't chase 100%; the last 20% is usually testing log lines.
 
 Run tests:
