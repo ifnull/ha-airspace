@@ -240,5 +240,3 @@ def _derive_receiver_json_url(aircraft_url: str) -> str | None:
     if not aircraft_url.endswith(suffix):
         return None
     return aircraft_url.removesuffix(suffix) + "receiver.json"
-
-
