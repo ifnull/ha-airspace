@@ -747,3 +747,58 @@ Each slice ships independently and gathers feedback before the next.
 - **LADD** — Limit Aircraft Data Displayed. FAA blocklist; aircraft on the list shouldn't be shown by FAA-source-based trackers.
 - **Mictronics database** — Community-maintained mapping of hex → registration, type, operator, military flag. Used by readsb / tar1090.
 - **MLAT** — Multilateration. Position calculation from time-of-arrival differences across multiple receivers, for aircraft without ADS-B.
+
+---
+
+# Appendix: Remote ID / drone source (future — Phase 3+)
+
+A companion project, `drone-aware-zero`, detects nearby drones via ASTM F3411
+**Remote ID** (BLE + WiFi) on a Raspberry Pi Zero W. It is a good fit to surface
+through this service's pipeline (watchpoint distance/bearing, nearest-entity,
+alert rules, MQTT + HA discovery) — but as a **separate project integrated by
+contract, not a code merge.**
+
+## Integration shape
+
+The detector serves its current detections as a JSON document over HTTP; this
+service consumes it as just another source. The two repos share **zero code** —
+only a documented feed contract (`FEED.md`, canonical copy in this repo).
+
+- It is **not** `aircraft.json` and is **not** for dump1090-family tools.
+  Drones are not manned aircraft; a literal `aircraft.json` clone would force a
+  string UAS ID into the ICAO `hex` field (breaking Phase-2 reference-DB
+  lookups) and would have nowhere to put operator location.
+- We reuse dump1090's *envelope idioms* (`now`, `seen`/`seen_pos` as
+  seconds-since, a polled ~1 Hz array) because the receiver/ingest plumbing
+  already handles them — `seen→timestamp` conversion, staleness aging, purge.
+- The *object schema* is purpose-built for Remote ID. See `FEED.md`.
+
+## Key design decisions (free to make correctly now)
+
+- **`band: "remoteid"`.** A drone is a third band alongside `1090`/`978`. It
+  drops straight into the existing multi-band track model (`bands: [...]`) and
+  the merger's per-band dedup. Remote ID `id` and ICAO hex are different
+  namespaces and are **never** cross-matched.
+- **Source-agnostic identity.** The track key is "whichever identity is present"
+  (ICAO hex / TIS-B / Remote ID `id`), not a hardcoded ICAO assumption — same
+  spirit as the `~`-prefixed non-ICAO flag for TIS-B/ADS-R. No reference-DB
+  lookup is attempted for `remoteid` tracks. *This model decision is cheap to
+  bake in during Phase 1's modeling even though the receiver is Phase 3.*
+- **Operator location is a first-class, novel entity.** "Drone 400 m NE,
+  operator 1.2 km S" — security-relevant and absent from ADS-B. Drones get their
+  own HA discovery surface (drone count, nearest drone, operator location),
+  distinct from the aircraft entities.
+- **Native AGL for free.** Remote ID broadcasts height-above-takeoff directly —
+  the AGL that Phase 5 wants for aircraft (and is hard to derive there) arrives
+  in the feed.
+
+## Phasing
+
+- **Now (Phase 1):** keep the identity/observation model source-agnostic; leave
+  a `# TODO(phase-3): RemoteIdHttpReceiver` hook where natural. Do **not** build
+  the receiver — it needs the merger (Phase 3).
+- **Phase 3:** add `RemoteIdHttpReceiver` (reuses the HTTP polling/backoff/
+  `health()` plumbing) mapping the feed → the source-agnostic track model.
+- **Producer side (`drone-aware-zero`):** an additive opt-in `--serve` mode
+  (stdlib `http.server`, snapshot-only handler — the Zero W's single ARMv6 core
+  is already saturated by decode). Tracked in that repo's `FEED.md`.
