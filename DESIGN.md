@@ -307,26 +307,36 @@ After the merger updates `AircraftState`, run enrichment:
 - **2b:** SQLite journal (`first_seen` durability, history-aware alerts).
 - **2c:** Photo enrichment + predictive schema fields (impl deferred to Phase 5).
 
-**Flag rules are declarative.** Adding a new flag is a config change, not a code change:
+**Flag rules are declarative.** Adding a new flag is a config change, not a code change. Flags and alerts live under one `enrichment` section (consolidated in Phase 2a — see the Configuration section). Each flag carries exactly one matcher, identified by its field name:
 
 ```yaml
-flags:
-  military:
-    sources: ["mictronics:mil", "adsbexchange:mil"]   # OR logic across sources
-  callsign_prefix:
-    patterns: ["RCH", "SAM", "EVAC", "MEDEVAC"]
+enrichment:
+  flags:
+    military:
+      sources: ["mictronics:mil", "adsbexchange:mil"]   # OR logic across sources (DB-backed)
+    callsign_prefix:
+      patterns: ["RCH", "SAM", "EVAC", "MEDEVAC"]        # callsign starts-with
+    emergency_squawk:
+      squawks: ["7500", "7600", "7700"]                  # exact squawk
+    heavy_mil:
+      types: ["B52", "C17", "U2"]                        # ICAO type designator
+    rotorcraft:
+      categories: ["A7"]                                  # ADS-B emitter category
 ```
 
-**Alert rules compose flags:**
+Matcher kinds: `sources` (DB-backed; truthy `db_metadata` field), `patterns` (callsign prefix), `squawks` (exact), `types` (ICAO type designator), `categories` (emitter category). The `categories` matcher was added in Phase 2a so rules like `low_helicopter` (below) can reference a flag without a reference database.
+
+**Alert rules compose flags** (also under `enrichment`):
 
 ```yaml
-alerts:
-  rules:
-    - name: "military_close"
-      match:
-        flags: ["military"]            # list within key = OR
-        max_distance_nm: 30            # different keys = AND
-        watchpoint: "home"
+enrichment:
+  alerts:
+    rules:
+      - name: "military_close"
+        match:
+          flags: ["military"]            # list within key = OR
+          max_distance_nm: 30            # different keys = AND
+          watchpoint: "home"
 ```
 
 **`match` block semantics (locked):**
@@ -497,7 +507,7 @@ receivers:
     url: "http://piaware.home.arpa:8080/skyaware978/data/aircraft.json"
     band: "978"
 
-enrichment:
+enrichment:                      # Phase 2a — flags (slice 1) + alerts (slice 3)
   flags:
     military:
       sources: ["mictronics:mil", "adsbexchange:mil"]
@@ -511,14 +521,10 @@ enrichment:
       patterns: ["RCH", "SAM", "EVAC", "MEDEVAC", "LIFEGUARD", "N1"]
     type_code:
       types: ["B52", "C17", "C5M", "U2", "B1", "B2", "F22", "F35", "MQ9", "RC135"]
+    rotorcraft:
+      categories: ["A7"]                  # emitter category; no DB needed
 
-publish:
-  all_aircraft:
-    enabled: true
-    max_distance_nm: 100
-
-  alerts:
-    enabled: true
+  alerts:                        # Phase 2a slice 3
     cooldown_s: 60               # min seconds between EXIT and re-ENTER for
                                   # the same (rule, hex). Prevents thrashing
                                   # when a flag oscillates near a threshold.
@@ -538,10 +544,13 @@ publish:
           flags: ["emergency_squawk"]
       - name: "low_helicopter"
         match:
-          category: ["A7"]
-          max_alt_agl_ft: 2000
+          category: ["A7"]                 # alert match keys can read raw fields
+          max_alt_agl_ft: 2000             # directly, not only flags
           max_distance_nm: 10
           watchpoint: "home"
+
+# publish.all_aircraft (max_distance filter for the wildcard topic) is a
+# topic/MQTT concern; deferred and likely to move near `mqtt`. Not in 2a.
 ```
 
 **Notes:**

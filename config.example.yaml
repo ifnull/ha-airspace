@@ -80,3 +80,28 @@ receivers:
   # - name: home-978
   #   url: http://piaware.local:8080/skyaware978/data/aircraft.json
   #   band: "978"
+
+# --------------------------------------------------------------------------
+# enrichment — declarative flag rules (Phase 2a). Optional; omit for no flags.
+# Each flag sets exactly one matcher:
+#   squawks     — exact transponder code
+#   patterns    — callsign starts-with (case-insensitive)
+#   types       — ICAO type designator (case-insensitive)
+#   categories  — ADS-B emitter category (e.g. A7 rotorcraft)
+#   sources     — DB-backed (db:field); matches a truthy db_metadata field.
+#                 Needs the reference-DB loader (a later Phase 2a slice); until
+#                 then these never match.
+# Matched flag names appear in adsb/aircraft/<hex> and the summary count_by_flag.
+# --------------------------------------------------------------------------
+# enrichment:
+#   flags:
+#     emergency_squawk:
+#       squawks: ["7500", "7600", "7700"]
+#     mil_callsign:
+#       patterns: ["RCH", "SAM", "EVAC", "MEDEVAC", "LIFEGUARD"]
+#     heavy_mil:
+#       types: ["B52", "C17", "C5M", "U2", "B1", "B2", "RC135"]
+#     rotorcraft:
+#       categories: ["A7"]
+#     # military:                    # DB-backed — inert until the DB loader lands
+#     #   sources: ["mictronics:mil", "adsbexchange:mil"]
