@@ -144,6 +144,15 @@ class MqttClient:
     def is_connected(self) -> bool:
         return self._is_connected
 
+    def set_on_connect(self, on_connect: OnConnectCallback) -> None:
+        """Set (or replace) the post-connect callback after construction.
+
+        Resolves a startup ordering cycle: the callback typically belongs to
+        the publisher, which is built *after* the client (it depends on it).
+        Takes effect on the next connect; the current session is unaffected.
+        """
+        self._on_connect = on_connect
+
     @property
     def status_topic(self) -> str:
         """``<base_topic>/status`` — used for both LWT and graceful
