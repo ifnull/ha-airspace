@@ -28,6 +28,9 @@ dependencies = [
   "prometheus-client>=0.20",
 ]
 
+[project.scripts]
+adsb-enrich = "adsb_enrich.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/ifnull/ha-squitter"
 Repository = "https://github.com/ifnull/ha-squitter"
