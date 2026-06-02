@@ -33,6 +33,7 @@ import structlog
 
 from adsb_enrich import __version__
 from adsb_enrich.config import Config
+from adsb_enrich.enrichment import Enricher
 from adsb_enrich.metrics import MetricsRegistry
 from adsb_enrich.mqtt.client import MqttClient
 from adsb_enrich.mqtt.publisher import Publisher
@@ -251,6 +252,7 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
     tracker = AircraftTracker(
         publisher,
         config.watchpoints_runtime(),
+        enricher=Enricher(config.enrichment),
         metrics=metrics,
     )
     return App(

@@ -190,6 +190,79 @@ class ReceiverConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Enrichment: flag rules (Phase 2a, slice 1)
+# ---------------------------------------------------------------------------
+
+
+class FlagConfig(BaseModel):
+    """One declarative flag rule, identified by its single discriminator
+    field. Exactly one of the matcher fields must be set:
+
+    * ``sources`` — DB-backed: ``["mictronics:mil", "adsbexchange:mil"]``.
+      The flag matches if any referenced ``db_metadata`` field is truthy.
+      (Empty until the Phase-2a DB loader lands; never matches before then.)
+    * ``squawks`` — transponder code in the list (e.g. emergency 7500/7600/7700).
+    * ``patterns`` — callsign starts with any prefix.
+    * ``types`` — ICAO type designator in the list (e.g. ``C17``).
+    * ``categories`` — ADS-B emitter category in the list (e.g. ``A7`` rotorcraft).
+
+    The matcher kind is inferred from which field is present; mixing two is a
+    config error. Keeping one model (rather than a discriminated union keyed by
+    an explicit ``type:``) means the YAML stays terse — the field name *is* the
+    discriminator, matching DESIGN's examples.
+    """
+
+    model_config = _STRICT
+
+    sources: list[str] | None = None
+    squawks: list[str] | None = None
+    patterns: list[str] | None = None
+    types: list[str] | None = None
+    categories: list[str] | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_matcher(self) -> Self:
+        present = [
+            name
+            for name in ("sources", "squawks", "patterns", "types", "categories")
+            if getattr(self, name) is not None
+        ]
+        if len(present) != 1:
+            raise ValueError(
+                "each flag must set exactly one of "
+                "sources / squawks / patterns / types / categories; "
+                f"got {present or 'none'}"
+            )
+        if not getattr(self, present[0]):
+            raise ValueError(f"flag matcher '{present[0]}' must be a non-empty list")
+        if present[0] == "sources":
+            for ref in self.sources or []:
+                if ref.count(":") != 1 or not all(ref.split(":")):
+                    raise ValueError(
+                        f"source ref must be 'db:field' (e.g. 'adsbexchange:mil'), got {ref!r}"
+                    )
+        return self
+
+    @property
+    def matcher(self) -> str:
+        """Which discriminator this flag uses. Safe to read post-validation."""
+        for name in ("sources", "squawks", "patterns", "types", "categories"):
+            if getattr(self, name) is not None:
+                return name
+        raise AssertionError("validated FlagConfig always has one matcher")
+
+
+class EnrichmentConfig(BaseModel):
+    """Flag (and, slice 3, alert) rules. Absent section = no enrichment,
+    which is the Phase 1 behavior. Flag names are arbitrary user labels
+    (``military``, ``my_neighbor``) mapped to one matcher each."""
+
+    model_config = _STRICT
+
+    flags: dict[str, FlagConfig] = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
 # Top-level Config
 # ---------------------------------------------------------------------------
 
@@ -209,6 +282,7 @@ class Config(BaseModel):
     mqtt: MqttConfig
     prometheus: PrometheusConfig = Field(default_factory=PrometheusConfig)
     receivers: list[ReceiverConfig] = Field(..., min_length=1)
+    enrichment: EnrichmentConfig = Field(default_factory=EnrichmentConfig)
 
     @model_validator(mode="after")
     def _watchpoint_names_unique(self) -> Self:
@@ -285,6 +359,8 @@ __all__ = [
     "AuthConfig",
     "Config",
     "ConfigError",
+    "EnrichmentConfig",
+    "FlagConfig",
     "MqttConfig",
     "PrometheusConfig",
     "ReceiverConfig",

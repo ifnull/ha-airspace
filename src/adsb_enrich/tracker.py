@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 
 import structlog
 
+from adsb_enrich.enrichment import Enricher
 from adsb_enrich.geo import bearing, haversine
 from adsb_enrich.metrics import MetricsRegistry
 from adsb_enrich.models import AircraftObservation, AircraftState, Lifecycle, Watchpoint
@@ -60,6 +61,9 @@ class AircraftTracker:
       watchpoints: Runtime watchpoints. Distance/bearing are computed for
         every one; "nearest" is measured to the primary (the one named
         ``home`` if present, else the first).
+      enricher: Optional ``Enricher``. When supplied, each updated state is
+        enriched (flags now; DB join + alerts later) after geometry and
+        before publish. Absent = Phase 1 behavior (no flags).
       metrics: Optional ``MetricsRegistry`` for the active-aircraft gauge.
       clock: Returns the current UTC ``datetime``. Injected for
         deterministic lifecycle tests (CLAUDE.md "time is a fixture").
@@ -75,6 +79,7 @@ class AircraftTracker:
         publisher: Publisher,
         watchpoints: Iterable[Watchpoint],
         *,
+        enricher: Enricher | None = None,
         metrics: MetricsRegistry | None = None,
         clock: Callable[[], datetime] = _default_clock,
         stale_after_s: float = 5.0,
@@ -84,6 +89,7 @@ class AircraftTracker:
         if not self._watchpoints:
             raise ValueError("AircraftTracker requires at least one watchpoint")
         self._publisher = publisher
+        self._enricher = enricher
         self._primary = self._pick_primary(self._watchpoints)
         self._metrics = metrics
         self._clock = clock
@@ -138,6 +144,10 @@ class AircraftTracker:
             state.seen_by.add(obs.seen_by)
             state.by_receiver[obs.seen_by] = obs
         self._recompute_geometry(state)
+        if self._enricher is not None:
+            # Flags (and, later, DB join + alerts) depend on the freshly
+            # updated canonical + geometry, so enrich after both.
+            self._enricher.enrich(state)
 
     def _recompute_geometry(self, state: AircraftState) -> None:
         """Fill ``distance_to`` / ``bearing_to`` for every watchpoint from
