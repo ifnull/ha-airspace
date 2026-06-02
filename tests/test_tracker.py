@@ -22,6 +22,8 @@ from typing import Any
 import pytest
 from prometheus_client import CollectorRegistry
 
+from adsb_enrich.config import EnrichmentConfig, FlagConfig
+from adsb_enrich.enrichment import Enricher
 from adsb_enrich.metrics import MetricsRegistry
 from adsb_enrich.models import AircraftObservation, AircraftState, Watchpoint
 from adsb_enrich.tracker import AircraftTracker
@@ -57,7 +59,7 @@ class FakePublisher:
         nearest: AircraftState | None,
         count_by_flag: dict[str, int] | None = None,
     ) -> bool:
-        self.summaries.append({"count": count, "nearest": nearest})
+        self.summaries.append({"count": count, "nearest": nearest, "count_by_flag": count_by_flag})
         return True
 
 
@@ -94,6 +96,8 @@ def _obs(
     band: str = "1090",
     seen_by: str = "rx-home",
     flight: str | None = "RCH171",
+    category: str | None = None,
+    squawk: str | None = None,
 ) -> AircraftObservation:
     return AircraftObservation(
         hex=hex_code,
@@ -104,6 +108,8 @@ def _obs(
         lat=lat,
         lon=lon,
         alt_baro_ft=35000,
+        category=category,
+        squawk=squawk,
     )
 
 
@@ -299,7 +305,11 @@ class TestNearest:
     async def test_empty_airspace_yields_none(self, publisher: FakePublisher, clock: Clock) -> None:
         tracker = _make_tracker(publisher, clock)
         await tracker.process_poll([])
-        assert publisher.summaries[-1] == {"count": 0, "nearest": None}
+        assert publisher.summaries[-1] == {
+            "count": 0,
+            "nearest": None,
+            "count_by_flag": {},
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -352,6 +362,57 @@ class TestSummary:
         await tracker.process_poll([_obs("ae0001", at=clock.now), _obs("ae0002", at=clock.now)])
         assert len(publisher.summaries) == 2
         assert publisher.summaries[-1]["count"] == 2
+
+    async def test_count_by_flag_empty_without_enricher(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = _make_tracker(publisher, clock)
+        await tracker.process_poll([_obs("ae0001"), _obs("ae0002")])
+        # No enricher -> no flags -> empty count_by_flag.
+        assert publisher.summaries[-1]["count_by_flag"] == {}
+
+    async def test_count_by_flag_aggregates_across_aircraft(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        enricher = Enricher(
+            EnrichmentConfig(
+                flags={
+                    "heavy": FlagConfig(categories=["A3"]),
+                    "emergency": FlagConfig(squawks=["7700"]),
+                }
+            )
+        )
+        tracker = AircraftTracker(
+            publisher,  # type: ignore[arg-type]
+            [_HOME],
+            enricher=enricher,
+            clock=clock,
+        )
+        # Two A3 (heavy); one of them also squawking 7700 (emergency); one A1.
+        a = _obs("ae0001", category="A3")
+        b = _obs("ae0002", category="A3", squawk="7700")
+        c = _obs("ae0003", category="A1")
+        await tracker.process_poll([a, b, c])
+
+        counts = publisher.summaries[-1]["count_by_flag"]
+        assert counts == {"heavy": 2, "emergency": 1}
+
+    async def test_count_by_flag_drops_emptied_flags(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        enricher = Enricher(EnrichmentConfig(flags={"emergency": FlagConfig(squawks=["7700"])}))
+        tracker = AircraftTracker(
+            publisher,  # type: ignore[arg-type]
+            [_HOME],
+            enricher=enricher,
+            clock=clock,
+        )
+        await tracker.process_poll([_obs("ae0001", at=clock.now, squawk="7700")])
+        assert publisher.summaries[-1]["count_by_flag"] == {"emergency": 1}
+        # Squawk cleared next poll -> flag drops -> key omitted entirely.
+        clock.advance(1.0)
+        await tracker.process_poll([_obs("ae0001", at=clock.now, squawk=None)])
+        assert publisher.summaries[-1]["count_by_flag"] == {}
 
 
 # ---------------------------------------------------------------------------

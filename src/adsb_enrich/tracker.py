@@ -183,7 +183,22 @@ class AircraftTracker:
 
     async def _publish_summary(self) -> None:
         nearest = self._nearest()
-        await self._publisher.publish_summary(count=len(self._states), nearest=nearest)
+        await self._publisher.publish_summary(
+            count=len(self._states),
+            nearest=nearest,
+            count_by_flag=self._count_by_flag(),
+        )
+
+    def _count_by_flag(self) -> dict[str, int]:
+        """How many tracked aircraft carry each flag. A flag is counted once
+        per aircraft; an aircraft with multiple flags adds to each. Flags that
+        no aircraft currently carry are omitted (the topic reflects the live
+        airspace; absent means zero)."""
+        counts: dict[str, int] = {}
+        for state in self._states.values():
+            for flag in state.flags:
+                counts[flag] = counts.get(flag, 0) + 1
+        return counts
 
     def _nearest(self) -> AircraftState | None:
         """The tracked aircraft closest to the primary watchpoint. Aircraft
