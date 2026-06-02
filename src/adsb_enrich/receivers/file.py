@@ -23,7 +23,7 @@ from pathlib import Path
 
 from adsb_enrich.metrics import MetricsRegistry
 from adsb_enrich.models import AircraftObservation, ReceiverLocation
-from adsb_enrich.receivers._parse import parse_aircraft_json
+from adsb_enrich.receivers._parse import MessageRateTracker, parse_aircraft_json
 from adsb_enrich.receivers.base import FetchError, ReceiverSource
 
 
@@ -48,6 +48,7 @@ class FileReceiver(ReceiverSource):
         super().__init__(name, band, metrics=metrics)
         self._path = Path(path)
         self._location = location
+        self._rate_tracker = MessageRateTracker()
 
     async def _do_fetch(
         self,
@@ -73,6 +74,7 @@ class FileReceiver(ReceiverSource):
                 receiver_name=self.name,
                 band=self.band,
                 observed_at=observed_at,
+                rate_tracker=self._rate_tracker,
             )
         except ValueError as exc:
             # parse_aircraft_json raises only on schema-shape failures

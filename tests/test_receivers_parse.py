@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from adsb_enrich.receivers._parse import parse_aircraft_json
+from adsb_enrich.receivers._parse import MessageRateTracker, parse_aircraft_json
 
 _RX = "rx-home"
 _BAND = "1090"
@@ -299,3 +299,96 @@ class TestSchemaDrift:
         assert obs.lat is None
         assert obs.rssi_dbfs is None
         assert obs.on_ground is None
+
+
+# ---------------------------------------------------------------------------
+# MessageRateTracker — cumulative messages -> messages/sec
+# ---------------------------------------------------------------------------
+
+
+class TestMessageRateTracker:
+    def test_first_sample_returns_none(self) -> None:
+        tracker = MessageRateTracker()
+        # No prior sample to delta against.
+        assert tracker.update(1000, 100.0) is None
+
+    def test_rate_from_delta(self) -> None:
+        tracker = MessageRateTracker()
+        tracker.update(1000, 100.0)
+        # 600 messages over 2 seconds = 300 msg/s.
+        assert tracker.update(1600, 102.0) == 300.0
+
+    def test_rate_updates_each_poll(self) -> None:
+        tracker = MessageRateTracker()
+        tracker.update(0, 0.0)
+        assert tracker.update(100, 1.0) == 100.0
+        assert tracker.update(150, 2.0) == 50.0  # delta is vs the PREVIOUS sample
+
+    def test_missing_messages_returns_none(self) -> None:
+        tracker = MessageRateTracker()
+        tracker.update(1000, 100.0)
+        assert tracker.update(None, 102.0) is None
+
+    def test_missing_now_returns_none(self) -> None:
+        tracker = MessageRateTracker()
+        tracker.update(1000, 100.0)
+        assert tracker.update(1600, None) is None
+
+    def test_non_advancing_clock_returns_none(self) -> None:
+        tracker = MessageRateTracker()
+        tracker.update(1000, 100.0)
+        # Same timestamp (duplicate poll) — no division by zero, just None.
+        assert tracker.update(1200, 100.0) is None
+
+    def test_backwards_clock_returns_none(self) -> None:
+        tracker = MessageRateTracker()
+        tracker.update(1000, 100.0)
+        assert tracker.update(1200, 99.0) is None
+
+    def test_counter_reset_returns_none(self) -> None:
+        tracker = MessageRateTracker()
+        tracker.update(5000, 100.0)
+        # Receiver restarted: counter went backwards. Not a negative rate.
+        assert tracker.update(50, 102.0) is None
+
+    def test_recovers_after_reset(self) -> None:
+        tracker = MessageRateTracker()
+        tracker.update(5000, 100.0)
+        assert tracker.update(50, 102.0) is None  # reset detected, state updated
+        # Next normal sample resumes a real rate against the post-reset value.
+        assert tracker.update(150, 103.0) == 100.0
+
+
+# ---------------------------------------------------------------------------
+# parse_aircraft_json + rate_tracker integration
+# ---------------------------------------------------------------------------
+
+
+class TestParseWithRateTracker:
+    def test_no_tracker_yields_none(self) -> None:
+        payload = {"now": 100.0, "messages": 1000, "aircraft": []}
+        _obs, mps = parse_aircraft_json(payload, receiver_name=_RX, band=_BAND, observed_at=_now())
+        assert mps is None
+
+    def test_tracker_derives_rate_across_polls(self) -> None:
+        tracker = MessageRateTracker()
+        first = {"now": 100.0, "messages": 1000, "aircraft": []}
+        second = {"now": 101.0, "messages": 1240, "aircraft": []}
+
+        _o1, mps1 = parse_aircraft_json(
+            first, receiver_name=_RX, band=_BAND, observed_at=_now(), rate_tracker=tracker
+        )
+        _o2, mps2 = parse_aircraft_json(
+            second, receiver_name=_RX, band=_BAND, observed_at=_now(), rate_tracker=tracker
+        )
+        assert mps1 is None  # first poll, no delta
+        assert mps2 == 240.0  # 240 messages in 1 second
+
+    def test_tracker_handles_missing_top_level_fields(self) -> None:
+        # A document without messages/now (some variants) must not raise.
+        tracker = MessageRateTracker()
+        payload = {"aircraft": []}
+        _obs, mps = parse_aircraft_json(
+            payload, receiver_name=_RX, band=_BAND, observed_at=_now(), rate_tracker=tracker
+        )
+        assert mps is None

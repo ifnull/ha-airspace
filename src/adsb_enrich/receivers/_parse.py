@@ -17,6 +17,13 @@ What the parser does NOT do:
   garbage entry should not poison the whole poll. Logs at debug for
   visibility.
 
+Messages-per-second: dump1090's top-level ``messages`` is cumulative
+since the receiver booted, and ``now`` is the receiver's clock. A rate
+is therefore a delta across successive polls — inherently stateful, so
+it lives in a ``MessageRateTracker`` the receiver owns and hands to
+``parse_aircraft_json``. Without a tracker the parser returns ``None``
+(the stateless default).
+
 What it DOES raise: ``ValueError`` if the document does not look like
 an aircraft.json at all (no top-level ``aircraft`` array, wrong root
 type). ``HttpJsonReceiver``/``FileReceiver`` wrap that in ``FetchError``.
@@ -35,12 +42,50 @@ from adsb_enrich.models import AircraftObservation, parse_callsign, parse_hex
 log = structlog.get_logger(__name__)
 
 
+class MessageRateTracker:
+    """Derives messages-per-second from successive cumulative snapshots.
+
+    dump1090/readsb publish a cumulative ``messages`` counter and their
+    own ``now`` clock. Rate is ``delta(messages) / delta(now)`` across
+    polls. Using the *receiver's* clock for both endpoints makes the
+    result immune to skew between our clock and theirs — the skew cancels
+    in the delta as long as the receiver's clock is monotonic.
+
+    One instance per receiver; ``update`` is called once per poll. Returns
+    ``None`` (not 0.0) whenever a meaningful rate cannot be computed: the
+    first sample, a missing field, a non-advancing clock, or a counter
+    reset (receiver restart). ``None`` means "unknown"; the publisher
+    surfaces the last known stat rather than a misleading zero.
+    """
+
+    def __init__(self) -> None:
+        self._last_messages: int | None = None
+        self._last_now: float | None = None
+
+    def update(self, messages: int | None, now: float | None) -> float | None:
+        if messages is None or now is None:
+            return None
+        prev_messages, prev_now = self._last_messages, self._last_now
+        self._last_messages = messages
+        self._last_now = now
+        if prev_messages is None or prev_now is None:
+            return None  # first sample — no delta yet
+        dt = now - prev_now
+        if dt <= 0:
+            return None  # clock did not advance (duplicate poll / time went back)
+        delta = messages - prev_messages
+        if delta < 0:
+            return None  # counter reset — receiver restarted
+        return delta / dt
+
+
 def parse_aircraft_json(
     payload: Any,
     *,
     receiver_name: str,
     band: str,
     observed_at: datetime,
+    rate_tracker: MessageRateTracker | None = None,
 ) -> tuple[list[AircraftObservation], float | None]:
     """Parse a dump1090-style aircraft.json document.
 
@@ -52,10 +97,15 @@ def parse_aircraft_json(
         observed_at: Wall-clock timestamp the caller supplies (the
             receiver's ``now`` is its clock, which may skew; we trust
             our own per CLAUDE.md).
+        rate_tracker: Optional per-receiver ``MessageRateTracker``. When
+            supplied, ``messages_per_sec`` is derived from the document's
+            cumulative ``messages`` and ``now`` against the previous poll.
+            Omit it (the default) to get ``None`` — the stateless path.
 
     Returns:
         ``(observations, messages_per_sec)``. ``messages_per_sec`` is
-        currently always ``None`` (Phase 1 polish item).
+        ``None`` unless a ``rate_tracker`` is supplied and a delta is
+        available (i.e. not the first poll).
 
     Raises:
         ValueError: payload is not a mapping, or the ``aircraft`` key
@@ -99,8 +149,12 @@ def parse_aircraft_json(
             kept=len(observations),
         )
 
-    # messages_per_sec deferred — see module docstring.
-    return observations, None
+    messages_per_sec: float | None = None
+    if rate_tracker is not None:
+        messages_per_sec = rate_tracker.update(
+            _get_int(payload, "messages"), _get_float(payload, "now")
+        )
+    return observations, messages_per_sec
 
 
 def _parse_one(

@@ -31,7 +31,7 @@ import structlog
 from adsb_enrich.config import AuthConfig
 from adsb_enrich.metrics import MetricsRegistry
 from adsb_enrich.models import AircraftObservation, ReceiverLocation
-from adsb_enrich.receivers._parse import parse_aircraft_json
+from adsb_enrich.receivers._parse import MessageRateTracker, parse_aircraft_json
 from adsb_enrich.receivers.base import FetchError, ReceiverSource
 
 log = structlog.get_logger(__name__)
@@ -70,6 +70,7 @@ class HttpJsonReceiver(ReceiverSource):
     ) -> None:
         super().__init__(name, band, metrics=metrics)
         self._url = url
+        self._rate_tracker = MessageRateTracker()
 
         client_auth, client_headers = _build_auth(auth)
         self._client = httpx.AsyncClient(
@@ -112,6 +113,7 @@ class HttpJsonReceiver(ReceiverSource):
                 receiver_name=self.name,
                 band=self.band,
                 observed_at=observed_at,
+                rate_tracker=self._rate_tracker,
             )
         except ValueError as exc:
             raise FetchError(f"schema drift from {self._url}: {exc}") from exc
