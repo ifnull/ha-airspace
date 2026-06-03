@@ -35,6 +35,53 @@ This service centralizes that work and exposes a clean MQTT interface.
 
 ---
 
+## Positioning & differentiation
+
+The "ADS-B in Home Assistant" space already has projects. This one is
+deliberately *not* competing on the same axis as most of them. The landscape,
+as of mid-2026, splits cleanly:
+
+**Cloud-API projects** (the popular ones) poll a hosted API, no local hardware:
+- `home-assistant-flightradar24` (~459★) — the market leader; FlightRadar24 API.
+- `whats-that-plane` (~91★) — FR24 API, "cone of vision" filtering.
+- `flightradar-flight-card` (~36★) — a Lovelace card on top of the FR24 integration.
+- `SkyRadar Fusion` (~7★) — Airplanes.Live + FR24 hybrid.
+
+**Local-receiver projects** (our camp) consume a receiver on your LAN:
+- `adsb-aircraft-tracker` (~10★, MIT) — the closest comparable: local dump1090/
+  tar1090, tar1090-db military list, emergency squawks, nearest-aircraft
+  sensors, mobile notifications. A polling custom-integration.
+
+We are not first, and "track nearby aircraft + flag military from a local
+receiver" is not by itself differentiated — `adsb-aircraft-tracker` ships that
+today. The differentiation is four specific, defensible wedges:
+
+1. **Drones / Remote ID — nobody else in the HA ecosystem has this.** None of
+   the projects above touch unmanned traffic. We ingest ASTM F3411 Remote ID
+   (via the companion `dump3411` detector) as a first-class source alongside
+   ADS-B. "What's flying near me, *including drones and their operators*" is a
+   category, not a feature, and it is timely as Remote ID mandates expand. This
+   is the headline.
+2. **Architecture: a standalone MQTT service with a multi-source merger** —
+   not a single-source polling integration. We merge 1090 + 978 + Remote ID,
+   multiple receivers, multiple sites, dedup by position quality (NIC → NAC_p →
+   …). No competitor merges sources. This is the technical moat for the
+   serious multi-receiver / homelab audience.
+3. **Reference-DB depth.** Two databases (Mictronics + ADSBexchange) merged
+   with conflict-resolution priority, full dbFlags decode (military,
+   interesting, PIA, LADD) — not just a single military list.
+4. **Built to last.** Strict typing, a large test suite, broker integration
+   tests, phased delivery. Most competitors are explicitly hobby projects;
+   for something meant to become household infrastructure, durability is itself
+   a differentiator.
+
+**The audience is people who already run a receiver** (and increasingly, a
+drone detector) — not the casual FR24 user. We will not out-polish the
+zero-hardware cloud apps on first-run experience, and we should not try. We
+win on local-first, multi-source, drones, and rigor.
+
+---
+
 ## Architecture overview
 
 ```

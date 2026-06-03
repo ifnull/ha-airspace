@@ -1,19 +1,40 @@
-# adsb-enrich
+# ha-airspace
 
-A multi-source ADS-B enrichment service. It polls `aircraft.json` from one or
-more receivers (dump1090-fa, readsb, dump978-fa), tracks aircraft state,
-computes distance and bearing from your locations, and publishes to MQTT with
-Home Assistant discovery — so you get a working "nearest aircraft" sensor with
-zero template writing.
+**Local-first airspace awareness for Home Assistant — manned aircraft *and*
+drones.** `ha-airspace` polls `aircraft.json` from one or more local ADS-B
+receivers (**dump1090**, **dump1090-fa**, **readsb**, **dump978** / UAT) and
+Remote ID drone detections from **[dump3411](https://github.com/ifnull/dump3411)**
+(ASTM F3411 over BLE + Wi-Fi), enriches them against reference databases, tags
+military / interesting / emergency / privacy aircraft, and publishes everything
+to **MQTT** with Home Assistant **MQTT discovery** — a working "nearest aircraft"
+sensor (and drone alerts) with zero template writing.
 
-It is **not** a feeder, not a replacement for dump1090, and not a website. It
-consumes a receiver's HTTP `aircraft.json` and turns it into clean MQTT topics +
-HA entities. See [`DESIGN.md`](DESIGN.md) for architecture and the full roadmap.
+Unlike FlightRadar24-based integrations, `ha-airspace` is **local-first**: it
+reads your own receiver over HTTP, no cloud API, no account. And unlike every
+other ADS-B Home Assistant project, it ingests **drone Remote ID** as a
+first-class source. See [`DESIGN.md`](DESIGN.md) for architecture, the full
+roadmap, and how it's positioned against the alternatives.
 
-> **Status:** Phase 1 (single receiver, no reference DBs yet). Pip-installable
-> and runnable today; verified end to end against live receivers and a real
-> MQTT broker. Reference-database enrichment, flag/alert rules, and the
-> multi-receiver merger land in later phases.
+> **Why another one?** The popular HA flight integrations are cloud-API
+> (FlightRadar24); the local-receiver ones don't merge multiple sources and
+> none of them detect drones. `ha-airspace` is a standalone MQTT service with a
+> multi-receiver merger (1090 + 978 + Remote ID), two-database enrichment, and
+> a test suite — built to become infrastructure, not a weekend script.
+
+> **Status:** Phase 2a in progress. Single receiver, MQTT publish, HA discovery,
+> reference-DB enrichment (Mictronics + ADSBexchange), and declarative flag
+> rules all work today — verified end to end against live receivers and a real
+> MQTT broker. The multi-receiver merger and stateful alert rules land in
+> later phases.
+
+> **Note:** the project was renamed from `adsb-enrich`; the Python package /
+> console script still use the old name until the rename lands. Commands below
+> reflect the current package name.
+
+**Keywords:** Home Assistant, ADS-B, dump1090, dump978, readsb, tar1090,
+PiAware, FlightAware, Remote ID, ASTM F3411, drone detection, dump3411, MQTT,
+MQTT discovery, aircraft tracker, military aircraft, ADSBexchange, Mictronics,
+1090 MHz, 978 MHz UAT, local-first, self-hosted.
 
 ---
 
