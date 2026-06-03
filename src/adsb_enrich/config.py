@@ -263,6 +263,36 @@ class EnrichmentConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Reference databases (Phase 2a, slice 2)
+# ---------------------------------------------------------------------------
+
+
+class DatabaseSourceConfig(BaseModel):
+    """One reference-database source. ``name`` selects the parser
+    (``mictronics`` | ``adsbexchange``); an unrecognized name is skipped at
+    load with a warning rather than failing validation, so the schema does
+    not need updating to experiment with a mirror."""
+
+    model_config = _STRICT
+
+    name: str = Field(..., min_length=1)
+    url: str = Field(..., min_length=1)
+    enabled: bool = True
+
+
+class DatabasesConfig(BaseModel):
+    """Reference-database download + refresh settings. Absent section =
+    no DB enrichment (``db_metadata`` stays empty; DB-backed flags never
+    match) — the slice-1 behavior."""
+
+    model_config = _STRICT
+
+    cache_dir: str = "/data/db"
+    refresh_interval_h: float = Field(default=168.0, gt=0)
+    sources: list[DatabaseSourceConfig] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # Top-level Config
 # ---------------------------------------------------------------------------
 
@@ -283,6 +313,7 @@ class Config(BaseModel):
     prometheus: PrometheusConfig = Field(default_factory=PrometheusConfig)
     receivers: list[ReceiverConfig] = Field(..., min_length=1)
     enrichment: EnrichmentConfig = Field(default_factory=EnrichmentConfig)
+    databases: DatabasesConfig = Field(default_factory=DatabasesConfig)
 
     @model_validator(mode="after")
     def _watchpoint_names_unique(self) -> Self:
@@ -359,6 +390,8 @@ __all__ = [
     "AuthConfig",
     "Config",
     "ConfigError",
+    "DatabaseSourceConfig",
+    "DatabasesConfig",
     "EnrichmentConfig",
     "FlagConfig",
     "MqttConfig",

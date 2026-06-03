@@ -33,6 +33,7 @@ import structlog
 
 from adsb_enrich import __version__
 from adsb_enrich.config import Config
+from adsb_enrich.databases import DatabaseLoader, DatabaseStore
 from adsb_enrich.enrichment import Enricher
 from adsb_enrich.metrics import MetricsRegistry
 from adsb_enrich.mqtt.client import MqttClient
@@ -69,6 +70,7 @@ class App:
         mqtt_client: MqttClient,
         publisher: Publisher,
         tracker: AircraftTracker,
+        db_loader: DatabaseLoader | None = None,
         metrics: MetricsRegistry | None = None,
     ) -> None:
         self._config = config
@@ -76,6 +78,7 @@ class App:
         self._client = mqtt_client
         self._publisher = publisher
         self._tracker = tracker
+        self._db_loader = db_loader
         self._metrics = metrics
 
         # Receiver name -> cached self-reported location (fetched once at
@@ -119,6 +122,8 @@ class App:
         try:
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(self._client.run(), name="mqtt-client")
+                if self._db_loader is not None:
+                    tg.create_task(self._db_loader.run(), name="db-loader")
                 for receiver in self._receivers:
                     tg.create_task(self._poll_loop(receiver), name=f"poll-{receiver.name}")
                 tg.create_task(self._stop_watcher(), name="stop-watcher")
@@ -197,6 +202,8 @@ class App:
         Once every task returns, the TaskGroup completes."""
         await self._stop.wait()
         log.info("service_stopping")
+        if self._db_loader is not None:
+            await self._db_loader.stop()
         await self._client.stop()
 
     async def _close_receivers(self) -> None:
@@ -249,10 +256,19 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
 
     client = MqttClient(config.mqtt, metrics=metrics)
     publisher = Publisher(client, config, metrics=metrics)
+
+    # Reference DBs: only when sources are configured. The store is shared
+    # between the loader (writes on refresh) and the enricher (reads per poll).
+    db_loader: DatabaseLoader | None = None
+    db_store: DatabaseStore | None = None
+    if any(s.enabled for s in config.databases.sources):
+        db_store = DatabaseStore()
+        db_loader = DatabaseLoader(config.databases, db_store)
+
     tracker = AircraftTracker(
         publisher,
         config.watchpoints_runtime(),
-        enricher=Enricher(config.enrichment),
+        enricher=Enricher(config.enrichment, db_store=db_store),
         metrics=metrics,
     )
     return App(
@@ -261,6 +277,7 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
         mqtt_client=client,
         publisher=publisher,
         tracker=tracker,
+        db_loader=db_loader,
         metrics=metrics,
     )
 

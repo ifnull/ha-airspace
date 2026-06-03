@@ -23,6 +23,7 @@ from adsb_enrich.flags import evaluate_flags
 
 if TYPE_CHECKING:
     from adsb_enrich.config import EnrichmentConfig
+    from adsb_enrich.databases import DatabaseStore
     from adsb_enrich.models import AircraftState
 
 
@@ -31,20 +32,30 @@ class Enricher:
 
     Construction args:
       config: The validated ``EnrichmentConfig`` (flags now; alerts later).
+      db_store: Optional reference-DB store. When supplied, each state's
+        ``db_metadata`` is populated from the merged Mictronics + ADSBex
+        lookup *before* flags evaluate, so DB-backed flags (``sources:``)
+        resolve. Absent = ``db_metadata`` stays empty (slice-1 behavior).
 
-    # TODO(phase-2a-slice-2): take the DB store; run db-join before flags so
-    # DB-backed flags resolve.
     # TODO(phase-2a-slice-3): run alert evaluation after flags and return the
     # ENTER/EXIT events for the tracker to publish.
     """
 
-    def __init__(self, config: EnrichmentConfig) -> None:
+    def __init__(self, config: EnrichmentConfig, *, db_store: DatabaseStore | None = None) -> None:
         self._config = config
+        self._db_store = db_store
 
     def enrich(self, state: AircraftState) -> None:
-        """Enrich one state in place. Idempotent per poll: ``flags`` is fully
-        recomputed (assigned, not unioned) so a flag that stops matching —
-        squawk cleared, aircraft moved — is correctly removed."""
+        """Enrich one state in place. Order matches DESIGN §4: DB join, then
+        flags. Idempotent per poll: both ``db_metadata`` and ``flags`` are
+        fully reassigned (not merged into the prior pass) so stale values
+        from an earlier observation never linger."""
+        if self._db_store is not None:
+            # Snapshot the current dict once (DESIGN §2): a mid-pass refresh
+            # swap rebinds store.current, but our local reference is stable.
+            db = self._db_store.current
+            metadata = db.get(state.hex)
+            state.db_metadata = dict(metadata) if metadata else {}
         state.flags = evaluate_flags(state, self._config.flags)
 
 
