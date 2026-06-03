@@ -14,9 +14,9 @@ from typing import Any
 import pytest
 from prometheus_client import CollectorRegistry
 
-from adsb_enrich.metrics import MetricsRegistry
-from adsb_enrich.models import AircraftObservation, ReceiverLocation
-from adsb_enrich.receivers.base import FetchError, ReceiverSource
+from ha_airspace.metrics import MetricsRegistry
+from ha_airspace.models import AircraftObservation, ReceiverLocation
+from ha_airspace.receivers.base import FetchError, ReceiverSource
 
 
 class StubReceiver(ReceiverSource):

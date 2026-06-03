@@ -1,4 +1,4 @@
-"""Domain types for adsb-enrich.
+"""Domain types for ha-airspace.
 
 Two value categories live here:
 

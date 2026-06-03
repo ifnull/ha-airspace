@@ -6,8 +6,8 @@ with real coverage as Phase 1 modules ship.
 
 from __future__ import annotations
 
-import adsb_enrich
+import ha_airspace
 
 
 def test_package_imports() -> None:
-    assert adsb_enrich.__version__ == "0.0.0.0"
+    assert ha_airspace.__version__ == "0.0.0.0"

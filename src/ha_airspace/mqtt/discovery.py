@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from adsb_enrich.config import Config, ReceiverConfig
+from ha_airspace.config import Config, ReceiverConfig
 
 DISCOVERY_NODE_ID: str = "adsb"
 """Namespace under the discovery prefix; lets multiple ADS-B services
@@ -48,7 +48,7 @@ def build_discovery_payloads(
     Args:
         config: Validated service config.
         sw_version: Optional software version string for the device
-            block. Caller normally passes ``adsb_enrich.__version__``.
+            block. Caller normally passes ``ha_airspace.__version__``.
 
     Returns:
         List of ``(discovery_topic, payload_dict)`` tuples. The
@@ -213,10 +213,10 @@ def _service_device_block(sw_version: str | None) -> dict[str, Any]:
     """Device block shared by every service-wide entity. HA groups
     entities with the same identifier under one device card."""
     block: dict[str, Any] = {
-        "identifiers": ["adsb_enrich"],
+        "identifiers": ["ha_airspace"],
         "name": "ADS-B Enrich",
         "manufacturer": "ifnull/ha-squitter",
-        "model": "adsb-enrich",
+        "model": "ha-airspace",
     }
     if sw_version is not None:
         block["sw_version"] = sw_version

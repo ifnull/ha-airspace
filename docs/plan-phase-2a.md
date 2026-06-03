@@ -125,7 +125,7 @@ the `enrichment.{flags,alerts}` layout means **updating DESIGN.md** to match
 ## 3. Module layout
 
 ```
-src/adsb_enrich/
+src/ha_airspace/
   config.py            # + DatabasesConfig, EnrichmentConfig, FlagConfig(union),
                        #   AlertsConfig, AlertRule, MatchBlock  (slices 1–3)
   enrichment.py        # NEW — Enricher: orchestrates db-join -> flags -> alerts

@@ -1,4 +1,4 @@
-# adsb-enrich — Design Document
+# ha-airspace — Design Document
 
 A multi-source ADS-B enrichment service that consumes `aircraft.json` from one or more receivers, joins against reference databases, applies tagging/alert rules, and publishes to MQTT for Home Assistant (or any MQTT consumer).
 
@@ -470,7 +470,7 @@ observes the retained `offline`. Distinguishing "user stopped service" from
 ## Configuration schema
 
 ```yaml
-# adsb-enrich config.yaml
+# ha-airspace config.yaml
 
 service:
   poll_interval_s: 1.0          # default; receivers can override
@@ -629,17 +629,17 @@ Distribution mechanism: **add-on repository**. Users add a Git URL to their HA a
 Repo layout:
 
 ```
-adsb-enrich-addon/
+ha-airspace-addon/
 ├── repository.yaml            # add-on store metadata
-└── adsb-enrich/
+└── ha-airspace/
     ├── config.yaml            # add-on schema, options, ports
-    ├── Dockerfile             # builds on adsb-enrich Docker image
+    ├── Dockerfile             # builds on ha-airspace Docker image
     ├── run.sh                 # supervisor entrypoint
     ├── README.md
     └── icon.png
 ```
 
-The add-on Dockerfile is thin — it pulls the published `adsb-enrich` Docker image and adds add-on-specific shims (s6-overlay if needed, config translation from add-on options to YAML config).
+The add-on Dockerfile is thin — it pulls the published `ha-airspace` Docker image and adds add-on-specific shims (s6-overlay if needed, config translation from add-on options to YAML config).
 
 ### Docker image
 
@@ -650,13 +650,13 @@ Published to Docker Hub and GHCR. Multi-arch (amd64, arm64, armv7).
 ```bash
 docker run -d \
   -v ./config.yaml:/config/config.yaml \
-  -v adsb-enrich-data:/data \
-  ghcr.io/<user>/adsb-enrich:latest
+  -v ha-airspace-data:/data \
+  ghcr.io/<user>/ha-airspace:latest
 ```
 
 ### Python package
 
-For HA Core users on bare-metal Python, or for development. `pip install adsb-enrich` plus a systemd unit.
+For HA Core users on bare-metal Python, or for development. `pip install ha-airspace` plus a systemd unit.
 
 ### Why not HACS
 
@@ -673,7 +673,7 @@ A good gut check — these four users should all work without code changes:
 1. **Stock PiAware appliance, single 1090 receiver, HA on a NUC.** Add-on, point at appliance IP, done.
 2. **Custom build, 1090 + 978 on same Pi, HA on same network.** Add-on, two receiver entries, done.
 3. **Five receivers across two houses on Tailscale, HA on one of them.** Add-on, five receiver entries with Tailscale IPs.
-4. **HA Core on Debian, dump1090 in Docker on the same box, no add-on support.** `pip install adsb-enrich`, run as systemd service, point at `localhost:8080`.
+4. **HA Core on Debian, dump1090 in Docker on the same box, no add-on support.** `pip install ha-airspace`, run as systemd service, point at `localhost:8080`.
 
 If all four work without code changes, the universality goal is met.
 

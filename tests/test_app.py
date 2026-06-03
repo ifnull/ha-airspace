@@ -1,4 +1,4 @@
-"""Tests for adsb_enrich.app.App orchestration.
+"""Tests for ha_airspace.app.App orchestration.
 
 Drives the App end to end with a real FileReceiver (replays a fixture) and
 a FakeMqttClient that records publishes and fires on_connect — no network,
@@ -23,13 +23,13 @@ from typing import Any
 
 import pytest
 
-from adsb_enrich.app import App, build_app
-from adsb_enrich.config import Config, MqttConfig
-from adsb_enrich.models import ReceiverLocation
-from adsb_enrich.mqtt.client import MqttClient
-from adsb_enrich.mqtt.publisher import Publisher
-from adsb_enrich.receivers import FileReceiver, ReceiverSource
-from adsb_enrich.tracker import AircraftTracker
+from ha_airspace.app import App, build_app
+from ha_airspace.config import Config, MqttConfig
+from ha_airspace.models import ReceiverLocation
+from ha_airspace.mqtt.client import MqttClient
+from ha_airspace.mqtt.publisher import Publisher
+from ha_airspace.receivers import FileReceiver, ReceiverSource
+from ha_airspace.tracker import AircraftTracker
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 

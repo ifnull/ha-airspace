@@ -7,53 +7,6 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "adsb-enrich"
-version = "0.0.0.0"
-source = { editable = "." }
-dependencies = [
-    { name = "aiomqtt" },
-    { name = "httpx" },
-    { name = "prometheus-client" },
-    { name = "pydantic" },
-    { name = "pyyaml" },
-    { name = "structlog" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "freezegun" },
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-    { name = "testcontainers" },
-    { name = "types-pyyaml" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiomqtt", specifier = ">=2.3" },
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "prometheus-client", specifier = ">=0.20" },
-    { name = "pydantic", specifier = ">=2.8" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "structlog", specifier = ">=24.4" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "freezegun", specifier = ">=1.5" },
-    { name = "mypy", specifier = ">=1.11" },
-    { name = "pytest", specifier = ">=8.3" },
-    { name = "pytest-asyncio", specifier = ">=0.24" },
-    { name = "pytest-cov", specifier = ">=5.0" },
-    { name = "ruff", specifier = ">=0.6" },
-    { name = "testcontainers", specifier = ">=4.8" },
-    { name = "types-pyyaml", specifier = ">=6.0" },
-]
-
-[[package]]
 name = "aiomqtt"
 version = "2.5.1"
 source = { registry = "https://pypi.org/simple" }
@@ -333,6 +286,53 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/01/ee/02a2c011bdab74c6fb3c75474d40b3052059d95df7e73351460c8588d963/h11-0.16.0.tar.gz", hash = "sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1", size = 101250, upload-time = "2025-04-24T03:35:25.427Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl", hash = "sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86", size = 37515, upload-time = "2025-04-24T03:35:24.344Z" },
+]
+
+[[package]]
+name = "ha-airspace"
+version = "0.0.0.0"
+source = { editable = "." }
+dependencies = [
+    { name = "aiomqtt" },
+    { name = "httpx" },
+    { name = "prometheus-client" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "structlog" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "freezegun" },
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+    { name = "testcontainers" },
+    { name = "types-pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiomqtt", specifier = ">=2.3" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "prometheus-client", specifier = ">=0.20" },
+    { name = "pydantic", specifier = ">=2.8" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "structlog", specifier = ">=24.4" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "freezegun", specifier = ">=1.5" },
+    { name = "mypy", specifier = ">=1.11" },
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "pytest-asyncio", specifier = ">=0.24" },
+    { name = "pytest-cov", specifier = ">=5.0" },
+    { name = "ruff", specifier = ">=0.6" },
+    { name = "testcontainers", specifier = ">=4.8" },
+    { name = "types-pyyaml", specifier = ">=6.0" },
 ]
 
 [[package]]

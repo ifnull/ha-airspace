@@ -19,12 +19,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from adsb_enrich.flags import evaluate_flags
+from ha_airspace.flags import evaluate_flags
 
 if TYPE_CHECKING:
-    from adsb_enrich.config import EnrichmentConfig
-    from adsb_enrich.databases import DatabaseStore
-    from adsb_enrich.models import AircraftState
+    from ha_airspace.config import EnrichmentConfig
+    from ha_airspace.databases import DatabaseStore
+    from ha_airspace.models import AircraftState
 
 
 class Enricher:

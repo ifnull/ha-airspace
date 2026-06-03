@@ -37,7 +37,7 @@ from typing import Any
 
 import structlog
 
-from adsb_enrich.models import AircraftObservation, parse_callsign, parse_hex
+from ha_airspace.models import AircraftObservation, parse_callsign, parse_hex
 
 log = structlog.get_logger(__name__)
 

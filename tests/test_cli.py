@@ -1,4 +1,4 @@
-"""Tests for adsb_enrich.cli + adsb_enrich.logging.
+"""Tests for ha_airspace.cli + ha_airspace.logging.
 
 main() is exercised without touching the network by monkeypatching
 build_app to return a fake app whose run() returns immediately. Config
@@ -16,9 +16,9 @@ from typing import Any
 import pytest
 import structlog
 
-import adsb_enrich.__main__ as main_module
-from adsb_enrich import cli
-from adsb_enrich.logging import configure_logging, renderer_for
+import ha_airspace.__main__ as main_module
+from ha_airspace import cli
+from ha_airspace.logging import configure_logging, renderer_for
 
 _VALID_CONFIG = """\
 service:
@@ -164,7 +164,7 @@ class TestPrometheusGate:
             started["port"] = port
             started["addr"] = addr
 
-        monkeypatch.setattr("adsb_enrich.metrics.MetricsRegistry.start_server", fake_start)
+        monkeypatch.setattr("ha_airspace.metrics.MetricsRegistry.start_server", fake_start)
         monkeypatch.setattr(cli, "build_app", lambda config, *, metrics=None: FakeApp())
         cli.main(["--config", str(cfg)])
         assert started == {"port": 9123, "addr": "127.0.0.1"}
@@ -178,7 +178,7 @@ class TestPrometheusGate:
             nonlocal called
             called = True
 
-        monkeypatch.setattr("adsb_enrich.metrics.MetricsRegistry.start_server", fake_start)
+        monkeypatch.setattr("ha_airspace.metrics.MetricsRegistry.start_server", fake_start)
         monkeypatch.setattr(cli, "build_app", lambda config, *, metrics=None: FakeApp())
         cli.main(["--config", str(valid_config)])
         assert called is False
@@ -224,5 +224,5 @@ class TestLogging:
 
 
 def test_main_module_exposes_entry() -> None:
-    # `python -m adsb_enrich` imports this; ensure the entry point is wired.
+    # `python -m ha_airspace` imports this; ensure the entry point is wired.
     assert main_module.main is cli.main

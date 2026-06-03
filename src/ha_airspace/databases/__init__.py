@@ -14,9 +14,9 @@ Public surface:
 
 from __future__ import annotations
 
-from adsb_enrich.databases.adsbexchange import parse_adsbexchange
-from adsb_enrich.databases.loader import DatabaseLoader, DatabaseStore
-from adsb_enrich.databases.mictronics import parse_mictronics
+from ha_airspace.databases.adsbexchange import parse_adsbexchange
+from ha_airspace.databases.loader import DatabaseLoader, DatabaseStore
+from ha_airspace.databases.mictronics import parse_mictronics
 
 __all__ = [
     "DatabaseLoader",

@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from adsb_enrich.models import ReceiverLocation
-from adsb_enrich.receivers.file import FileReceiver
+from ha_airspace.models import ReceiverLocation
+from ha_airspace.receivers.file import FileReceiver
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

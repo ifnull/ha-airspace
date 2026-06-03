@@ -24,11 +24,11 @@ from collections.abc import Sequence
 
 import structlog
 
-from adsb_enrich import __version__
-from adsb_enrich.app import build_app
-from adsb_enrich.config import Config, ConfigError, load_config
-from adsb_enrich.logging import configure_logging, renderer_for
-from adsb_enrich.metrics import MetricsRegistry
+from ha_airspace import __version__
+from ha_airspace.app import build_app
+from ha_airspace.config import Config, ConfigError, load_config
+from ha_airspace.logging import configure_logging, renderer_for
+from ha_airspace.metrics import MetricsRegistry
 
 log = structlog.get_logger(__name__)
 
@@ -39,7 +39,7 @@ EXIT_CONFIG = 2
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="adsb-enrich",
+        prog="ha-airspace",
         description="Multi-source ADS-B enrichment: aircraft.json -> MQTT -> Home Assistant.",
     )
     parser.add_argument(

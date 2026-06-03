@@ -29,8 +29,8 @@ from typing import Any
 
 import structlog
 
-from adsb_enrich.metrics import MetricsRegistry
-from adsb_enrich.models import AircraftObservation, ReceiverLocation
+from ha_airspace.metrics import MetricsRegistry
+from ha_airspace.models import AircraftObservation, ReceiverLocation
 
 log = structlog.get_logger(__name__)
 

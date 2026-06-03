@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Live flag watcher — peak-traffic diagnostics, no MQTT / HA needed.
 
-Uses the real adsb-enrich library (the same parsers, HttpJsonReceiver, and
+Uses the real ha-airspace library (the same parsers, HttpJsonReceiver, and
 Enricher that ship) to poll a live receiver, enrich against the full
 Mictronics + ADSBexchange databases, and print flagged aircraft to the
 terminal as they appear. Built for sitting and watching during busy traffic.
@@ -36,11 +36,11 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
-from adsb_enrich.config import EnrichmentConfig, FlagConfig
-from adsb_enrich.databases import DatabaseStore, parse_adsbexchange, parse_mictronics
-from adsb_enrich.enrichment import Enricher
-from adsb_enrich.models import AircraftState
-from adsb_enrich.receivers import HttpJsonReceiver
+from ha_airspace.config import EnrichmentConfig, FlagConfig
+from ha_airspace.databases import DatabaseStore, parse_adsbexchange, parse_mictronics
+from ha_airspace.enrichment import Enricher
+from ha_airspace.models import AircraftState
+from ha_airspace.receivers import HttpJsonReceiver
 
 DEFAULT_URL = "http://192.168.1.8:8080/data/aircraft.json"
 _MICTRONICS_URL = "https://github.com/wiedehopf/tar1090-db/raw/csv/aircraft.csv.gz"
@@ -75,7 +75,7 @@ def _cache_path(cache_dir: Path, name: str) -> Path:
 
 
 # ADSBexchange 403s the default Python user-agent; send a browser-like one.
-_UA = "Mozilla/5.0 (X11; Linux x86_64) adsb-enrich/watch"
+_UA = "Mozilla/5.0 (X11; Linux x86_64) ha-airspace/watch"
 
 
 def _download(url: str, dest: Path) -> bool:
@@ -194,7 +194,7 @@ async def watch(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="Live flag watcher for adsb-enrich.")
+    p = argparse.ArgumentParser(description="Live flag watcher for ha-airspace.")
     p.add_argument("--url", default=DEFAULT_URL, help="receiver aircraft.json URL")
     p.add_argument("--interval", type=float, default=2.0, help="poll seconds")
     p.add_argument(

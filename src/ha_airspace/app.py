@@ -31,18 +31,18 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from adsb_enrich import __version__
-from adsb_enrich.config import Config
-from adsb_enrich.databases import DatabaseLoader, DatabaseStore
-from adsb_enrich.enrichment import Enricher
-from adsb_enrich.metrics import MetricsRegistry
-from adsb_enrich.mqtt.client import MqttClient
-from adsb_enrich.mqtt.publisher import Publisher
-from adsb_enrich.receivers import HttpJsonReceiver, ReceiverSource
-from adsb_enrich.tracker import AircraftTracker
+from ha_airspace import __version__
+from ha_airspace.config import Config
+from ha_airspace.databases import DatabaseLoader, DatabaseStore
+from ha_airspace.enrichment import Enricher
+from ha_airspace.metrics import MetricsRegistry
+from ha_airspace.mqtt.client import MqttClient
+from ha_airspace.mqtt.publisher import Publisher
+from ha_airspace.receivers import HttpJsonReceiver, ReceiverSource
+from ha_airspace.tracker import AircraftTracker
 
 if TYPE_CHECKING:
-    from adsb_enrich.models import ReceiverLocation
+    from ha_airspace.models import ReceiverLocation
 
 log = structlog.get_logger(__name__)
 

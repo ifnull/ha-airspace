@@ -1,4 +1,4 @@
-"""Tests for adsb_enrich.tracker.AircraftTracker.
+"""Tests for ha_airspace.tracker.AircraftTracker.
 
 Drives the tracker with a FakePublisher (records every call) and an
 injected clock (a mutable datetime holder), so lifecycle timing is
@@ -22,11 +22,11 @@ from typing import Any
 import pytest
 from prometheus_client import CollectorRegistry
 
-from adsb_enrich.config import EnrichmentConfig, FlagConfig
-from adsb_enrich.enrichment import Enricher
-from adsb_enrich.metrics import MetricsRegistry
-from adsb_enrich.models import AircraftObservation, AircraftState, Watchpoint
-from adsb_enrich.tracker import AircraftTracker
+from ha_airspace.config import EnrichmentConfig, FlagConfig
+from ha_airspace.enrichment import Enricher
+from ha_airspace.metrics import MetricsRegistry
+from ha_airspace.models import AircraftObservation, AircraftState, Watchpoint
+from ha_airspace.tracker import AircraftTracker
 
 # ---------------------------------------------------------------------------
 # Fakes

@@ -1,15 +1,15 @@
 # Remote ID feed contract (`remoteid.json`)
 
 **Status:** draft / Phase 3 target. Canonical source of truth for the JSON feed
-that a Remote ID detector serves over HTTP and that `adsb-enrich` consumes as a
-source. Both `adsb-enrich` and the producer (e.g. `drone-aware-zero`) build to
+that a Remote ID detector serves over HTTP and that `ha-airspace` consumes as a
+source. Both `ha-airspace` and the producer (e.g. `drone-aware-zero`) build to
 this document; neither imports the other.
 
 > This is **not** `aircraft.json` and is **not** intended for dump1090-family
 > tools. Drones are not manned aircraft — the schema is purpose-built for ASTM
 > F3411 Remote ID and carries data (operator location, UAS ID type, native AGL)
 > that has no place in the dump1090 schema. We deliberately reuse dump1090's
-> *envelope idioms* (`now`, `seen`, a polled array) because `adsb-enrich`
+> *envelope idioms* (`now`, `seen`, a polled array) because `ha-airspace`
 > already handles them — not the aircraft *schema*.
 
 ---
@@ -25,7 +25,7 @@ this document; neither imports the other.
   detections*, not an event log.
 - **Auth:** none assumed on a trusted LAN. If the producer is exposed, the
   consumer supports the same HTTP auth options as any other receiver
-  (`adsb-enrich` receiver config: bearer/basic). Out of scope for the producer
+  (`ha-airspace` receiver config: bearer/basic). Out of scope for the producer
   to mandate.
 
 The producer must be cheap to serve: serve a pre-built in-memory snapshot, do
@@ -99,7 +99,7 @@ consumer keeps the track (identity is known) and marks position unavailable.
 ## Semantics the consumer relies on
 
 - **Identity:** the track is keyed on `id` (a string), **not** an ICAO hex.
-  Inside `adsb-enrich` a Remote ID track is `band: "remoteid"`; the identity
+  Inside `ha-airspace` a Remote ID track is `band: "remoteid"`; the identity
   model is source-agnostic, so `id` is stored as the track key directly without
   pretending to be a 24-bit ICAO address. No reference-DB (Mictronics/
   adsbexchange) lookup is attempted for `remoteid` tracks.
@@ -108,7 +108,7 @@ consumer keeps the track (identity is known) and marks position unavailable.
   out any track whose `seen` exceeds its configured max age and purges the
   retained MQTT topic (empty-retained), exactly as it does for ADS-B.
 - **Units:** all distances/speeds/altitudes are pre-converted by the producer to
-  `adsb-enrich`'s canonical units (**ft, kt, ft/min**), even though RID
+  `ha-airspace`'s canonical units (**ft, kt, ft/min**), even though RID
   broadcasts SI (m, m/s). This keeps a single conversion path on the consumer
   side. The spec is unit-explicit precisely so the producer owns the conversion.
 - **Dedup across bands:** if the same physical airframe were ever heard on both
@@ -189,7 +189,7 @@ consumer keeps the track (identity is known) and marks position unavailable.
 - **Additive.** Serving this feed must not change existing detector behavior
   (e.g. journald logging). It's an opt-in mode (`--serve <addr:port>`).
 
-## Consumer requirements (`adsb-enrich`)
+## Consumer requirements (`ha-airspace`)
 
 - A dedicated `RemoteIdHttpReceiver` (or `HttpJsonReceiver` with a `remoteid`
   mapping profile) reusing the shared HTTP polling/backoff/`health()` plumbing.

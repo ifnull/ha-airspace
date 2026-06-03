@@ -1,4 +1,4 @@
-"""Tests for adsb_enrich.mqtt.client.MqttClient.
+"""Tests for ha_airspace.mqtt.client.MqttClient.
 
 aiomqtt is replaced by FakeAiomqttClient — implements the same
 ``async with`` + ``publish`` shape but in-memory. The connection-loop
@@ -27,9 +27,9 @@ import aiomqtt
 import pytest
 from prometheus_client import CollectorRegistry
 
-from adsb_enrich.config import MqttConfig
-from adsb_enrich.metrics import MetricsRegistry
-from adsb_enrich.mqtt.client import (
+from ha_airspace.config import MqttConfig
+from ha_airspace.metrics import MetricsRegistry
+from ha_airspace.mqtt.client import (
     MqttClient,
     _ExponentialBackoff,
 )

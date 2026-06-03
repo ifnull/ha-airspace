@@ -27,8 +27,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from adsb_enrich.config import FlagConfig
-    from adsb_enrich.models import AircraftState
+    from ha_airspace.config import FlagConfig
+    from ha_airspace.models import AircraftState
 
 
 def evaluate_flags(state: AircraftState, flags: dict[str, FlagConfig]) -> set[str]:

@@ -1,4 +1,4 @@
-"""Tests for adsb_enrich.metrics.
+"""Tests for ha_airspace.metrics.
 
 Each test gets its own MetricsRegistry with an explicit CollectorRegistry,
 so prometheus_client global state stays out of the suite. The HTTP server
@@ -12,7 +12,7 @@ from unittest.mock import patch
 import pytest
 from prometheus_client import CollectorRegistry, generate_latest
 
-from adsb_enrich.metrics import MetricsRegistry
+from ha_airspace.metrics import MetricsRegistry
 
 
 @pytest.fixture
@@ -141,18 +141,18 @@ class TestStartServer:
     ) -> None:
         # Defaults: localhost, 9090. Anyone exposing publicly does so
         # explicitly via config.
-        with patch("adsb_enrich.metrics.start_http_server") as mock_start:
+        with patch("ha_airspace.metrics.start_http_server") as mock_start:
             metrics.start_server()
             mock_start.assert_called_once_with(9090, addr="127.0.0.1", registry=metrics.registry)
 
     def test_passes_through_custom_port_and_addr(self, metrics: MetricsRegistry) -> None:
-        with patch("adsb_enrich.metrics.start_http_server") as mock_start:
+        with patch("ha_airspace.metrics.start_http_server") as mock_start:
             metrics.start_server(port=8000, addr="0.0.0.0")
             mock_start.assert_called_once_with(8000, addr="0.0.0.0", registry=metrics.registry)
 
     def test_idempotent_subsequent_calls_no_op(self, metrics: MetricsRegistry) -> None:
         # Safe to wire into restart paths without bookkeeping.
-        with patch("adsb_enrich.metrics.start_http_server") as mock_start:
+        with patch("ha_airspace.metrics.start_http_server") as mock_start:
             metrics.start_server()
             metrics.start_server()
             metrics.start_server(port=9999)  # different args, still skipped

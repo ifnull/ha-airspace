@@ -21,10 +21,10 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from adsb_enrich.metrics import MetricsRegistry
-from adsb_enrich.models import AircraftObservation, ReceiverLocation
-from adsb_enrich.receivers._parse import MessageRateTracker, parse_aircraft_json
-from adsb_enrich.receivers.base import FetchError, ReceiverSource
+from ha_airspace.metrics import MetricsRegistry
+from ha_airspace.models import AircraftObservation, ReceiverLocation
+from ha_airspace.receivers._parse import MessageRateTracker, parse_aircraft_json
+from ha_airspace.receivers.base import FetchError, ReceiverSource
 
 
 class FileReceiver(ReceiverSource):

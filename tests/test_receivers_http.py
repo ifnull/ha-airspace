@@ -17,8 +17,8 @@ from typing import Any
 import httpx
 import pytest
 
-from adsb_enrich.config import AuthConfig
-from adsb_enrich.receivers.http import (
+from ha_airspace.config import AuthConfig
+from ha_airspace.receivers.http import (
     HttpJsonReceiver,
     _build_auth,
     _derive_receiver_json_url,

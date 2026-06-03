@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from adsb_enrich.receivers._parse import MessageRateTracker, parse_aircraft_json
+from ha_airspace.receivers._parse import MessageRateTracker, parse_aircraft_json
 
 _RX = "rx-home"
 _BAND = "1090"

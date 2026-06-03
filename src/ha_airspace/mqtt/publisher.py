@@ -20,12 +20,12 @@ from collections.abc import Callable
 
 import structlog
 
-from adsb_enrich.config import Config
-from adsb_enrich.metrics import MetricsRegistry
-from adsb_enrich.models import AircraftState, ReceiverLocation
-from adsb_enrich.mqtt.client import MqttClient
-from adsb_enrich.mqtt.discovery import build_discovery_payloads
-from adsb_enrich.mqtt.payloads import (
+from ha_airspace.config import Config
+from ha_airspace.metrics import MetricsRegistry
+from ha_airspace.models import AircraftState, ReceiverLocation
+from ha_airspace.mqtt.client import MqttClient
+from ha_airspace.mqtt.discovery import build_discovery_payloads
+from ha_airspace.mqtt.payloads import (
     AircraftPayload,
     ReceiverLocationPayload,
     ReceiverStatsPayload,

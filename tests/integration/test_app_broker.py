@@ -19,12 +19,12 @@ from pathlib import Path
 
 import pytest
 
-from adsb_enrich.app import App
-from adsb_enrich.config import Config
-from adsb_enrich.mqtt.client import MqttClient
-from adsb_enrich.mqtt.publisher import Publisher
-from adsb_enrich.receivers import FileReceiver
-from adsb_enrich.tracker import AircraftTracker
+from ha_airspace.app import App
+from ha_airspace.config import Config
+from ha_airspace.mqtt.client import MqttClient
+from ha_airspace.mqtt.publisher import Publisher
+from ha_airspace.receivers import FileReceiver
+from ha_airspace.tracker import AircraftTracker
 from tests.integration.conftest import BrokerEndpoint, BrokerProbe
 
 pytestmark = pytest.mark.integration

@@ -21,7 +21,7 @@ from typing import Literal, Self
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from adsb_enrich.models import Watchpoint
+from ha_airspace.models import Watchpoint
 
 
 class ConfigError(Exception):

@@ -1,4 +1,4 @@
-"""Tests for adsb_enrich.mqtt.payloads.
+"""Tests for ha_airspace.mqtt.payloads.
 
 Cover:
   * Round-trip projection from internal types (AircraftState,
@@ -19,12 +19,12 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from adsb_enrich.models import (
+from ha_airspace.models import (
     AircraftObservation,
     AircraftState,
     ReceiverLocation,
 )
-from adsb_enrich.mqtt.payloads import (
+from ha_airspace.mqtt.payloads import (
     AircraftPayload,
     ReceiverLocationPayload,
     ReceiverStatsPayload,

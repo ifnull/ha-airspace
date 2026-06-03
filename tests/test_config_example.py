@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from adsb_enrich.config import load_config
+from ha_airspace.config import load_config
 
 _EXAMPLE = Path(__file__).parent.parent / "config.example.yaml"
 

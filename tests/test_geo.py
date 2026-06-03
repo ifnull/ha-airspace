@@ -1,4 +1,4 @@
-"""Tests for adsb_enrich.geo.
+"""Tests for ha_airspace.geo.
 
 Pinned reference: LAX -> JFK is ~2144 NM, initial bearing ~66deg. If
 either drifts the cause is either Earth-radius constant change or a
@@ -17,7 +17,7 @@ import math
 
 import pytest
 
-from adsb_enrich.geo import EARTH_RADIUS_NM, bearing, haversine
+from ha_airspace.geo import EARTH_RADIUS_NM, bearing, haversine
 
 # Canonical airport reference points (DD precision matches FAA database).
 LAX = (33.9425, -118.4081)

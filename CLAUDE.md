@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Project-specific guidance for Claude Code working on `adsb-enrich`.
+Project-specific guidance for Claude Code working on `ha-airspace`.
 
 > Always read `DESIGN.md` first — it's the source of truth for architecture, scope, and phase boundaries. This file covers conventions and workflow.
 
@@ -8,7 +8,7 @@ Project-specific guidance for Claude Code working on `adsb-enrich`.
 
 ## Project at a glance
 
-`adsb-enrich` is a Python service that consumes `aircraft.json` from one or more ADS-B receivers (dump1090, readsb, dump978-fa), enriches with reference databases, applies tagging/alert rules, and publishes to MQTT for Home Assistant consumption.
+`ha-airspace` is a Python service that consumes `aircraft.json` from one or more ADS-B receivers (dump1090, readsb, dump978-fa), enriches with reference databases, applies tagging/alert rules, and publishes to MQTT for Home Assistant consumption.
 
 Distribution targets: HA add-on (primary), Docker image, pip package — same codebase.
 
@@ -86,14 +86,14 @@ log.warning("receiver_unhealthy", receiver=name, error=str(e), retry_in_s=backof
 ## Repo layout
 
 ```
-adsb-enrich/
+ha-airspace/
 ├── DESIGN.md                  # architecture spec (READ FIRST)
 ├── CLAUDE.md                  # this file
 ├── README.md                  # user-facing
 ├── pyproject.toml
 ├── uv.lock
 ├── src/
-│   └── adsb_enrich/
+│   └── ha_airspace/
 │       ├── __init__.py
 │       ├── __main__.py        # entry point
 │       ├── config.py          # pydantic schema + loading
@@ -142,7 +142,7 @@ Add modules as needed; don't pre-create empty files.
 - **Time is a fixture.** Don't use real time in tests. Use `freezegun` or a `Clock` protocol passed into components.
 - **No network in tests.** Ever. If a test needs network, it's an integration test and lives in `tests/integration/` with a marker (`@pytest.mark.integration`) that's skipped by default. Run with `uv run pytest -m integration`.
 - **Integration tests use testcontainers + Mosquitto** for the broker. Session-scoped pytest fixture spins up the container once per test session. CI runners need Docker; locally `docker pull eclipse-mosquitto` is a one-time cost. Required for: graceful-shutdown LWT semantics, broker reconnect, discovery republish, retained-state recovery.
-- **Coverage target: 80%** on `src/adsb_enrich/`. Don't chase 100%; the last 20% is usually testing log lines.
+- **Coverage target: 80%** on `src/ha_airspace/`. Don't chase 100%; the last 20% is usually testing log lines.
 
 Run tests:
 ```bash

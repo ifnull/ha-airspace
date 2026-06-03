@@ -1,4 +1,4 @@
-"""Tests for adsb_enrich.mqtt.publisher.Publisher.
+"""Tests for ha_airspace.mqtt.publisher.Publisher.
 
 Uses FakeMqttClient — records every publish call without exercising
 the connection lifecycle. Lets each test inspect topic, payload,
@@ -25,13 +25,13 @@ from typing import Any
 
 import pytest
 
-from adsb_enrich.config import Config
-from adsb_enrich.models import (
+from ha_airspace.config import Config
+from ha_airspace.models import (
     AircraftObservation,
     AircraftState,
     ReceiverLocation,
 )
-from adsb_enrich.mqtt.publisher import Publisher
+from ha_airspace.mqtt.publisher import Publisher
 
 # ---------------------------------------------------------------------------
 # Fakes

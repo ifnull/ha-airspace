@@ -20,8 +20,8 @@ from pathlib import Path
 
 import pytest
 
-from adsb_enrich.models import AircraftObservation
-from adsb_enrich.receivers._parse import parse_aircraft_json
+from ha_airspace.models import AircraftObservation
+from ha_airspace.receivers._parse import parse_aircraft_json
 
 FIXTURES = Path(__file__).parent / "fixtures"
 _RX = "rx-live"

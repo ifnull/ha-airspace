@@ -27,9 +27,9 @@ from collections.abc import Awaitable, Callable
 import httpx
 import structlog
 
-from adsb_enrich.config import DatabasesConfig, DatabaseSourceConfig
-from adsb_enrich.databases.adsbexchange import parse_adsbexchange
-from adsb_enrich.databases.mictronics import parse_mictronics
+from ha_airspace.config import DatabasesConfig, DatabaseSourceConfig
+from ha_airspace.databases.adsbexchange import parse_adsbexchange
+from ha_airspace.databases.mictronics import parse_mictronics
 
 log = structlog.get_logger(__name__)
 

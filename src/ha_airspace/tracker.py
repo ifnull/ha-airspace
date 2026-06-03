@@ -24,11 +24,11 @@ from datetime import UTC, datetime
 
 import structlog
 
-from adsb_enrich.enrichment import Enricher
-from adsb_enrich.geo import bearing, haversine
-from adsb_enrich.metrics import MetricsRegistry
-from adsb_enrich.models import AircraftObservation, AircraftState, Lifecycle, Watchpoint
-from adsb_enrich.mqtt.publisher import Publisher
+from ha_airspace.enrichment import Enricher
+from ha_airspace.geo import bearing, haversine
+from ha_airspace.metrics import MetricsRegistry
+from ha_airspace.models import AircraftObservation, AircraftState, Lifecycle, Watchpoint
+from ha_airspace.mqtt.publisher import Publisher
 
 log = structlog.get_logger(__name__)
 

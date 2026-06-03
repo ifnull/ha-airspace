@@ -1,7 +1,7 @@
-# adsb-enrich — example configuration
+# ha-airspace — example configuration
 #
 # Copy to config.yaml and edit. Run with:
-#   adsb-enrich --config config.yaml
+#   ha-airspace --config config.yaml
 #
 # Strict validation: unknown keys are rejected with a clear error at startup,
 # so a typo fails loudly rather than being silently ignored. Only the keys

@@ -1,4 +1,4 @@
-"""Tests for adsb_enrich.config.
+"""Tests for ha_airspace.config.
 
 Covers:
   * Pydantic schema validation: ranges, literals, required fields
@@ -20,7 +20,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from adsb_enrich.config import (
+from ha_airspace.config import (
     AuthConfig,
     Config,
     ConfigError,
@@ -31,7 +31,7 @@ from adsb_enrich.config import (
     WatchpointConfig,
     load_config,
 )
-from adsb_enrich.models import Watchpoint
+from ha_airspace.models import Watchpoint
 
 # ---------------------------------------------------------------------------
 # Fixture data

@@ -18,14 +18,14 @@ Public surface:
 
 from __future__ import annotations
 
-from adsb_enrich.mqtt.client import MqttClient, OnConnectCallback
-from adsb_enrich.mqtt.discovery import build_discovery_payloads
-from adsb_enrich.mqtt.payloads import (
+from ha_airspace.mqtt.client import MqttClient, OnConnectCallback
+from ha_airspace.mqtt.discovery import build_discovery_payloads
+from ha_airspace.mqtt.payloads import (
     AircraftPayload,
     ReceiverLocationPayload,
     ReceiverStatsPayload,
 )
-from adsb_enrich.mqtt.publisher import Publisher
+from ha_airspace.mqtt.publisher import Publisher
 
 __all__ = [
     "AircraftPayload",

@@ -13,8 +13,8 @@ import json
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from adsb_enrich.config import DatabasesConfig, DatabaseSourceConfig
-from adsb_enrich.databases import (
+from ha_airspace.config import DatabasesConfig, DatabaseSourceConfig
+from ha_airspace.databases import (
     DatabaseLoader,
     DatabaseStore,
     parse_adsbexchange,

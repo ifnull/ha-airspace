@@ -1,5 +1,5 @@
 [project]
-name = "adsb-enrich"
+name = "ha-airspace"
 version = "0.0.0.0"
 description = "Multi-source ADS-B enrichment service: aircraft.json → MQTT → Home Assistant."
 readme = "README.md"
@@ -8,7 +8,19 @@ license = { text = "MIT" }
 authors = [
   { name = "Daniel Smith", email = "danielalansmith@me.com" },
 ]
-keywords = ["adsb", "dump1090", "home-assistant", "mqtt", "aircraft"]
+keywords = [
+  "adsb",
+  "dump1090",
+  "dump978",
+  "dump3411",
+  "readsb",
+  "home-assistant",
+  "mqtt",
+  "aircraft",
+  "drone",
+  "remote-id",
+  "adsbexchange",
+]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
   "Programming Language :: Python :: 3.12",
@@ -29,7 +41,7 @@ dependencies = [
 ]
 
 [project.scripts]
-adsb-enrich = "adsb_enrich.cli:main"
+ha-airspace = "ha_airspace.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/ifnull/ha-squitter"
@@ -53,7 +65,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/adsb_enrich"]
+packages = ["src/ha_airspace"]
 
 # ---------------------------------------------------------------------------
 # Ruff: format + lint. CLAUDE.md is the source of truth for style.
@@ -96,7 +108,7 @@ ignore = [
 
 [tool.ruff.lint.isort]
 required-imports = ["from __future__ import annotations"]
-known-first-party = ["adsb_enrich"]
+known-first-party = ["ha_airspace"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
@@ -116,7 +128,7 @@ warn_unreachable = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 show_error_codes = true
-files = ["src/adsb_enrich", "tests"]
+files = ["src/ha_airspace", "tests"]
 
 [[tool.mypy.overrides]]
 module = "testcontainers.*"
@@ -130,7 +142,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = [
   "-m", "not integration",
-  "--cov=adsb_enrich",
+  "--cov=ha_airspace",
   "--cov-report=term-missing",
   "--strict-markers",
 ]
@@ -139,7 +151,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src/adsb_enrich"]
+source = ["src/ha_airspace"]
 branch = true
 
 [tool.coverage.report]

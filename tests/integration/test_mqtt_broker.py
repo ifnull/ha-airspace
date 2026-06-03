@@ -22,8 +22,8 @@ from collections.abc import Callable
 
 import pytest
 
-from adsb_enrich.config import MqttConfig
-from adsb_enrich.mqtt.client import MqttClient
+from ha_airspace.config import MqttConfig
+from ha_airspace.mqtt.client import MqttClient
 from tests.integration.conftest import BrokerEndpoint, BrokerProbe
 
 pytestmark = pytest.mark.integration

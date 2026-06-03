@@ -18,9 +18,9 @@ Public surface:
 
 from __future__ import annotations
 
-from adsb_enrich.receivers.base import FetchError, ReceiverSource
-from adsb_enrich.receivers.file import FileReceiver
-from adsb_enrich.receivers.http import HttpJsonReceiver
+from ha_airspace.receivers.base import FetchError, ReceiverSource
+from ha_airspace.receivers.file import FileReceiver
+from ha_airspace.receivers.http import HttpJsonReceiver
 
 __all__ = [
     "FetchError",

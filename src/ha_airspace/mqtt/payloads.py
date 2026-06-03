@@ -2,7 +2,7 @@
 
 These ARE the external API surface — what HA, Grafana, Node-RED, custom
 scripts, and every other consumer sees. They live separately from
-``adsb_enrich.models`` (internal runtime types) so the boundary between
+``ha_airspace.models`` (internal runtime types) so the boundary between
 "private state" and "public contract" is visible at the import path.
 
 Versioning posture: per the CEO + Daniel-as-primary-user decision, no
@@ -29,7 +29,7 @@ from typing import Any, Self
 
 from pydantic import BaseModel, ConfigDict
 
-from adsb_enrich.models import AircraftState, ReceiverLocation
+from ha_airspace.models import AircraftState, ReceiverLocation
 
 
 class AircraftPayload(BaseModel):

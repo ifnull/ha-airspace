@@ -42,8 +42,8 @@ from typing import Any
 import aiomqtt
 import structlog
 
-from adsb_enrich.config import MqttConfig
-from adsb_enrich.metrics import MetricsRegistry
+from ha_airspace.config import MqttConfig
+from ha_airspace.metrics import MetricsRegistry
 
 log = structlog.get_logger(__name__)
 

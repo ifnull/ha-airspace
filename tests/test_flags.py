@@ -11,9 +11,9 @@ from datetime import UTC, datetime
 
 import pytest
 
-from adsb_enrich.config import FlagConfig
-from adsb_enrich.flags import evaluate_flags
-from adsb_enrich.models import AircraftObservation, AircraftState
+from ha_airspace.config import FlagConfig
+from ha_airspace.flags import evaluate_flags
+from ha_airspace.models import AircraftObservation, AircraftState
 
 _T0 = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
 

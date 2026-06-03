@@ -27,7 +27,7 @@ roadmap, and how it's positioned against the alternatives.
 > MQTT broker. The multi-receiver merger and stateful alert rules land in
 > later phases.
 
-> **Note:** the project was renamed from `adsb-enrich`; the Python package /
+> **Note:** the project was renamed from `ha-airspace`; the Python package /
 > console script still use the old name until the rename lands. Commands below
 > reflect the current package name.
 
@@ -52,7 +52,7 @@ MQTT discovery, aircraft tracker, military aircraft, ADSBexchange, Mictronics,
 
 ```bash
 # 1. Install (pip, or uv for development)
-pip install adsb-enrich        # end users
+pip install ha-airspace        # end users
 #   — or, from a clone, for development:
 uv sync
 
@@ -61,9 +61,9 @@ cp config.example.yaml config.yaml
 $EDITOR config.yaml            # set your receiver URL, broker, and watchpoint
 
 # 3. Run
-adsb-enrich --config config.yaml
-#   — or: python -m adsb_enrich --config config.yaml
-#   — or, from a clone: uv run adsb-enrich --config config.yaml
+ha-airspace --config config.yaml
+#   — or: python -m ha_airspace --config config.yaml
+#   — or, from a clone: uv run ha-airspace --config config.yaml
 ```
 
 On startup the service connects to the broker, publishes the HA discovery

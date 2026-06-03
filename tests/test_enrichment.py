@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from adsb_enrich.config import EnrichmentConfig, FlagConfig
-from adsb_enrich.databases import DatabaseStore
-from adsb_enrich.enrichment import Enricher
-from adsb_enrich.models import AircraftObservation, AircraftState
+from ha_airspace.config import EnrichmentConfig, FlagConfig
+from ha_airspace.databases import DatabaseStore
+from ha_airspace.enrichment import Enricher
+from ha_airspace.models import AircraftObservation, AircraftState
 
 _T0 = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
 

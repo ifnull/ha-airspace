@@ -1,4 +1,4 @@
-"""Tests for adsb_enrich.models.
+"""Tests for ha_airspace.models.
 
 Coverage targets every public surface plus the lifecycle boundary cases —
 the merger and publisher both branch on lifecycle and a one-second drift
@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from adsb_enrich.models import (
+from ha_airspace.models import (
     AircraftObservation,
     AircraftState,
     Lifecycle,

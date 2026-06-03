@@ -1,4 +1,4 @@
-"""Tests for adsb_enrich.mqtt.discovery.
+"""Tests for ha_airspace.mqtt.discovery.
 
 Cover:
   * Topic format conforms to HA's discovery convention.
@@ -17,8 +17,8 @@ from typing import Any
 
 import pytest
 
-from adsb_enrich.config import Config
-from adsb_enrich.mqtt.discovery import build_discovery_payloads
+from ha_airspace.config import Config
+from ha_airspace.mqtt.discovery import build_discovery_payloads
 
 
 def _make_config(**mqtt_overrides: object) -> Config:
@@ -294,7 +294,7 @@ class TestDeviceBlock:
         # Single device card in HA grouping every adsb entity.
         payloads = build_discovery_payloads(_make_config())
         ids = {tuple(body["device"]["identifiers"]) for _, body in payloads}
-        assert ids == {("adsb_enrich",)}
+        assert ids == {("ha_airspace",)}
 
     def test_sw_version_included_when_provided(self) -> None:
         payloads = build_discovery_payloads(_make_config(), sw_version="0.1.2.3")
