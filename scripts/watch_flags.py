@@ -31,6 +31,7 @@ import argparse
 import asyncio
 import sys
 import time
+import urllib.error
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
@@ -73,11 +74,27 @@ def _cache_path(cache_dir: Path, name: str) -> Path:
     return cache_dir / name
 
 
-def _download(url: str, dest: Path) -> None:
-    print(f"  downloading {url.rsplit('/', maxsplit=1)[-1]} ...", end="", flush=True)
-    with urllib.request.urlopen(url, timeout=120) as resp:
-        dest.write_bytes(resp.read())
+# ADSBexchange 403s the default Python user-agent; send a browser-like one.
+_UA = "Mozilla/5.0 (X11; Linux x86_64) adsb-enrich/watch"
+
+
+def _download(url: str, dest: Path) -> bool:
+    """Download to dest. Returns True on success; on failure prints a warning,
+    leaves any existing cached copy intact, and returns False (non-fatal so a
+    single dead source does not abort the watch)."""
+    name = url.rsplit("/", maxsplit=1)[-1]
+    print(f"  downloading {name} ...", end="", flush=True)
+    req = urllib.request.Request(url, headers={"User-Agent": _UA})
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = resp.read()
+    except (urllib.error.URLError, TimeoutError) as exc:
+        cached = " (using cached copy)" if dest.exists() else " (no cache — source skipped)"
+        print(f" FAILED: {exc}{cached}")
+        return False
+    dest.write_bytes(data)
     print(f" {dest.stat().st_size // 1024} KB")
+    return True
 
 
 def load_databases(cache_dir: Path, *, refresh: bool) -> DatabaseStore:
@@ -91,16 +108,27 @@ def load_databases(cache_dir: Path, *, refresh: bool) -> DatabaseStore:
         _download(_ADSBEX_URL, adsbex)
 
     t = time.time()
-    mic_db = parse_mictronics(mic.read_bytes())
-    adsbex_db = parse_adsbexchange(adsbex.read_bytes())
     merged: dict[str, dict[str, object]] = {}
-    for hex_code, entry in mic_db.items():
-        merged[hex_code] = dict(entry)
-    for hex_code, entry in adsbex_db.items():  # ADSBex wins on conflict
-        merged.setdefault(hex_code, {}).update(entry)
+    # Mictronics first (lower priority), then ADSBex overwrites on conflict.
+    # Either source may be missing (download failed, no cache) — parse what
+    # is on disk and warn about the rest rather than aborting.
+    if mic.exists():
+        for hex_code, entry in parse_mictronics(mic.read_bytes()).items():
+            merged[hex_code] = dict(entry)
+    else:
+        print("  WARNING: no Mictronics DB available")
+    if adsbex.exists():
+        for hex_code, entry in parse_adsbexchange(adsbex.read_bytes()).items():
+            merged.setdefault(hex_code, {}).update(entry)
+    else:
+        print("  WARNING: no ADSBexchange DB available (mil/pia/ladd reduced)")
+
     store = DatabaseStore()
     store.swap(merged)
-    print(f"  {len(merged):,} aircraft loaded in {time.time() - t:.1f}s\n")
+    if not merged:
+        print("  ERROR: no reference data loaded — DB-backed flags will not match")
+    else:
+        print(f"  {len(merged):,} aircraft loaded in {time.time() - t:.1f}s\n")
     return store
 
 
