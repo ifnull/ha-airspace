@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ha_airspace import __version__
+from ha_airspace.alerts import AlertEvaluator
 from ha_airspace.config import Config
 from ha_airspace.databases import DatabaseLoader, DatabaseStore
 from ha_airspace.enrichment import Enricher
@@ -265,10 +266,21 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
         db_store = DatabaseStore()
         db_loader = DatabaseLoader(config.databases, db_store)
 
+    # Alerts: only when rules are configured. The evaluator resolves
+    # watchpoint elevation for the v1 AGL approximation.
+    alerts: AlertEvaluator | None = None
+    if config.enrichment.alerts.rules:
+        elevations = {wp.name: wp.elevation_m for wp in config.watchpoints}
+        alerts = AlertEvaluator(
+            config.enrichment.alerts,
+            elevation_m_for=elevations.get,
+        )
+
     tracker = AircraftTracker(
         publisher,
         config.watchpoints_runtime(),
         enricher=Enricher(config.enrichment, db_store=db_store),
+        alerts=alerts,
         metrics=metrics,
     )
     return App(

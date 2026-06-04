@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 
 import structlog
 
+from ha_airspace.alerts import AlertEvaluator, AlertTransition
 from ha_airspace.enrichment import Enricher
 from ha_airspace.geo import bearing, haversine
 from ha_airspace.metrics import MetricsRegistry
@@ -80,6 +81,7 @@ class AircraftTracker:
         watchpoints: Iterable[Watchpoint],
         *,
         enricher: Enricher | None = None,
+        alerts: AlertEvaluator | None = None,
         metrics: MetricsRegistry | None = None,
         clock: Callable[[], datetime] = _default_clock,
         stale_after_s: float = 5.0,
@@ -90,6 +92,7 @@ class AircraftTracker:
             raise ValueError("AircraftTracker requires at least one watchpoint")
         self._publisher = publisher
         self._enricher = enricher
+        self._alerts = alerts
         self._primary = self._pick_primary(self._watchpoints)
         self._metrics = metrics
         self._clock = clock
@@ -111,7 +114,8 @@ class AircraftTracker:
         now = self._clock()
         for obs in observations:
             self._ingest(obs)
-        await self._run_lifecycle(now)
+        purged = await self._run_lifecycle(now)
+        await self._evaluate_alerts(purged)
         await self._publish_summary()
         self._update_metrics()
 
@@ -164,10 +168,12 @@ class AircraftTracker:
             # Bearing from the watchpoint toward the aircraft: "look that way".
             state.bearing_to[wp.name] = bearing(wp.lat, wp.lon, canonical.lat, canonical.lon)
 
-    async def _run_lifecycle(self, now: datetime) -> None:
+    async def _run_lifecycle(self, now: datetime) -> list[str]:
         """Classify every tracked state. PURGED -> clear retained topic and
         drop; ACTIVE/STALE -> republish (publisher throttles per-hex, and
-        keeps republishing STALE so HA dashboards do not blink)."""
+        keeps republishing STALE so HA dashboards do not blink). Returns the
+        hexes purged this cycle so alert EXITs can fire for them."""
+        purged: list[str] = []
         for hex_code, state in list(self._states.items()):
             lifecycle = state.lifecycle(
                 now,
@@ -177,9 +183,32 @@ class AircraftTracker:
             if lifecycle is Lifecycle.PURGED:
                 await self._publisher.purge_aircraft(hex_code)
                 del self._states[hex_code]
+                purged.append(hex_code)
                 log.debug("aircraft_purged", hex=hex_code)
                 continue
             await self._publisher.publish_aircraft(state)
+        return purged
+
+    async def _evaluate_alerts(self, purged: list[str]) -> None:
+        """Run the alert evaluator over the current states + this poll's
+        purges, then publish each ENTER/EXIT and refresh the per-rule active
+        flag. No-op when no evaluator is configured."""
+        if self._alerts is None:
+            return
+        events = self._alerts.evaluate(self._states.values(), purged)
+        touched_rules: set[str] = set()
+        for event in events:
+            touched_rules.add(event.rule)
+            if event.transition is AlertTransition.ENTER and event.state is not None:
+                await self._publisher.publish_alert(event.rule, event.state)
+                log.info("alert_enter", rule=event.rule, hex=event.hex)
+            elif event.transition is AlertTransition.EXIT:
+                await self._publisher.clear_alert(event.rule, event.hex)
+                log.info("alert_exit", rule=event.rule, hex=event.hex)
+        # Refresh the active flag for any rule that saw a transition.
+        active = self._alerts.active_rules()
+        for rule in touched_rules:
+            await self._publisher.publish_alert_active(rule, active=rule in active)
 
     async def _publish_summary(self) -> None:
         nearest = self._nearest()

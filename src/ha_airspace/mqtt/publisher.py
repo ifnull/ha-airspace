@@ -142,6 +142,43 @@ class Publisher:
         self._last_aircraft_publish.pop(hex_code, None)
 
     # ------------------------------------------------------------------
+    # Alert topics — per-rule/per-hex detail + per-rule active flag
+    # ------------------------------------------------------------------
+
+    async def publish_alert(self, rule: str, state: AircraftState) -> None:
+        """Publish ``adsb/alert/<rule>/<hex>`` on rule ENTER: the triggering
+        aircraft's full state, retained so a late subscriber sees the active
+        alert. Cleared by ``clear_alert`` on EXIT."""
+        payload = AircraftPayload.from_state(state).model_dump_json()
+        await self._client.publish(
+            f"{self._base}/alert/{rule}/{state.hex}",
+            payload,
+            retain=True,
+            topic_class="alert",
+        )
+
+    async def clear_alert(self, rule: str, hex_code: str) -> None:
+        """Clear ``adsb/alert/<rule>/<hex>`` on rule EXIT (empty-retained), so
+        the alert does not linger in HA after the aircraft stops matching."""
+        await self._client.publish(
+            f"{self._base}/alert/{rule}/{hex_code}",
+            b"",
+            retain=True,
+            topic_class="alert",
+        )
+
+    async def publish_alert_active(self, rule: str, *, active: bool) -> None:
+        """Publish ``adsb/alert/<rule>/active`` = ``on`` | ``off`` retained.
+        The per-rule HA ``binary_sensor`` reads this directly (payload_on=on),
+        turning on while any aircraft matches the rule and off when none do."""
+        await self._client.publish(
+            f"{self._base}/alert/{rule}/active",
+            b"on" if active else b"off",
+            retain=True,
+            topic_class="alert",
+        )
+
+    # ------------------------------------------------------------------
     # Summary topics — the surface HA actually subscribes to
     # ------------------------------------------------------------------
 

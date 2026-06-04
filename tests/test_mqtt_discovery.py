@@ -324,3 +324,47 @@ class TestRequiredFields:
         payloads = build_discovery_payloads(_make_config_multi_receiver())
         ids = [body["unique_id"] for _, body in payloads]
         assert len(ids) == len(set(ids)), f"duplicate unique_ids: {ids}"
+
+
+# ---------------------------------------------------------------------------
+# Per-alert-rule binary sensors (slice 3)
+# ---------------------------------------------------------------------------
+
+
+class TestAlertEntities:
+    def _config_with_alerts(self) -> Config:
+        return Config.model_validate(
+            {
+                "watchpoints": [{"name": "home", "lat": 30.33, "lon": -97.99}],
+                "mqtt": {"broker": "broker.local"},
+                "receivers": [
+                    {"name": "rx-home", "url": "http://piaware/aircraft.json", "band": "1090"}
+                ],
+                "enrichment": {
+                    "alerts": {
+                        "rules": [
+                            {"name": "military_close", "match": {"flags": ["military"]}},
+                            {"name": "emergency", "match": {"flags": ["emergency"]}},
+                        ]
+                    }
+                },
+            }
+        )
+
+    def test_binary_sensor_per_rule(self) -> None:
+        payloads = build_discovery_payloads(self._config_with_alerts())
+        bodies = _bodies_by_unique_id(payloads)
+        assert "adsb_alert_military_close" in bodies
+        assert "adsb_alert_emergency" in bodies
+
+    def test_alert_sensor_shape(self) -> None:
+        payloads = build_discovery_payloads(self._config_with_alerts())
+        body = _bodies_by_unique_id(payloads)["adsb_alert_military_close"]
+        assert body["state_topic"] == "adsb/alert/military_close/active"
+        assert body["payload_on"] == "on"
+        assert body["payload_off"] == "off"
+        assert body["device_class"] == "safety"
+
+    def test_no_alert_entities_without_rules(self) -> None:
+        payloads = build_discovery_payloads(_make_config())
+        assert not any("alert" in t for t in _topics(payloads))

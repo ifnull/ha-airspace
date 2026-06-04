@@ -22,7 +22,14 @@ from typing import Any
 import pytest
 from prometheus_client import CollectorRegistry
 
-from ha_airspace.config import EnrichmentConfig, FlagConfig
+from ha_airspace.alerts import AlertEvaluator
+from ha_airspace.config import (
+    AlertRule,
+    AlertsConfig,
+    EnrichmentConfig,
+    FlagConfig,
+    MatchBlock,
+)
 from ha_airspace.enrichment import Enricher
 from ha_airspace.metrics import MetricsRegistry
 from ha_airspace.models import AircraftObservation, AircraftState, Watchpoint
@@ -44,6 +51,9 @@ class FakePublisher:
         self.published: list[AircraftState] = []
         self.purged: list[str] = []
         self.summaries: list[dict[str, Any]] = []
+        self.alerts: list[tuple[str, str]] = []  # (rule, hex) ENTER publishes
+        self.alerts_cleared: list[tuple[str, str]] = []  # (rule, hex) EXIT clears
+        self.alert_active: list[tuple[str, bool]] = []  # (rule, active)
 
     async def publish_aircraft(self, state: AircraftState) -> bool:
         self.published.append(state)
@@ -61,6 +71,15 @@ class FakePublisher:
     ) -> bool:
         self.summaries.append({"count": count, "nearest": nearest, "count_by_flag": count_by_flag})
         return True
+
+    async def publish_alert(self, rule: str, state: AircraftState) -> None:
+        self.alerts.append((rule, state.hex))
+
+    async def clear_alert(self, rule: str, hex_code: str) -> None:
+        self.alerts_cleared.append((rule, hex_code))
+
+    async def publish_alert_active(self, rule: str, *, active: bool) -> None:
+        self.alert_active.append((rule, active))
 
 
 class Clock:
@@ -442,3 +461,51 @@ class TestMetrics:
 
 def _gauge(metrics: MetricsRegistry, band: str) -> float:
     return metrics.aircraft_active.labels(band=band)._value.get()
+
+
+# ---------------------------------------------------------------------------
+# Alerts (slice 3) — driven through the tracker
+# ---------------------------------------------------------------------------
+
+
+class TestAlerts:
+    def _tracker_with_alert(self, publisher: FakePublisher, clock: Clock) -> AircraftTracker:
+        enricher = Enricher(EnrichmentConfig(flags={"heavy": FlagConfig(categories=["A3"])}))
+        alerts = AlertEvaluator(
+            AlertsConfig(rules=[AlertRule(name="heavy_close", match=MatchBlock(flags=["heavy"]))]),
+            elevation_m_for=lambda _n: None,
+            clock=clock,
+        )
+        return AircraftTracker(
+            publisher,  # type: ignore[arg-type]
+            [_HOME],
+            enricher=enricher,
+            alerts=alerts,
+            clock=clock,
+        )
+
+    async def test_enter_publishes_alert_and_active(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = self._tracker_with_alert(publisher, clock)
+        await tracker.process_poll([_obs("ae0001", category="A3")])
+        assert ("heavy_close", "ae0001") in publisher.alerts
+        assert ("heavy_close", True) in publisher.alert_active
+
+    async def test_exit_clears_alert_when_aircraft_expires(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = self._tracker_with_alert(publisher, clock)
+        await tracker.process_poll([_obs("ae0001", at=clock.now, category="A3")])
+        clock.advance(61.0)
+        await tracker.process_poll([])  # ae0001 expires -> alert EXIT
+        assert ("heavy_close", "ae0001") in publisher.alerts_cleared
+        assert ("heavy_close", False) in publisher.alert_active
+
+    async def test_no_alerts_without_evaluator(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = _make_tracker(publisher, clock)  # no alerts
+        await tracker.process_poll([_obs("ae0001", category="A3")])
+        assert publisher.alerts == []
+        assert publisher.alert_active == []

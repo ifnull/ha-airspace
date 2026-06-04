@@ -119,6 +119,28 @@ def build_discovery_payloads(
             )
         )
 
+    # --- Per-alert-rule binary sensors ---------------------------------
+    for rule in config.enrichment.alerts.rules:
+        payloads.append(
+            _entity_config(
+                discovery_prefix=discovery_prefix,
+                component="binary_sensor",
+                object_id=f"alert_{rule.name}",
+                body={
+                    "name": f"ADS-B Alert {rule.name}",
+                    "unique_id": f"adsb_alert_{rule.name}",
+                    "state_topic": f"{base}/alert/{rule.name}/active",
+                    "payload_on": "on",
+                    "payload_off": "off",
+                    "device_class": "safety",
+                    "availability_topic": availability_topic,
+                    "payload_available": "online",
+                    "payload_not_available": "offline",
+                    "device": device_block,
+                },
+            )
+        )
+
     # NO per-aircraft entities. Locked decision (eng review §11):
     # auto-discovering one entity per hex blows up HA's entity registry
     # within a single busy day of traffic. Power users subscribe to

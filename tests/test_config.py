@@ -24,6 +24,7 @@ from ha_airspace.config import (
     AuthConfig,
     Config,
     ConfigError,
+    MatchBlock,
     MqttConfig,
     ReceiverConfig,
     ReceiverLocationConfig,
@@ -478,3 +479,100 @@ unknown_section:
         )
         with pytest.raises(ConfigError, match="unknown_section"):
             load_config(path)
+
+
+# ---------------------------------------------------------------------------
+# Alert rule config (Phase 2a slice 3)
+# ---------------------------------------------------------------------------
+
+
+class TestMatchBlock:
+    def test_at_least_one_condition_required(self) -> None:
+        with pytest.raises(ValidationError, match="at least one"):
+            MatchBlock()
+
+    def test_empty_flags_list_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="non-empty"):
+            MatchBlock(flags=[])
+
+    def test_valid_single_condition(self) -> None:
+        assert MatchBlock(flags=["military"]).flags == ["military"]
+
+
+class TestAlertsConfig:
+    def _cfg_with_alerts(self, alerts: dict[str, Any]) -> dict[str, Any]:
+        base = _minimal_config_dict()
+        base["enrichment"] = {"alerts": alerts}
+        return base
+
+    def test_valid_alert_rule(self) -> None:
+        cfg = Config.model_validate(
+            self._cfg_with_alerts(
+                {
+                    "rules": [
+                        {
+                            "name": "military_close",
+                            "match": {"flags": ["military"], "max_distance_nm": 30},
+                        }
+                    ]
+                }
+            )
+        )
+        assert cfg.enrichment.alerts.rules[0].name == "military_close"
+        assert cfg.enrichment.alerts.cooldown_s == 60.0
+
+    def test_duplicate_rule_names_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="unique"):
+            Config.model_validate(
+                self._cfg_with_alerts(
+                    {
+                        "rules": [
+                            {"name": "dup", "match": {"flags": ["military"]}},
+                            {"name": "dup", "match": {"flags": ["interesting"]}},
+                        ]
+                    }
+                )
+            )
+
+    def test_unknown_watchpoint_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="not defined"):
+            Config.model_validate(
+                self._cfg_with_alerts(
+                    {
+                        "rules": [
+                            {
+                                "name": "r",
+                                "match": {"max_distance_nm": 10, "watchpoint": "nowhere"},
+                            }
+                        ]
+                    }
+                )
+            )
+
+    def test_agl_without_elevation_rejected(self) -> None:
+        # The default 'home' watchpoint in _minimal_config_dict has no elevation_m.
+        with pytest.raises(ValidationError, match="elevation_m"):
+            Config.model_validate(
+                self._cfg_with_alerts(
+                    {"rules": [{"name": "low", "match": {"max_alt_agl_ft": 2000}}]}
+                )
+            )
+
+    def test_agl_with_elevation_ok(self) -> None:
+        base = _minimal_config_dict()
+        base["watchpoints"] = [{"name": "home", "lat": 30.33, "lon": -97.99, "elevation_m": 200}]
+        base["enrichment"] = {
+            "alerts": {"rules": [{"name": "low", "match": {"max_alt_agl_ft": 2000}}]}
+        }
+        cfg = Config.model_validate(base)
+        assert cfg.enrichment.alerts.rules[0].match.max_alt_agl_ft == 2000
+
+    def test_default_watchpoint_home_must_exist(self) -> None:
+        base = _minimal_config_dict()
+        base["watchpoints"] = [{"name": "office", "lat": 30.4, "lon": -97.7}]
+        base["enrichment"] = {
+            "alerts": {"rules": [{"name": "r", "match": {"max_distance_nm": 10}}]}
+        }
+        # No 'home', rule omits watchpoint -> defaults to home -> not defined.
+        with pytest.raises(ValidationError, match="not defined"):
+            Config.model_validate(base)

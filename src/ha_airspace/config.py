@@ -252,14 +252,95 @@ class FlagConfig(BaseModel):
         raise AssertionError("validated FlagConfig always has one matcher")
 
 
+# ---------------------------------------------------------------------------
+# Alert rules (Phase 2a, slice 3)
+# ---------------------------------------------------------------------------
+
+
+class MatchBlock(BaseModel):
+    """An alert rule's match conditions. Semantics are locked (DESIGN §4):
+
+    * **Different keys are AND** — every present condition must hold.
+    * **A list within one key is OR** — any item satisfies that key.
+
+    All conditions are optional, but at least one must be set (a rule that
+    matches everything is almost always a mistake). A rule can match on flags
+    *or* raw fields (``category``) directly — alert match keys are not limited
+    to flags.
+    """
+
+    model_config = _STRICT
+
+    flags: list[str] | None = None
+    """OR over flag names; the state must carry at least one."""
+    category: list[str] | None = None
+    """OR over raw ADS-B emitter category (e.g. ``["A7"]``)."""
+    max_distance_nm: float | None = Field(default=None, gt=0)
+    """Aircraft within this great-circle distance of ``watchpoint``."""
+    max_alt_agl_ft: float | None = Field(default=None, ge=0)
+    """Aircraft at or below this height above the watchpoint. v1 AGL is MSL
+    minus the watchpoint's ``elevation_m`` (documented approximation)."""
+    watchpoint: str | None = None
+    """Which watchpoint ``max_distance_nm`` / ``max_alt_agl_ft`` measure from.
+    Defaults to ``home`` when omitted (validated against config)."""
+
+    @model_validator(mode="after")
+    def _at_least_one_condition(self) -> Self:
+        if not any(
+            v is not None
+            for v in (self.flags, self.category, self.max_distance_nm, self.max_alt_agl_ft)
+        ):
+            raise ValueError(
+                "alert match must set at least one of "
+                "flags / category / max_distance_nm / max_alt_agl_ft"
+            )
+        for name in ("flags", "category"):
+            val = getattr(self, name)
+            if val is not None and not val:
+                raise ValueError(f"alert match '{name}' must be a non-empty list")
+        return self
+
+
+class AlertRule(BaseModel):
+    """One named alert rule: a label + a match block. ENTER fires when an
+    aircraft starts matching; EXIT when it stops (then a cooldown blocks
+    re-ENTER for the same hex)."""
+
+    model_config = _STRICT
+
+    name: str = Field(..., min_length=1)
+    match: MatchBlock
+
+
+class AlertsConfig(BaseModel):
+    """Alert rules + the thrash-suppression cooldown."""
+
+    model_config = _STRICT
+
+    cooldown_s: float = Field(default=60.0, ge=0)
+    """Minimum seconds between an EXIT and the next ENTER for the same
+    ``(rule, hex)``. Prevents alert thrashing when a condition oscillates
+    near a threshold."""
+    rules: list[AlertRule] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _rule_names_unique(self) -> Self:
+        names = [r.name for r in self.rules]
+        if len(names) != len(set(names)):
+            dups = sorted({n for n in names if names.count(n) > 1})
+            raise ValueError(f"alert rule names must be unique; duplicates: {dups}")
+        return self
+
+
 class EnrichmentConfig(BaseModel):
-    """Flag (and, slice 3, alert) rules. Absent section = no enrichment,
-    which is the Phase 1 behavior. Flag names are arbitrary user labels
-    (``military``, ``my_neighbor``) mapped to one matcher each."""
+    """Flag + alert rules. Absent section = no enrichment, which is the
+    Phase 1 behavior. Flag names are arbitrary user labels (``military``,
+    ``my_neighbor``) mapped to one matcher each."""
 
     model_config = _STRICT
 
     flags: dict[str, FlagConfig] = Field(default_factory=dict)
+    alerts: AlertsConfig = Field(default_factory=AlertsConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -331,6 +412,33 @@ class Config(BaseModel):
             raise ValueError(f"receiver names must be unique; duplicates: {duplicates}")
         return self
 
+    @model_validator(mode="after")
+    def _alert_watchpoints_resolve(self) -> Self:
+        """Every alert rule that measures distance/altitude must name a
+        watchpoint that exists, and an AGL rule needs that watchpoint to have
+        an ``elevation_m`` (the v1 AGL approximation is MSL minus elevation).
+        A rule that omits ``watchpoint`` defaults to ``home``; that default
+        must then exist. Caught at load so a typo fails fast, not silently."""
+        by_name = {wp.name: wp for wp in self.watchpoints}
+        for rule in self.enrichment.alerts.rules:
+            match = rule.match
+            needs_wp = match.max_distance_nm is not None or match.max_alt_agl_ft is not None
+            if not needs_wp:
+                continue
+            wp_name = match.watchpoint or "home"
+            wp = by_name.get(wp_name)
+            if wp is None:
+                raise ValueError(
+                    f"alert rule '{rule.name}' references watchpoint "
+                    f"{wp_name!r} which is not defined"
+                )
+            if match.max_alt_agl_ft is not None and wp.elevation_m is None:
+                raise ValueError(
+                    f"alert rule '{rule.name}' uses max_alt_agl_ft but watchpoint "
+                    f"{wp_name!r} has no elevation_m (required for the AGL approximation)"
+                )
+        return self
+
     def poll_interval_for(self, receiver: ReceiverConfig) -> float:
         """Resolve a receiver's poll cadence: receiver-level if set,
         else the service default. Always returns a positive float."""
@@ -387,6 +495,8 @@ def load_config(path: str | Path) -> Config:
 
 
 __all__ = [
+    "AlertRule",
+    "AlertsConfig",
     "AuthConfig",
     "Config",
     "ConfigError",
@@ -394,6 +504,7 @@ __all__ = [
     "DatabasesConfig",
     "EnrichmentConfig",
     "FlagConfig",
+    "MatchBlock",
     "MqttConfig",
     "PrometheusConfig",
     "ReceiverConfig",
