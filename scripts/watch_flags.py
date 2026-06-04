@@ -144,7 +144,10 @@ def _fmt(state: AircraftState, wanted: set[str]) -> str:
     alt = state.canonical.alt_baro_ft
     alt_s = f"{alt:>6}ft" if alt is not None else "  --   "
     flagstr = ",".join(flags)
-    line = f"  {state.hex}  {flight:<8s} {dist_s} {alt_s}  {reg:<10s} {model:<18s} [{flagstr}]"
+    # No leading indent here — the caller adds its own prefix. Color wraps only
+    # the content, so a caller can lstrip/prefix without tripping over the ANSI
+    # escape that would otherwise sit before the leading spaces.
+    line = f"{state.hex}  {flight:<8s} {dist_s} {alt_s}  {reg:<10s} {model:<18s} [{flagstr}]"
     return f"{color}{line}{_RESET}" if color else line
 
 
@@ -179,11 +182,11 @@ async def watch(args: argparse.Namespace) -> int:
             if args.all:
                 print(f"[{stamp}] {len(observations)} aircraft, {len(hits)} flagged:")
                 for h in hits:
-                    print(_fmt(h, wanted))
+                    print(f"  {_fmt(h, wanted)}")  # indented under the header
             else:
                 # Quiet mode: only announce newly-seen flagged aircraft.
                 for h in new:
-                    print(f"[{stamp}] {_fmt(h, wanted).lstrip()}")
+                    print(f"[{stamp}] {_fmt(h, wanted)}")
             seen_hits = {h.hex for h in hits}
             await asyncio.sleep(args.interval)
     except KeyboardInterrupt:
