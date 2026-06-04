@@ -5,12 +5,12 @@ config has been validated, downstream code receives concrete values
 with strict typing and never re-validates. Bad config exits the process
 non-zero at startup with a field-path error.
 
-Phase 1 surface: ``service``, ``watchpoints``, ``mqtt``, ``prometheus``,
-``receivers``. Phase 2 will add ``databases`` (Phase 2a), ``journal``
-(Phase 2b), ``photos`` (Phase 2c), ``enrichment``, and ``publish.alerts``
-when those modules land. Strict mode rejects unknown top-level keys, so
-copying a Phase 2 example into a Phase 1 install fails loudly — the
-right behavior pre-public; Daniel iterates and the schema can break.
+Current surface: ``service``, ``watchpoints``, ``mqtt``, ``prometheus``,
+``receivers``, ``databases`` (Phase 2a), and ``enrichment`` (flags + alerts,
+Phase 2a). Phase 2b will add ``journal`` and Phase 2c ``photos`` when those
+modules land. Strict mode rejects unknown top-level keys, so a typo or a
+config from a future phase fails loudly — the right behavior pre-public;
+Daniel iterates and the schema can break.
 """
 
 from __future__ import annotations

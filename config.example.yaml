@@ -82,16 +82,41 @@ receivers:
   #   band: "978"
 
 # --------------------------------------------------------------------------
-# enrichment — declarative flag rules (Phase 2a). Optional; omit for no flags.
-# Each flag sets exactly one matcher:
+# databases — reference DBs that enrich aircraft (registration, type, model,
+# and the military / interesting / PIA / LADD flags the `sources` matcher
+# below reads). Optional; omit to run with no DB enrichment. The files are
+# downloaded and refreshed in the background (~25 MB gzip'd, ~620k aircraft).
+# --------------------------------------------------------------------------
+# databases:
+#   cache_dir: /data/db
+#   refresh_interval_h: 168       # weekly
+#   sources:
+#     - name: mictronics          # name selects the parser (mictronics | adsbexchange)
+#       url: https://github.com/wiedehopf/tar1090-db/raw/csv/aircraft.csv.gz
+#       enabled: true
+#     - name: adsbexchange
+#       url: https://downloads.adsbexchange.com/downloads/basic-ac-db.json.gz
+#       enabled: true
+
+# --------------------------------------------------------------------------
+# enrichment — flag + alert rules (Phase 2a). Optional; omit for neither.
+#
+# flags: tag aircraft. Each flag sets exactly one matcher:
 #   squawks     — exact transponder code
 #   patterns    — callsign starts-with (case-insensitive)
 #   types       — ICAO type designator (case-insensitive)
 #   categories  — ADS-B emitter category (e.g. A7 rotorcraft)
 #   sources     — DB-backed (db:field); matches a truthy db_metadata field.
-#                 Needs the reference-DB loader (a later Phase 2a slice); until
-#                 then these never match.
+#                 Requires the `databases` section above; without it these
+#                 never match (db_metadata stays empty).
 # Matched flag names appear in adsb/aircraft/<hex> and the summary count_by_flag.
+#
+# alerts: fire when an aircraft starts matching a rule (ENTER) and clear when
+# it stops (EXIT). Each rule's `match` combines conditions: different keys are
+# AND, a list within one key is OR. ENTER publishes adsb/alert/<rule>/<hex>;
+# a per-rule binary_sensor.adsb_alert_<rule> turns on while any aircraft matches.
+# Match keys: flags, category, max_distance_nm, max_alt_agl_ft, watchpoint.
+# (max_alt_agl_ft needs the watchpoint to have elevation_m; v1 AGL = MSL minus it.)
 # --------------------------------------------------------------------------
 # enrichment:
 #   flags:
@@ -103,5 +128,25 @@ receivers:
 #       types: ["B52", "C17", "C5M", "U2", "B1", "B2", "RC135"]
 #     rotorcraft:
 #       categories: ["A7"]
-#     # military:                    # DB-backed — inert until the DB loader lands
-#     #   sources: ["mictronics:mil", "adsbexchange:mil"]
+#     military:                    # DB-backed — needs the `databases` section
+#       sources: ["mictronics:mil", "adsbexchange:mil"]
+#     privacy:
+#       sources: ["adsbexchange:pia", "adsbexchange:ladd"]
+#
+#   alerts:
+#     cooldown_s: 60               # min seconds between EXIT and re-ENTER (same rule+hex)
+#     rules:
+#       - name: military_close
+#         match:
+#           flags: ["military"]            # OR within key
+#           max_distance_nm: 30            # AND across keys
+#           watchpoint: home               # which watchpoint distance is from
+#       - name: emergency_anywhere
+#         match:
+#           flags: ["emergency_squawk"]
+#       - name: low_helicopter
+#         match:
+#           category: ["A7"]               # alert match can read raw fields too
+#           max_alt_agl_ft: 2000           # needs home.elevation_m set above
+#           max_distance_nm: 10
+#           watchpoint: home
