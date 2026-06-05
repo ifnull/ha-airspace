@@ -134,6 +134,87 @@ class AircraftPayload(BaseModel):
         )
 
 
+class DronePayload(BaseModel):
+    """Serialized form of a Remote ID (drone) ``AircraftState`` for the
+    ``adsb/drone/<track_id>`` topic and the ``adsb/summary/nearest_drone``
+    sensor.
+
+    Drones are not aircraft: this carries the Remote-ID-only fields (UAS id
+    type, native AGL, transport, and — the security-relevant part — operator
+    location) that have no place on ``AircraftPayload``. Distance/bearing are
+    the drone's own; operator distance/bearing are computed by the consumer
+    from ``operator_lat``/``operator_lon`` if wanted.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # --- Identity ------------------------------------------------------
+    track_id: str
+    """UAS id — the stable per-drone key."""
+    id_type: str
+    """``serial`` | ``caa_reg`` | ``utm_uuid`` | ``session`` | ``unknown``."""
+    ua_type: str | None = None
+
+    # --- Position / movement ------------------------------------------
+    lat: float | None = None
+    lon: float | None = None
+    alt_geom_ft: int | None = None
+    agl_ft: float | None = None
+    """Height above takeoff/ground, broadcast natively by Remote ID."""
+    ground_speed_kt: float | None = None
+    track_deg: float | None = None
+    vertical_rate_fpm: int | None = None
+
+    # --- Operator (the novel, security-relevant entity) ---------------
+    operator_lat: float | None = None
+    operator_lon: float | None = None
+    operator_id: str | None = None
+    operator_alt_takeoff_ft: float | None = None
+
+    # --- Provenance ----------------------------------------------------
+    rid_source: str | None = None
+    seen_by: list[str]
+    first_seen: datetime
+    last_seen: datetime
+
+    # --- Geometry (drone position, per-watchpoint) --------------------
+    distance_to: dict[str, float]
+    bearing_to: dict[str, float]
+
+    # --- Enrichment ----------------------------------------------------
+    flags: list[str]
+
+    @classmethod
+    def from_state(cls, state: AircraftState) -> Self:
+        """Project a ``band="remoteid"`` ``AircraftState`` into the drone
+        payload. ``state.canonical.drone`` carries the RID-only fields."""
+        canonical = state.canonical
+        drone = canonical.drone
+        return cls(
+            track_id=state.track_id,
+            id_type=drone.id_type if drone else "unknown",
+            ua_type=drone.ua_type if drone else None,
+            lat=canonical.lat,
+            lon=canonical.lon,
+            alt_geom_ft=canonical.alt_geom_ft,
+            agl_ft=drone.agl_ft if drone else None,
+            ground_speed_kt=canonical.ground_speed_kt,
+            track_deg=canonical.track_deg,
+            vertical_rate_fpm=canonical.vertical_rate_fpm,
+            operator_lat=drone.operator_lat if drone else None,
+            operator_lon=drone.operator_lon if drone else None,
+            operator_id=drone.operator_id if drone else None,
+            operator_alt_takeoff_ft=drone.operator_alt_takeoff_ft if drone else None,
+            rid_source=drone.rid_source if drone else None,
+            seen_by=sorted(state.seen_by),
+            first_seen=state.first_seen,
+            last_seen=state.last_seen,
+            distance_to=dict(state.distance_to),
+            bearing_to=dict(state.bearing_to),
+            flags=sorted(state.flags),
+        )
+
+
 class ReceiverStatsPayload(BaseModel):
     """Per-receiver stats published to ``adsb/receiver/<name>/stats``.
 
@@ -196,6 +277,7 @@ class ReceiverLocationPayload(BaseModel):
 
 __all__ = [
     "AircraftPayload",
+    "DronePayload",
     "ReceiverLocationPayload",
     "ReceiverStatsPayload",
 ]

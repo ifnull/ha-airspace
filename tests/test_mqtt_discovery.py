@@ -368,3 +368,43 @@ class TestAlertEntities:
     def test_no_alert_entities_without_rules(self) -> None:
         payloads = build_discovery_payloads(_make_config())
         assert not any("alert" in t for t in _topics(payloads))
+
+
+# ---------------------------------------------------------------------------
+# Drone entities (Phase 3 — Remote ID)
+# ---------------------------------------------------------------------------
+
+
+class TestDroneEntities:
+    def _config_with_drones(self) -> Config:
+        return Config.model_validate(
+            {
+                "watchpoints": [{"name": "home", "lat": 30.33, "lon": -97.99}],
+                "mqtt": {"broker": "broker.local"},
+                "receivers": [
+                    {"name": "rx-home", "url": "http://piaware/aircraft.json", "band": "1090"}
+                ],
+                "remoteid": [
+                    {"name": "dump3411", "url": "http://drone.local:8754/data/remoteid.json"}
+                ],
+            }
+        )
+
+    def test_drone_entities_present(self) -> None:
+        bodies = _bodies_by_unique_id(build_discovery_payloads(self._config_with_drones()))
+        assert "adsb_drone_count" in bodies
+        assert "adsb_nearest_drone" in bodies
+
+    def test_drone_count_state_topic(self) -> None:
+        bodies = _bodies_by_unique_id(build_discovery_payloads(self._config_with_drones()))
+        assert bodies["adsb_drone_count"]["state_topic"] == "adsb/summary/drone_count"
+
+    def test_nearest_drone_has_attributes_topic(self) -> None:
+        bodies = _bodies_by_unique_id(build_discovery_payloads(self._config_with_drones()))
+        body = bodies["adsb_nearest_drone"]
+        assert body["state_topic"] == "adsb/summary/nearest_drone"
+        assert body["json_attributes_topic"] == "adsb/summary/nearest_drone"
+
+    def test_no_drone_entities_without_remoteid_source(self) -> None:
+        payloads = build_discovery_payloads(_make_config())
+        assert not any("drone" in t for t in _topics(payloads))

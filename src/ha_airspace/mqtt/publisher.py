@@ -27,6 +27,7 @@ from ha_airspace.mqtt.client import MqttClient
 from ha_airspace.mqtt.discovery import build_discovery_payloads
 from ha_airspace.mqtt.payloads import (
     AircraftPayload,
+    DronePayload,
     ReceiverLocationPayload,
     ReceiverStatsPayload,
 )
@@ -66,9 +67,11 @@ class Publisher:
         self._summary_min_interval = config.mqtt.publish_summary_min_interval_s
 
         # Throttle state. 0.0 sentinel always allows the first publish
-        # since (now - 0.0) > any finite min_interval.
+        # since (now - 0.0) > any finite min_interval. Per-track publishes
+        # (aircraft + drones) share one dict — track_id is unique across both.
         self._last_aircraft_publish: dict[str, float] = {}
         self._last_summary_publish: float = 0.0
+        self._last_drone_summary_publish: float = 0.0
 
     # ------------------------------------------------------------------
     # On-connect hook (status:online + discovery republish)
@@ -178,6 +181,68 @@ class Publisher:
             retain=True,
             topic_class="alert",
         )
+
+    # ------------------------------------------------------------------
+    # Drone topics — Remote ID tracks, separate from aircraft
+    # ------------------------------------------------------------------
+
+    async def publish_drone(self, state: AircraftState) -> bool:
+        """Publish per-drone state to ``adsb/drone/<track_id>`` (the UAS id).
+
+        Throttled per-track by the aircraft min-interval (drones and aircraft
+        share the per-track throttle dict; track_ids are unique across both).
+        Returns True if published, False if suppressed by throttle."""
+        now = self._clock()
+        last = self._last_aircraft_publish.get(state.track_id, 0.0)
+        if (now - last) < self._aircraft_min_interval:
+            return False
+        self._last_aircraft_publish[state.track_id] = now
+
+        payload = DronePayload.from_state(state).model_dump_json()
+        await self._client.publish(
+            f"{self._base}/drone/{state.track_id}",
+            payload,
+            retain=True,
+            topic_class="drone",
+        )
+        return True
+
+    async def purge_drone(self, track_id: str) -> None:
+        """Clear the retained drone topic when a drone track is PURGED
+        (empty-retained), so a departed drone does not linger in HA."""
+        await self._client.publish(
+            f"{self._base}/drone/{track_id}",
+            b"",
+            retain=True,
+            topic_class="drone",
+        )
+        self._last_aircraft_publish.pop(track_id, None)
+
+    async def publish_drone_summary(self, *, count: int, nearest: AircraftState | None) -> bool:
+        """Publish ``adsb/summary/{drone_count, nearest_drone}``. Globally
+        throttled like the aircraft summary. ``nearest=None`` clears the
+        nearest-drone topic (empty-retained) so HA goes unavailable rather
+        than showing a stale drone once the sky is clear of them."""
+        now = self._clock()
+        if (now - self._last_drone_summary_publish) < self._summary_min_interval:
+            return False
+        self._last_drone_summary_publish = now
+
+        await self._client.publish(
+            f"{self._base}/summary/drone_count",
+            str(count).encode("utf-8"),
+            retain=True,
+            topic_class="summary",
+        )
+        nearest_payload: bytes | str
+        nearest_payload = DronePayload.from_state(nearest).model_dump_json() if nearest else b""
+        await self._client.publish(
+            f"{self._base}/summary/nearest_drone",
+            nearest_payload,
+            retain=True,
+            topic_class="summary",
+        )
+        return True
 
     # ------------------------------------------------------------------
     # Summary topics — the surface HA actually subscribes to

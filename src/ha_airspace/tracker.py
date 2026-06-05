@@ -90,6 +90,7 @@ class AircraftTracker:
         merger: Merger | None = None,
         enricher: Enricher | None = None,
         alerts: AlertEvaluator | None = None,
+        has_drone_source: bool = False,
         metrics: MetricsRegistry | None = None,
         clock: Callable[[], datetime] = _default_clock,
         stale_after_s: float = 5.0,
@@ -102,6 +103,9 @@ class AircraftTracker:
         self._merger = merger if merger is not None else Merger()
         self._enricher = enricher
         self._alerts = alerts
+        # Only publish the drone summary when a Remote ID source is configured,
+        # so ADS-B-only installs don't get spurious empty drone topics.
+        self._has_drone_source = has_drone_source
         self._primary = self._pick_primary(self._watchpoints)
         self._metrics = metrics
         self._clock = clock
@@ -185,19 +189,26 @@ class AircraftTracker:
         keeps republishing STALE so HA dashboards do not blink). Returns the
         hexes purged this cycle so alert EXITs can fire for them."""
         purged: list[str] = []
-        for hex_code, state in list(self._states.items()):
+        for track_id, state in list(self._states.items()):
             lifecycle = state.lifecycle(
                 now,
                 stale_after_s=self._stale_after_s,
                 expire_after_s=self._expire_after_s,
             )
+            is_drone = "remoteid" in state.bands
             if lifecycle is Lifecycle.PURGED:
-                await self._publisher.purge_aircraft(hex_code)
-                self._merger.remove(hex_code)
-                purged.append(hex_code)
-                log.debug("aircraft_purged", hex=hex_code)
+                if is_drone:
+                    await self._publisher.purge_drone(track_id)
+                else:
+                    await self._publisher.purge_aircraft(track_id)
+                self._merger.remove(track_id)
+                purged.append(track_id)
+                log.debug("track_purged", track_id=track_id)
                 continue
-            await self._publisher.publish_aircraft(state)
+            if is_drone:
+                await self._publisher.publish_drone(state)
+            else:
+                await self._publisher.publish_aircraft(state)
         return purged
 
     async def _evaluate_alerts(self, purged: list[str]) -> None:
@@ -222,33 +233,40 @@ class AircraftTracker:
             await self._publisher.publish_alert_active(rule, active=rule in active)
 
     async def _publish_summary(self) -> None:
-        nearest = self._nearest()
+        # Aircraft and drones are counted + "nearest"-ranked separately: the
+        # aircraft summary excludes drones, and drones get their own summary.
+        aircraft = [s for s in self._states.values() if "remoteid" not in s.bands]
+        drones = [s for s in self._states.values() if "remoteid" in s.bands]
         await self._publisher.publish_summary(
-            count=len(self._states),
-            nearest=nearest,
-            count_by_flag=self._count_by_flag(),
+            count=len(aircraft),
+            nearest=self._nearest(aircraft),
+            count_by_flag=self._count_by_flag(aircraft),
         )
+        if self._has_drone_source:
+            await self._publisher.publish_drone_summary(
+                count=len(drones),
+                nearest=self._nearest(drones),
+            )
 
-    def _count_by_flag(self) -> dict[str, int]:
-        """How many tracked aircraft carry each flag. A flag is counted once
-        per aircraft; an aircraft with multiple flags adds to each. Flags that
-        no aircraft currently carry are omitted (the topic reflects the live
-        airspace; absent means zero)."""
+    def _count_by_flag(self, states: list[AircraftState]) -> dict[str, int]:
+        """How many of ``states`` carry each flag. A flag is counted once per
+        track; a track with multiple flags adds to each. Flags no track
+        currently carries are omitted (absent means zero)."""
         counts: dict[str, int] = {}
-        for state in self._states.values():
+        for state in states:
             for flag in state.flags:
                 counts[flag] = counts.get(flag, 0) + 1
         return counts
 
-    def _nearest(self) -> AircraftState | None:
-        """The tracked aircraft closest to the primary watchpoint. Aircraft
+    def _nearest(self, states: list[AircraftState]) -> AircraftState | None:
+        """The track in ``states`` closest to the primary watchpoint. Tracks
         without a position (no distance to the primary) are skipped. Returns
-        None when nothing positioned is in coverage — the publisher then
-        clears the nearest topic so HA goes unavailable rather than stale."""
+        None when nothing positioned is present — the publisher then clears the
+        nearest topic so HA goes unavailable rather than stale."""
         key = self._primary.name
         best: AircraftState | None = None
         best_distance: float | None = None
-        for state in self._states.values():
+        for state in states:
             distance = state.distance_to.get(key)
             if distance is None:
                 continue

@@ -29,6 +29,7 @@ from ha_airspace.config import Config
 from ha_airspace.models import (
     AircraftObservation,
     AircraftState,
+    DroneInfo,
     ReceiverLocation,
 )
 from ha_airspace.mqtt.publisher import Publisher
@@ -484,3 +485,86 @@ class TestReceiverTopics:
         body = json.loads(call["payload"])
         assert body["lat"] == 30.33
         assert body["source"] == "receiver_json"
+
+
+# ---------------------------------------------------------------------------
+# Drone topics (Phase 3 — Remote ID)
+# ---------------------------------------------------------------------------
+
+
+def _make_drone_state(track_id: str = "Spoofed_Serial_1") -> AircraftState:
+    obs = AircraftObservation(
+        track_id=track_id,
+        hex=None,
+        non_icao=True,
+        observed_at=_now_dt(),
+        seen_by="dump3411",
+        band="remoteid",
+        lat=30.30,
+        lon=-98.06,
+        alt_geom_ft=1276,
+        ground_speed_kt=93.3,
+        drone=DroneInfo(
+            id_type="serial",
+            ua_type="multirotor",
+            agl_ft=246.1,
+            rid_source="wifi_beacon",
+            operator_lat=30.29,
+            operator_lon=-98.05,
+            operator_id="OP123",
+            operator_alt_takeoff_ft=50.0,
+        ),
+    )
+    return AircraftState.from_first_observation(obs)
+
+
+class TestPublishDrone:
+    async def test_publishes_to_drone_topic_with_track_id(
+        self, fake_client: FakeMqttClient
+    ) -> None:
+        pub = _make_publisher(fake_client)
+        published = await pub.publish_drone(_make_drone_state("Spoofed_Serial_1"))
+        assert published is True
+        call = fake_client.publishes[0]
+        assert call["topic"] == "adsb/drone/Spoofed_Serial_1"
+        assert call["retain"] is True
+        assert call["topic_class"] == "drone"
+
+    async def test_drone_payload_carries_operator_and_agl(
+        self, fake_client: FakeMqttClient
+    ) -> None:
+        pub = _make_publisher(fake_client)
+        await pub.publish_drone(_make_drone_state())
+        body = json.loads(fake_client.publishes[0]["payload"])
+        assert body["agl_ft"] == 246.1
+        assert body["operator_lat"] == 30.29
+        assert body["operator_lon"] == -98.05
+        assert body["operator_id"] == "OP123"
+        assert body["id_type"] == "serial"
+        assert body["rid_source"] == "wifi_beacon"
+
+    async def test_purge_drone_clears_retained(self, fake_client: FakeMqttClient) -> None:
+        pub = _make_publisher(fake_client)
+        await pub.purge_drone("Spoofed_Serial_1")
+        call = fake_client.publishes[0]
+        assert call["topic"] == "adsb/drone/Spoofed_Serial_1"
+        assert call["payload"] == b""
+        assert call["retain"] is True
+
+    async def test_drone_summary_count_and_nearest(self, fake_client: FakeMqttClient) -> None:
+        pub = _make_publisher(fake_client)
+        await pub.publish_drone_summary(count=3, nearest=_make_drone_state())
+        topics = [c["topic"] for c in fake_client.publishes]
+        assert "adsb/summary/drone_count" in topics
+        assert "adsb/summary/nearest_drone" in topics
+        count_call = next(c for c in fake_client.publishes if c["topic"].endswith("drone_count"))
+        assert count_call["payload"] == b"3"
+
+    async def test_drone_summary_nearest_none_empty_retained(
+        self, fake_client: FakeMqttClient
+    ) -> None:
+        pub = _make_publisher(fake_client)
+        await pub.publish_drone_summary(count=0, nearest=None)
+        call = next(c for c in fake_client.publishes if c["topic"].endswith("nearest_drone"))
+        assert call["payload"] == b""
+        assert call["retain"] is True

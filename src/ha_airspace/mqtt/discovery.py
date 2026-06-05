@@ -141,12 +141,74 @@ def build_discovery_payloads(
             )
         )
 
-    # NO per-aircraft entities. Locked decision (eng review §11):
-    # auto-discovering one entity per hex blows up HA's entity registry
-    # within a single busy day of traffic. Power users subscribe to
-    # `adsb/aircraft/<hex>` directly with their own consumer.
+    # --- Drone (Remote ID) entities ------------------------------------
+    # Only when a Remote ID source is configured — distinct from aircraft so
+    # HA users can treat drones and their operators independently.
+    if any(rc.enabled for rc in config.remoteid):
+        payloads.extend(
+            _build_drone_entities(
+                base=base,
+                discovery_prefix=discovery_prefix,
+                availability_topic=availability_topic,
+                device_block=device_block,
+            )
+        )
+
+    # NO per-aircraft / per-drone-track entities. Locked decision (eng review
+    # §11): auto-discovering one entity per hex/track blows up HA's entity
+    # registry within a single busy day. Power users subscribe to
+    # `adsb/aircraft/<id>` / `adsb/drone/<id>` directly with their own consumer.
 
     return payloads
+
+
+def _build_drone_entities(
+    *,
+    base: str,
+    discovery_prefix: str,
+    availability_topic: str,
+    device_block: dict[str, Any],
+) -> list[tuple[str, dict[str, Any]]]:
+    """Drone count + nearest-drone (with operator location in attributes).
+
+    Distinct from the aircraft entities: a Remote ID drone is not an aircraft,
+    and its operator location is a security-relevant field HA users will want
+    to surface separately."""
+    return [
+        _entity_config(
+            discovery_prefix=discovery_prefix,
+            component="sensor",
+            object_id="drone_count",
+            body={
+                "name": "Drone Count",
+                "unique_id": "adsb_drone_count",
+                "state_topic": f"{base}/summary/drone_count",
+                "icon": "mdi:quadcopter",
+                "availability_topic": availability_topic,
+                "payload_available": "online",
+                "payload_not_available": "offline",
+                "device": device_block,
+            },
+        ),
+        _entity_config(
+            discovery_prefix=discovery_prefix,
+            component="sensor",
+            object_id="nearest_drone",
+            body={
+                "name": "Nearest Drone",
+                "unique_id": "adsb_nearest_drone",
+                "state_topic": f"{base}/summary/nearest_drone",
+                "value_template": "{{ value_json.distance_to.home if value_json else None }}",
+                "json_attributes_topic": f"{base}/summary/nearest_drone",
+                "unit_of_measurement": "nm",
+                "icon": "mdi:quadcopter",
+                "availability_topic": availability_topic,
+                "payload_available": "online",
+                "payload_not_available": "offline",
+                "device": device_block,
+            },
+        ),
+    ]
 
 
 def _build_receiver_entities(

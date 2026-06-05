@@ -32,7 +32,7 @@ from ha_airspace.config import (
 )
 from ha_airspace.enrichment import Enricher
 from ha_airspace.metrics import MetricsRegistry
-from ha_airspace.models import AircraftObservation, AircraftState, Watchpoint
+from ha_airspace.models import AircraftObservation, AircraftState, DroneInfo, Watchpoint
 from ha_airspace.tracker import AircraftTracker
 
 # ---------------------------------------------------------------------------
@@ -54,6 +54,9 @@ class FakePublisher:
         self.alerts: list[tuple[str, str]] = []  # (rule, hex) ENTER publishes
         self.alerts_cleared: list[tuple[str, str]] = []  # (rule, hex) EXIT clears
         self.alert_active: list[tuple[str, bool]] = []  # (rule, active)
+        self.drones_published: list[AircraftState] = []
+        self.drones_purged: list[str] = []
+        self.drone_summaries: list[dict[str, Any]] = []
 
     async def publish_aircraft(self, state: AircraftState) -> bool:
         self.published.append(state)
@@ -80,6 +83,17 @@ class FakePublisher:
 
     async def publish_alert_active(self, rule: str, *, active: bool) -> None:
         self.alert_active.append((rule, active))
+
+    async def publish_drone(self, state: AircraftState) -> bool:
+        self.drones_published.append(state)
+        return True
+
+    async def purge_drone(self, track_id: str) -> None:
+        self.drones_purged.append(track_id)
+
+    async def publish_drone_summary(self, *, count: int, nearest: AircraftState | None) -> bool:
+        self.drone_summaries.append({"count": count, "nearest": nearest})
+        return True
 
 
 class Clock:
@@ -509,3 +523,70 @@ class TestAlerts:
         await tracker.process_poll([_obs("ae0001", category="A3")])
         assert publisher.alerts == []
         assert publisher.alert_active == []
+
+
+# ---------------------------------------------------------------------------
+# Drone routing (Phase 3 — Remote ID)
+# ---------------------------------------------------------------------------
+
+
+def _drone_obs(track_id: str = "Drone1", *, at: datetime = _T0) -> AircraftObservation:
+    return AircraftObservation(
+        track_id=track_id,
+        hex=None,
+        non_icao=True,
+        observed_at=at,
+        seen_by="dump3411",
+        band="remoteid",
+        lat=30.34,
+        lon=-97.98,
+        alt_geom_ft=400,
+        drone=DroneInfo(id_type="serial", agl_ft=300.0, operator_lat=30.33, operator_lon=-97.99),
+    )
+
+
+class TestDroneRouting:
+    def _tracker(self, publisher: FakePublisher, clock: Clock) -> AircraftTracker:
+        return AircraftTracker(
+            publisher,  # type: ignore[arg-type]
+            [_HOME],
+            has_drone_source=True,
+            clock=clock,
+        )
+
+    async def test_drone_publishes_to_drone_topic_not_aircraft(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = self._tracker(publisher, clock)
+        await tracker.process_poll([_drone_obs("Drone1")])
+        assert [s.track_id for s in publisher.drones_published] == ["Drone1"]
+        assert publisher.published == []  # not on the aircraft path
+
+    async def test_aircraft_and_drone_routed_separately(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = self._tracker(publisher, clock)
+        await tracker.process_poll([_obs("ae0001"), _drone_obs("Drone1")])
+        assert [s.hex for s in publisher.published] == ["ae0001"]
+        assert [s.track_id for s in publisher.drones_published] == ["Drone1"]
+        # Separate summaries: aircraft count excludes the drone.
+        assert publisher.summaries[-1]["count"] == 1
+        assert publisher.drone_summaries[-1]["count"] == 1
+
+    async def test_drone_summary_suppressed_without_source(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        # No has_drone_source -> no drone summary even if a drone slips in.
+        tracker = AircraftTracker(publisher, [_HOME], clock=clock)  # type: ignore[arg-type]
+        await tracker.process_poll([_drone_obs("Drone1")])
+        assert publisher.drone_summaries == []
+
+    async def test_expired_drone_purged_via_drone_path(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = self._tracker(publisher, clock)
+        await tracker.process_poll([_drone_obs("Drone1", at=clock.now)])
+        clock.advance(61.0)
+        await tracker.process_poll([])
+        assert "Drone1" in publisher.drones_purged
+        assert "Drone1" not in publisher.purged

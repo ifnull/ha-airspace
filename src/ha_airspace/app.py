@@ -330,6 +330,7 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
         config.watchpoints_runtime(),
         enricher=Enricher(config.enrichment, db_store=db_store),
         alerts=alerts,
+        has_drone_source=any(rc.enabled for rc in config.remoteid),
         metrics=metrics,
     )
     return App(
