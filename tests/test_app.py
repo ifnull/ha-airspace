@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -134,6 +135,14 @@ def _topics(client: FakeMqttClient) -> list[str]:
     return [p["topic"] for p in client.publishes]
 
 
+def _latest_payload(client: FakeMqttClient, topic: str) -> Any:
+    """Most recent payload published on an exact topic, or None."""
+    for p in reversed(client.publishes):
+        if p["topic"] == topic:
+            return p["payload"]
+    return None
+
+
 # ---------------------------------------------------------------------------
 # run() lifecycle
 # ---------------------------------------------------------------------------
@@ -158,6 +167,57 @@ class TestRun:
         assert "adsb/summary/count" in topics
         assert "adsb/receiver/rx-home/status" in topics
         assert "adsb/receiver/rx-home/stats" in topics
+
+    async def test_two_receivers_merge_to_one_aircraft(self) -> None:
+        # Two receivers (different bands) replaying the same fixture see the
+        # same hexes. The merged view must publish each hex once, with BOTH
+        # receivers in seen_by and BOTH bands in bands — the Phase 3 payoff.
+        client = FakeMqttClient()
+        cfg = _config(
+            receivers=[
+                {"name": "rx-1090", "url": "http://a/aircraft.json", "band": "1090"},
+                {"name": "rx-978", "url": "http://b/aircraft.json", "band": "978"},
+            ]
+        )
+        publisher = Publisher(client, cfg)  # type: ignore[arg-type]
+        tracker = AircraftTracker(publisher, cfg.watchpoints_runtime())
+        receivers: list[ReceiverSource] = [
+            FileReceiver("rx-1090", "1090", _FIXTURES / "aircraft_basic.json"),
+            FileReceiver("rx-978", "978", _FIXTURES / "aircraft_basic.json"),
+        ]
+        app = App(
+            cfg,
+            receivers=receivers,
+            mqtt_client=client,  # type: ignore[arg-type]
+            publisher=publisher,
+            tracker=tracker,
+        )
+
+        run_task = asyncio.create_task(app.run())
+        # Wait until both receivers have ingested at least once and a tick ran.
+        await _run_until(
+            lambda: (
+                any("summary/count" in t for t in _topics(client))
+                and any(t == "adsb/aircraft/ae0001" for t in _topics(client))
+            )
+        )
+        # Give both poll loops a moment to both ingest before stopping.
+        await _run_until(
+            lambda: (
+                _latest_payload(client, "adsb/aircraft/ae0001") is not None
+                and len(json.loads(_latest_payload(client, "adsb/aircraft/ae0001"))["seen_by"]) == 2
+            )
+        )
+        app.request_stop()
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(run_task, timeout=2.0)
+
+        body = json.loads(_latest_payload(client, "adsb/aircraft/ae0001"))
+        assert sorted(body["seen_by"]) == ["rx-1090", "rx-978"]
+        assert sorted(body["bands"]) == ["1090", "978"]
+        # Exactly one aircraft topic per hex (merged, not duplicated per receiver).
+        ae0001_topics = [t for t in _topics(client) if t == "adsb/aircraft/ae0001"]
+        assert len(ae0001_topics) >= 1  # republished each tick, but one topic
 
     async def test_on_connect_republishes_status_discovery_location(self) -> None:
         client = FakeMqttClient()

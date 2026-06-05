@@ -1,17 +1,20 @@
-"""Single-source aircraft state tracking (Phase 1).
+"""Aircraft state pipeline over a multi-source ``Merger`` (Phase 3).
 
-Maintains the canonical ``AircraftState`` dict for one receiver, runs the
-NEW -> ACTIVE -> STALE -> PURGED lifecycle each poll, computes per-watchpoint
-geometry, picks the nearest aircraft, and drives the MQTT ``Publisher``.
+Owns the per-cycle pipeline on top of the canonical state the ``Merger``
+produces: per-watchpoint geometry + enrichment at ingest, then lifecycle
+(NEW -> ACTIVE -> STALE -> PURGED), alert evaluation, summary, and the
+active-aircraft gauge each tick. Drives the MQTT ``Publisher``.
 
-This is the Phase 1 degenerate case of the multi-source merger: a single
-receiver, so "canonical" is always the latest observation and there is no
-cross-receiver position selection to do. The lifecycle / geometry / nearest /
-publish logic established here is what Phase 3 keeps.
+Two entry points let the app feed multiple receivers into one merged view:
 
-# TODO(phase-3): canonical selection (NIC -> NAC_p -> seen_pos -> RSSI -> name)
-# moves to merger.py; the tracker then consumes already-merged states instead
-# of doing the trivial latest-wins update in _ingest().
+* ``ingest(obs)`` — merge one observation, recompute geometry + enrichment for
+  its (possibly re-canonicalized) state. Called per observation, per receiver
+  poll. The ``Merger`` does the cross-receiver canonical selection.
+* ``tick()`` — run lifecycle / alerts / summary / metrics once over all merged
+  states. Called on the service cadence by the app's pipeline loop.
+
+``process_poll(observations)`` = ``ingest`` each + ``tick`` — the single-source
+convenience path (and what the unit tests drive).
 
 No network or disk of its own — every side effect is delegated to the injected
 ``Publisher``, so tests drive it with a fake publisher and a fixed clock.
@@ -27,6 +30,7 @@ import structlog
 from ha_airspace.alerts import AlertEvaluator, AlertTransition
 from ha_airspace.enrichment import Enricher
 from ha_airspace.geo import bearing, haversine
+from ha_airspace.merger import Merger
 from ha_airspace.metrics import MetricsRegistry
 from ha_airspace.models import AircraftObservation, AircraftState, Lifecycle, Watchpoint
 from ha_airspace.mqtt.publisher import Publisher
@@ -62,6 +66,9 @@ class AircraftTracker:
       watchpoints: Runtime watchpoints. Distance/bearing are computed for
         every one; "nearest" is measured to the primary (the one named
         ``home`` if present, else the first).
+      merger: The multi-source ``Merger`` that owns canonical selection and
+        the state dict. Defaults to a fresh single-window ``Merger`` (the
+        single-source case is just one receiver feeding it).
       enricher: Optional ``Enricher``. When supplied, each updated state is
         enriched (flags now; DB join + alerts later) after geometry and
         before publish. Absent = Phase 1 behavior (no flags).
@@ -80,6 +87,7 @@ class AircraftTracker:
         publisher: Publisher,
         watchpoints: Iterable[Watchpoint],
         *,
+        merger: Merger | None = None,
         enricher: Enricher | None = None,
         alerts: AlertEvaluator | None = None,
         metrics: MetricsRegistry | None = None,
@@ -91,6 +99,7 @@ class AircraftTracker:
         if not self._watchpoints:
             raise ValueError("AircraftTracker requires at least one watchpoint")
         self._publisher = publisher
+        self._merger = merger if merger is not None else Merger()
         self._enricher = enricher
         self._alerts = alerts
         self._primary = self._pick_primary(self._watchpoints)
@@ -98,7 +107,11 @@ class AircraftTracker:
         self._clock = clock
         self._stale_after_s = stale_after_s
         self._expire_after_s = expire_after_s
-        self._states: dict[str, AircraftState] = {}
+
+    @property
+    def _states(self) -> dict[str, AircraftState]:
+        """The merged state dict, owned by the merger."""
+        return self._merger.states
 
     # ------------------------------------------------------------------
     # Public API
@@ -109,15 +122,33 @@ class AircraftTracker:
         """Number of aircraft currently tracked (ACTIVE or STALE)."""
         return len(self._states)
 
-    async def process_poll(self, observations: list[AircraftObservation]) -> None:
-        """Process one receiver poll. See class docstring for the sequence."""
+    def ingest(self, obs: AircraftObservation) -> None:
+        """Merge one observation and refresh its state's geometry + enrichment.
+        Called per observation; the merger handles cross-receiver canonical
+        selection. Does not publish — that happens in ``tick``."""
+        state = self._merger.ingest(obs)
+        self._recompute_geometry(state)
+        if self._enricher is not None:
+            # Flags / DB join depend on the freshly merged canonical +
+            # geometry, so enrich after both.
+            self._enricher.enrich(state)
+
+    async def tick(self) -> None:
+        """Run lifecycle, alerts, summary, and metrics once over all merged
+        states. Called on the service cadence (multi-receiver) or right after
+        ``ingest`` in the single-source convenience path."""
         now = self._clock()
-        for obs in observations:
-            self._ingest(obs)
         purged = await self._run_lifecycle(now)
         await self._evaluate_alerts(purged)
         await self._publish_summary()
         self._update_metrics()
+
+    async def process_poll(self, observations: list[AircraftObservation]) -> None:
+        """Single-source convenience: ingest every observation, then tick.
+        Equivalent to one receiver's poll feeding the pipeline."""
+        for obs in observations:
+            self.ingest(obs)
+        await self.tick()
 
     # ------------------------------------------------------------------
     # internals
@@ -132,26 +163,6 @@ class AircraftTracker:
             if wp.name == "home":
                 return wp
         return watchpoints[0]
-
-    def _ingest(self, obs: AircraftObservation) -> None:
-        """Upsert one observation. New hex -> fresh state; existing hex ->
-        latest-wins update (single-receiver canonical policy)."""
-        state = self._states.get(obs.hex)
-        if state is None:
-            state = AircraftState.from_first_observation(obs)
-            self._states[obs.hex] = state
-        else:
-            state.canonical = obs
-            state.canonical_source = obs.seen_by
-            state.last_seen = obs.observed_at
-            state.bands.add(obs.band)
-            state.seen_by.add(obs.seen_by)
-            state.by_receiver[obs.seen_by] = obs
-        self._recompute_geometry(state)
-        if self._enricher is not None:
-            # Flags (and, later, DB join + alerts) depend on the freshly
-            # updated canonical + geometry, so enrich after both.
-            self._enricher.enrich(state)
 
     def _recompute_geometry(self, state: AircraftState) -> None:
         """Fill ``distance_to`` / ``bearing_to`` for every watchpoint from
@@ -182,7 +193,7 @@ class AircraftTracker:
             )
             if lifecycle is Lifecycle.PURGED:
                 await self._publisher.purge_aircraft(hex_code)
-                del self._states[hex_code]
+                self._merger.remove(hex_code)
                 purged.append(hex_code)
                 log.debug("aircraft_purged", hex=hex_code)
                 continue

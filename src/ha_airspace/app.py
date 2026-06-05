@@ -86,6 +86,9 @@ class App:
         # startup, republished on every broker (re)connect).
         self._locations: dict[str, ReceiverLocation] = {}
         self._stop = asyncio.Event()
+        # Serializes merger mutation: each poll loop ingests its batch under
+        # this lock, and the pipeline loop holds it across a tick. Ingest is
+        # sync + fast and publish just enqueues, so contention is negligible.
         self._tracker_lock = asyncio.Lock()
 
         # Resolve each receiver's poll interval once (receiver override else
@@ -127,6 +130,7 @@ class App:
                     tg.create_task(self._db_loader.run(), name="db-loader")
                 for receiver in self._receivers:
                     tg.create_task(self._poll_loop(receiver), name=f"poll-{receiver.name}")
+                tg.create_task(self._pipeline_loop(), name="pipeline")
                 tg.create_task(self._stop_watcher(), name="stop-watcher")
         finally:
             await self._close_receivers()
@@ -182,15 +186,39 @@ class App:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
 
     async def _poll_once(self, receiver: ReceiverSource) -> None:
-        """One fetch → tracker → receiver-status publish cycle. The base
+        """One fetch → merge ingest → receiver-status publish cycle. The base
         receiver swallows transient failures (returns ``[]`` and marks
-        itself unhealthy), so this never crashes the loop on a flaky feed."""
+        itself unhealthy), so this never crashes the loop on a flaky feed.
+
+        Ingest only — the per-cycle pipeline (lifecycle, alerts, summary) runs
+        in ``_pipeline_loop`` over the merged view of all receivers, so two
+        receivers seeing the same hex become one canonical aircraft."""
         observations = await receiver.fetch()
         async with self._tracker_lock:
-            await self._tracker.process_poll(observations)
+            for obs in observations:
+                self._tracker.ingest(obs)
         health = await receiver.health()
         await self._publisher.publish_receiver_status(receiver.name, online=bool(health["online"]))
         await self._publisher.publish_receiver_stats(receiver.name, health)
+
+    # ------------------------------------------------------------------
+    # Pipeline loop (single task — lifecycle/alerts/summary over merged view)
+    # ------------------------------------------------------------------
+
+    async def _pipeline_loop(self) -> None:
+        """Run the merged-state pipeline on the service cadence: lifecycle,
+        alert evaluation, summary, and metrics over every receiver's merged
+        output. Ticking once centrally (rather than per receiver) means a hex
+        seen by two receivers is published once, as one canonical aircraft.
+
+        The tick holds the merger lock so it never runs while a poll loop is
+        mutating the merged state mid-cycle."""
+        interval = self._config.service.poll_interval_s
+        while not self._stop.is_set():
+            async with self._tracker_lock:
+                await self._tracker.tick()
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
 
     # ------------------------------------------------------------------
     # Shutdown
