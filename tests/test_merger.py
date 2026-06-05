@@ -171,3 +171,36 @@ class TestMerger:
         m.ingest(_obs(seen_by="rx-a", hex_code="ae0001"))
         m.ingest(_obs(seen_by="rx-a", hex_code="ae0002"))
         assert set(m.states) == {"ae0001", "ae0002"}
+
+
+# ---------------------------------------------------------------------------
+# Source-agnostic identity in the merger (Phase 3 slice 3)
+# ---------------------------------------------------------------------------
+
+
+class TestNonIcaoIdentity:
+    def _drone(self, *, seen_by: str = "dump3411") -> AircraftObservation:
+        return AircraftObservation(
+            track_id="Spoofed_Serial_98067",
+            hex=None,
+            non_icao=True,
+            observed_at=_T0,
+            seen_by=seen_by,
+            band="remoteid",
+            lat=30.3,
+            lon=-98.0,
+        )
+
+    def test_drone_keyed_by_track_id(self) -> None:
+        m = Merger()
+        state = m.ingest(self._drone())
+        assert "Spoofed_Serial_98067" in m.states
+        assert state.hex is None
+        assert state.bands == {"remoteid"}
+
+    def test_drone_and_aircraft_do_not_collide(self) -> None:
+        m = Merger()
+        m.ingest(_obs(seen_by="rx-a", hex_code="ae0001"))
+        m.ingest(self._drone())
+        # Two independent tracks: one ICAO aircraft, one Remote ID drone.
+        assert set(m.states) == {"ae0001", "Spoofed_Serial_98067"}

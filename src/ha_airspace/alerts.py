@@ -39,11 +39,11 @@ class AlertTransition(StrEnum):
 class AlertEvent:
     """One ENTER/EXIT transition the tracker should publish.
 
-    ``state`` is the matching aircraft on ENTER; ``None`` on EXIT (the
-    aircraft may have been purged, so we only carry the hex)."""
+    ``state`` is the matching track on ENTER; ``None`` on EXIT (the track may
+    have been purged, so we only carry the ``track_id``)."""
 
     rule: str
-    hex: str
+    track_id: str
     transition: AlertTransition
     state: AircraftState | None
 
@@ -118,58 +118,58 @@ class AlertEvaluator:
         self._last_exit: dict[tuple[str, str], datetime] = {}
 
     def evaluate(
-        self, states: Iterable[AircraftState], purged_hexes: Iterable[str]
+        self, states: Iterable[AircraftState], purged_ids: Iterable[str]
     ) -> list[AlertEvent]:
-        """Process one poll. ``states`` are the currently-tracked aircraft;
-        ``purged_hexes`` are those dropped this cycle (force EXIT). Returns the
-        ENTER/EXIT events to publish, in rule-then-hex order for determinism."""
+        """Process one poll. ``states`` are the currently-tracked tracks;
+        ``purged_ids`` are track_ids dropped this cycle (force EXIT). Returns
+        the ENTER/EXIT events, in rule-then-id order for determinism."""
         now = self._clock()
-        by_hex = {s.hex: s for s in states}
+        by_id = {s.track_id: s for s in states}
         events: list[AlertEvent] = []
 
         for rule in self._config.rules:
             currently = {
-                hex_code
-                for hex_code, state in by_hex.items()
+                track_id
+                for track_id, state in by_id.items()
                 if rule_matches(state, rule.match, elevation_m_for=self._elevation_m_for)
             }
-            events.extend(self._transitions(rule.name, currently, by_hex, now))
+            events.extend(self._transitions(rule.name, currently, by_id, now))
 
-        # Any active (rule, hex) whose hex was purged exits regardless of rule.
-        events.extend(self._handle_purges(set(purged_hexes), now))
+        # Any active (rule, id) whose track was purged exits regardless of rule.
+        events.extend(self._handle_purges(set(purged_ids), now))
         return events
 
     def _transitions(
         self,
         rule_name: str,
         currently: set[str],
-        by_hex: dict[str, AircraftState],
+        by_id: dict[str, AircraftState],
         now: datetime,
     ) -> list[AlertEvent]:
         events: list[AlertEvent] = []
-        for hex_code in sorted(currently):
-            key = (rule_name, hex_code)
+        for track_id in sorted(currently):
+            key = (rule_name, track_id)
             if key in self._active:
                 continue  # already inside; no transition
             if self._in_cooldown(key, now):
                 continue  # matched again too soon after EXIT; suppress
             self._active.add(key)
             events.append(
-                AlertEvent(rule_name, hex_code, AlertTransition.ENTER, by_hex.get(hex_code))
+                AlertEvent(rule_name, track_id, AlertTransition.ENTER, by_id.get(track_id))
             )
 
         # EXITs: active for this rule but no longer matching.
-        for rule, hex_code in sorted(self._active):
-            if rule != rule_name or hex_code in currently:
+        for rule, track_id in sorted(self._active):
+            if rule != rule_name or track_id in currently:
                 continue
-            self._exit((rule, hex_code), now, events)
+            self._exit((rule, track_id), now, events)
         return events
 
     def _handle_purges(self, purged: set[str], now: datetime) -> list[AlertEvent]:
         events: list[AlertEvent] = []
-        for rule, hex_code in sorted(self._active):
-            if hex_code in purged:
-                self._exit((rule, hex_code), now, events)
+        for rule, track_id in sorted(self._active):
+            if track_id in purged:
+                self._exit((rule, track_id), now, events)
         return events
 
     def _exit(self, key: tuple[str, str], now: datetime, events: list[AlertEvent]) -> None:

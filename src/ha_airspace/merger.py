@@ -24,8 +24,8 @@ Two pieces:
   cannot keep winning with a frozen-fresh snapshot. ``seen_by`` and ``bands``
   accumulate; ``last_seen`` is the newest ``observed_at`` across receivers.
 
-# TODO(phase-3-slice-3): key on a source-agnostic ``track_id`` instead of
-# ``hex`` so Remote ID (string id) tracks coexist with ICAO aircraft.
+States are keyed by ``track_id`` (ICAO hex for ADS-B, UAS id for Remote ID),
+so drone and ICAO namespaces coexist without cross-matching.
 """
 
 from __future__ import annotations
@@ -106,10 +106,10 @@ class Merger:
         to the newest ``observed_at``, and recompute canonical among the
         current observations.
         """
-        state = self.states.get(obs.hex)
+        state = self.states.get(obs.track_id)
         if state is None:
             state = AircraftState.from_first_observation(obs)
-            self.states[obs.hex] = state
+            self.states[obs.track_id] = state
             return state
 
         state.by_receiver[obs.seen_by] = obs
@@ -122,9 +122,9 @@ class Merger:
         state.canonical_source = canonical.seen_by
         return state
 
-    def remove(self, hex_code: str) -> None:
-        """Drop a hex (e.g. after the lifecycle purges it). Idempotent."""
-        self.states.pop(hex_code, None)
+    def remove(self, track_id: str) -> None:
+        """Drop a track by id (e.g. after the lifecycle purges it). Idempotent."""
+        self.states.pop(track_id, None)
 
     def _select_current(self, state: AircraftState) -> AircraftObservation:
         """Canonical among observations within the window of the freshest one,

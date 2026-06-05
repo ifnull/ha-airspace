@@ -44,7 +44,11 @@ class AircraftPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     # --- Identity ------------------------------------------------------
-    hex: str
+    track_id: str
+    """The merge key: ICAO hex for ADS-B, UAS id for Remote ID. Always present
+    — the stable per-track identifier consumers should key on."""
+    hex: str | None = None
+    """ICAO hex, or ``None`` for non-ICAO (Remote ID) tracks."""
     flight: str | None = None
     registration: str | None = None
     squawk: str | None = None
@@ -101,6 +105,7 @@ class AircraftPayload(BaseModel):
         """
         canonical = state.canonical
         return cls(
+            track_id=state.track_id,
             hex=state.hex,
             flight=canonical.flight,
             registration=canonical.registration,

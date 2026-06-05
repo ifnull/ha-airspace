@@ -105,63 +105,64 @@ class Publisher:
     # ------------------------------------------------------------------
 
     async def publish_aircraft(self, state: AircraftState) -> bool:
-        """Publish per-aircraft state to ``adsb/aircraft/<hex>``.
+        """Publish per-track state to ``adsb/aircraft/<track_id>``.
 
-        Throttled per-hex by ``mqtt.publish_aircraft_min_interval_s``.
-        Returns True if published, False if suppressed by throttle —
-        the caller can use this for logging / metrics if it cares.
+        The topic key is the merge key — ICAO hex for ADS-B, UAS id for
+        Remote ID — so a track is one topic regardless of source. Throttled
+        per-track by ``mqtt.publish_aircraft_min_interval_s``. Returns True if
+        published, False if suppressed by throttle.
         """
         now = self._clock()
-        last = self._last_aircraft_publish.get(state.hex, 0.0)
+        last = self._last_aircraft_publish.get(state.track_id, 0.0)
         if (now - last) < self._aircraft_min_interval:
             return False
-        self._last_aircraft_publish[state.hex] = now
+        self._last_aircraft_publish[state.track_id] = now
 
         payload = AircraftPayload.from_state(state).model_dump_json()
         await self._client.publish(
-            f"{self._base}/aircraft/{state.hex}",
+            f"{self._base}/aircraft/{state.track_id}",
             payload,
             retain=True,
             topic_class="aircraft",
         )
         return True
 
-    async def purge_aircraft(self, hex_code: str) -> None:
-        """Clear the retained aircraft topic when state is PURGED.
+    async def purge_aircraft(self, track_id: str) -> None:
+        """Clear the retained aircraft topic when a track is PURGED.
 
         Empty payload + retain=True tells the broker to drop the
         retained value. Forgetting this leaves zombie aircraft in HA
         forever (CLAUDE.md "things that will trip you up").
         """
         await self._client.publish(
-            f"{self._base}/aircraft/{hex_code}",
+            f"{self._base}/aircraft/{track_id}",
             b"",
             retain=True,
             topic_class="aircraft",
         )
-        self._last_aircraft_publish.pop(hex_code, None)
+        self._last_aircraft_publish.pop(track_id, None)
 
     # ------------------------------------------------------------------
     # Alert topics — per-rule/per-hex detail + per-rule active flag
     # ------------------------------------------------------------------
 
     async def publish_alert(self, rule: str, state: AircraftState) -> None:
-        """Publish ``adsb/alert/<rule>/<hex>`` on rule ENTER: the triggering
-        aircraft's full state, retained so a late subscriber sees the active
-        alert. Cleared by ``clear_alert`` on EXIT."""
+        """Publish ``adsb/alert/<rule>/<track_id>`` on rule ENTER: the
+        triggering track's full state, retained so a late subscriber sees the
+        active alert. Cleared by ``clear_alert`` on EXIT."""
         payload = AircraftPayload.from_state(state).model_dump_json()
         await self._client.publish(
-            f"{self._base}/alert/{rule}/{state.hex}",
+            f"{self._base}/alert/{rule}/{state.track_id}",
             payload,
             retain=True,
             topic_class="alert",
         )
 
-    async def clear_alert(self, rule: str, hex_code: str) -> None:
-        """Clear ``adsb/alert/<rule>/<hex>`` on rule EXIT (empty-retained), so
-        the alert does not linger in HA after the aircraft stops matching."""
+    async def clear_alert(self, rule: str, track_id: str) -> None:
+        """Clear ``adsb/alert/<rule>/<track_id>`` on rule EXIT (empty-retained),
+        so the alert does not linger in HA after the track stops matching."""
         await self._client.publish(
-            f"{self._base}/alert/{rule}/{hex_code}",
+            f"{self._base}/alert/{rule}/{track_id}",
             b"",
             retain=True,
             topic_class="alert",

@@ -344,3 +344,49 @@ class TestLifecycleEnum:
         # StrEnum members ARE strings (via isinstance) and serialize bare.
         assert isinstance(Lifecycle.ACTIVE, str)
         assert f"{Lifecycle.STALE}" == "stale"
+
+
+# ---------------------------------------------------------------------------
+# Source-agnostic identity (Phase 3 slice 3)
+# ---------------------------------------------------------------------------
+
+
+class TestTrackIdentity:
+    def test_hex_observation_derives_track_id(self) -> None:
+        # ADS-B call sites pass hex only; track_id auto-derives. No churn.
+        obs = AircraftObservation(hex="ae0001", observed_at=_now(), seen_by="rx", band="1090")
+        assert obs.track_id == "ae0001"
+        assert obs.hex == "ae0001"
+        assert obs.non_icao is False
+
+    def test_remoteid_observation_keeps_string_id_no_hex(self) -> None:
+        # A drone: string id that is NOT valid hex, no ICAO address.
+        obs = AircraftObservation(
+            track_id="Spoofed_Serial_98067",
+            hex=None,
+            non_icao=True,
+            observed_at=_now(),
+            seen_by="dump3411",
+            band="remoteid",
+        )
+        assert obs.track_id == "Spoofed_Serial_98067"
+        assert obs.hex is None
+        assert obs.non_icao is True
+
+    def test_neither_track_id_nor_hex_raises(self) -> None:
+        with pytest.raises(ValueError, match="track_id or hex"):
+            AircraftObservation(observed_at=_now(), seen_by="rx", band="1090")
+
+    def test_state_carries_track_id_and_optional_hex(self) -> None:
+        drone = AircraftObservation(
+            track_id="OP-77F2",
+            hex=None,
+            non_icao=True,
+            observed_at=_now(),
+            seen_by="dump3411",
+            band="remoteid",
+        )
+        state = AircraftState.from_first_observation(drone)
+        assert state.track_id == "OP-77F2"
+        assert state.hex is None
+        assert state.bands == {"remoteid"}

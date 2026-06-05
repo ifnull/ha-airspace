@@ -151,7 +151,7 @@ class TestEnterExit:
         events = ev.evaluate([], ["ae0001"])
         assert len(events) == 1
         assert events[0].transition is AlertTransition.EXIT
-        assert events[0].hex == "ae0001"
+        assert events[0].track_id == "ae0001"
 
 
 class TestCooldown:
@@ -214,5 +214,5 @@ class TestActiveRules:
             [_state("ae0001", flags={"military"}), _state("ae0002", flags={"military"})], []
         )
         enters = [e for e in events if e.transition is AlertTransition.ENTER]
-        assert {e.hex for e in enters} == {"ae0001", "ae0002"}
+        assert {e.track_id for e in enters} == {"ae0001", "ae0002"}
         assert ev.active_rules() == {"mil"}

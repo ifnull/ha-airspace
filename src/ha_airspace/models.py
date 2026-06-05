@@ -85,19 +85,36 @@ class AircraftObservation:
     """
 
     # --- Required identity / provenance ---------------------------------
-    hex: str
-    """ICAO 24-bit address, lowercase, leading ``~`` stripped (see
-    ``parse_hex``). The TIS-B / ADS-R distinction is preserved in
-    ``is_tisb``."""
     observed_at: datetime
     """When *we* polled (UTC). Not when the receiver saw the message —
     dump1090's ``now`` is the receiver's clock and may skew."""
     seen_by: str
     """Receiver name from config."""
     band: str
-    """``"1090"`` or ``"978"``. **Required, no default.** A silent default
-    here was the failure mode that dropped 978 traffic in early prototypes.
-    """
+    """``"1090"`` | ``"978"`` | ``"remoteid"``. **Required, no default.** A
+    silent default here was the failure mode that dropped 978 traffic in early
+    prototypes."""
+
+    # --- Source-agnostic identity (Phase 3) ----------------------------
+    track_id: str = ""
+    """The merge key. For ADS-B this is the ICAO ``hex``; for Remote ID it is
+    the UAS ``id`` string. Left empty at construction auto-derives from ``hex``
+    in ``__post_init__``, so existing ADS-B call sites need no change. Remote ID
+    receivers pass ``track_id`` explicitly with ``hex=None``."""
+    hex: str | None = None
+    """ICAO 24-bit address, lowercase, leading ``~`` stripped (see
+    ``parse_hex``). ``None`` for non-ICAO sources (Remote ID drones). The
+    TIS-B / ADS-R distinction is preserved in ``is_tisb``."""
+    non_icao: bool = False
+    """True when this track has no ICAO hex (Remote ID). Such tracks are never
+    cross-matched with ICAO hexes and skip reference-DB lookup."""
+
+    def __post_init__(self) -> None:
+        # frozen dataclass: object.__setattr__ to fill the derived key.
+        if not self.track_id:
+            if self.hex is None:
+                raise ValueError("AircraftObservation requires track_id or hex")
+            object.__setattr__(self, "track_id", self.hex)
 
     # --- Identity ------------------------------------------------------
     flight: str | None = None
@@ -162,14 +179,17 @@ class AircraftState:
     """
 
     # --- Identity ------------------------------------------------------
-    hex: str
+    track_id: str
+    """The merge key: ICAO ``hex`` for ADS-B, UAS ``id`` for Remote ID."""
+    hex: str | None
+    """ICAO hex, or ``None`` for non-ICAO (Remote ID) tracks."""
     first_seen: datetime
     last_seen: datetime
     seen_by: set[str]
-    """All receiver names that have ever observed this hex (Phase 3+)."""
+    """All receiver names that have ever observed this track (Phase 3+)."""
     bands: set[str]
-    """``{"1090"}`` or ``{"978"}`` or both — same hex on both bands is
-    the same aircraft (Phase 3 band-merge)."""
+    """``{"1090"}`` / ``{"978"}`` / ``{"remoteid"}`` or a combination — the
+    same track on multiple bands is one entity (Phase 3 band-merge)."""
 
     # --- Canonical position ---------------------------------------------
     canonical: AircraftObservation
@@ -214,6 +234,7 @@ class AircraftState:
         authoritative observation arrives in the same cycle.
         """
         return cls(
+            track_id=obs.track_id,
             hex=obs.hex,
             first_seen=obs.observed_at,
             last_seen=obs.observed_at,

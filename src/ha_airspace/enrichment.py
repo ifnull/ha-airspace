@@ -50,7 +50,9 @@ class Enricher:
         flags. Idempotent per poll: both ``db_metadata`` and ``flags`` are
         fully reassigned (not merged into the prior pass) so stale values
         from an earlier observation never linger."""
-        if self._db_store is not None:
+        # Reference DBs are keyed by ICAO hex; non-ICAO tracks (Remote ID
+        # drones) have no hex to look up, so they skip DB join entirely.
+        if self._db_store is not None and state.hex is not None:
             # Snapshot the current dict once (DESIGN §2): a mid-pass refresh
             # swap rebinds store.current, but our local reference is stable.
             db = self._db_store.current

@@ -212,10 +212,10 @@ class AircraftTracker:
             touched_rules.add(event.rule)
             if event.transition is AlertTransition.ENTER and event.state is not None:
                 await self._publisher.publish_alert(event.rule, event.state)
-                log.info("alert_enter", rule=event.rule, hex=event.hex)
+                log.info("alert_enter", rule=event.rule, track_id=event.track_id)
             elif event.transition is AlertTransition.EXIT:
-                await self._publisher.clear_alert(event.rule, event.hex)
-                log.info("alert_exit", rule=event.rule, hex=event.hex)
+                await self._publisher.clear_alert(event.rule, event.track_id)
+                log.info("alert_exit", rule=event.rule, track_id=event.track_id)
         # Refresh the active flag for any rule that saw a transition.
         active = self._alerts.active_rules()
         for rule in touched_rules:
