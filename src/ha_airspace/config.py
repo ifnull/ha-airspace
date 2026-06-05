@@ -189,6 +189,25 @@ class ReceiverConfig(BaseModel):
     enabled: bool = True
 
 
+class RemoteIdReceiverConfig(BaseModel):
+    """A drone Remote ID feed source (dump3411 / FEED.md). Separate from
+    ``ReceiverConfig`` because it has no ``band`` (always ``remoteid``), no
+    ``auth``, and no ``receiver.json`` location — just a JSON endpoint."""
+
+    model_config = _STRICT
+
+    name: str = Field(..., min_length=1)
+    """Stable identifier used in MQTT topics + metric labels."""
+
+    url: str = Field(..., min_length=1)
+    """HTTP endpoint serving ``remoteid.json``."""
+
+    poll_interval_s: float | None = Field(default=None, gt=0)
+    """Per-feed poll cadence. ``None`` inherits ``service.poll_interval_s``."""
+
+    enabled: bool = True
+
+
 # ---------------------------------------------------------------------------
 # Enrichment: flag rules (Phase 2a, slice 1)
 # ---------------------------------------------------------------------------
@@ -393,6 +412,8 @@ class Config(BaseModel):
     mqtt: MqttConfig
     prometheus: PrometheusConfig = Field(default_factory=PrometheusConfig)
     receivers: list[ReceiverConfig] = Field(..., min_length=1)
+    remoteid: list[RemoteIdReceiverConfig] = Field(default_factory=list)
+    """Drone Remote ID feeds (dump3411). Optional; omit for ADS-B only."""
     enrichment: EnrichmentConfig = Field(default_factory=EnrichmentConfig)
     databases: DatabasesConfig = Field(default_factory=DatabasesConfig)
 
@@ -406,10 +427,13 @@ class Config(BaseModel):
 
     @model_validator(mode="after")
     def _receiver_names_unique(self) -> Self:
-        names = [r.name for r in self.receivers]
+        # All sources share the MQTT receiver namespace, so ADS-B and Remote ID
+        # feed names must be unique together (a collision would cross their
+        # status/stats topics).
+        names = [r.name for r in self.receivers] + [r.name for r in self.remoteid]
         if len(names) != len(set(names)):
             duplicates = sorted({n for n in names if names.count(n) > 1})
-            raise ValueError(f"receiver names must be unique; duplicates: {duplicates}")
+            raise ValueError(f"receiver/remoteid names must be unique; duplicates: {duplicates}")
         return self
 
     @model_validator(mode="after")
@@ -509,6 +533,7 @@ __all__ = [
     "PrometheusConfig",
     "ReceiverConfig",
     "ReceiverLocationConfig",
+    "RemoteIdReceiverConfig",
     "ServiceConfig",
     "WatchpointConfig",
     "load_config",

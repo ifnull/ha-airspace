@@ -74,6 +74,34 @@ class ReceiverLocation:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class DroneInfo:
+    """Remote-ID-only fields with no manned-aircraft analogue, carried on a
+    drone ``AircraftObservation`` via its ``drone`` field. Keeping these off
+    the aircraft schema avoids polluting it; operator location in particular
+    is a first-class, security-relevant entity (DESIGN appendix).
+
+    All optional: a drone may be heard (Basic ID) before any Location or
+    System message, so position/operator can be absent.
+    """
+
+    id_type: str
+    """``serial`` | ``caa_reg`` | ``utm_uuid`` | ``session`` | ``unknown``."""
+    ua_type: str | None = None
+    """UA category (e.g. ``rotorcraft``); from Basic ID."""
+    agl_ft: float | None = None
+    """Height above takeoff/ground, broadcast natively by Remote ID."""
+    rid_source: str | None = None
+    """Transport the latest message arrived on: ``ble`` | ``wifi_beacon`` |
+    ``wifi_nan``."""
+
+    # --- Operator (present once a System/Operator-ID message is seen) ----
+    operator_lat: float | None = None
+    operator_lon: float | None = None
+    operator_id: str | None = None
+    operator_alt_takeoff_ft: float | None = None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class AircraftObservation:
     """A single observation of an aircraft from a single receiver at a moment
     in time.
@@ -164,6 +192,11 @@ class AircraftObservation:
     is_tisb: bool = False
     """True if the source broadcast had a leading ``~`` indicating TIS-B
     or ADS-R. Real aircraft, just not broadcasting their own ICAO."""
+
+    # --- Remote ID (drones only) ---------------------------------------
+    drone: DroneInfo | None = None
+    """Remote-ID-only fields when this is a drone observation (``band ==
+    "remoteid"``). ``None`` for ADS-B aircraft."""
 
 
 @dataclass(slots=True, kw_only=True)

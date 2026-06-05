@@ -14,6 +14,8 @@ Public surface:
   configurable auth, and ``receiver.json`` location auto-discovery.
 * ``FileReceiver`` — replays a captured ``aircraft.json`` from disk.
   Used by tests; also handy for offline diagnosis.
+* ``RemoteIdHttpReceiver`` — polls a ``remoteid.json`` drone Remote ID feed
+  (dump3411 / FEED.md), mapping detections to ``band="remoteid"`` tracks.
 """
 
 from __future__ import annotations
@@ -21,10 +23,12 @@ from __future__ import annotations
 from ha_airspace.receivers.base import FetchError, ReceiverSource
 from ha_airspace.receivers.file import FileReceiver
 from ha_airspace.receivers.http import HttpJsonReceiver
+from ha_airspace.receivers.remoteid import RemoteIdHttpReceiver
 
 __all__ = [
     "FetchError",
     "FileReceiver",
     "HttpJsonReceiver",
     "ReceiverSource",
+    "RemoteIdHttpReceiver",
 ]

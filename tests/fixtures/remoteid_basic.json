@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "now": 1780439488.9,
+  "messages": 420,
+  "drones": [
+    {
+      "id": "Spoofed_Serial_40456",
+      "id_type": "serial",
+      "message_count": 344,
+      "seen": 0.5,
+      "ua_type": "multirotor",
+      "lat": 47.3758918,
+      "lon": 8.5452087,
+      "alt_geom_ft": 311.7,
+      "agl_ft": 362.5,
+      "gs": 19.0,
+      "track": 0.0,
+      "geom_rate": 591.0,
+      "rssi": -3,
+      "seen_pos": 0.5,
+      "rid_source": "wifi_beacon",
+      "operator": {
+        "lat": 47.3771016,
+        "lon": 8.5304485,
+        "alt_takeoff_ft": -3251.3,
+        "seen": 0.5
+      }
+    },
+    {
+      "id": "0x00",
+      "id_type": "serial",
+      "message_count": 76,
+      "seen": 2.0,
+      "ua_type": "multirotor",
+      "lat": 30.2835008,
+      "lon": -98.061495,
+      "alt_geom_ft": 1276.2,
+      "agl_ft": 246.1,
+      "gs": 93.3,
+      "track": 0.0,
+      "geom_rate": 197.0,
+      "rssi": -5,
+      "seen_pos": 2.0,
+      "rid_source": "wifi_beacon",
+      "operator": {
+        "lat": 30.2874197,
+        "lon": -98.0524077,
+        "alt_takeoff_ft": -3251.3,
+        "seen": 2.0
+      }
+    },
+    {
+      "id": "BASICID-NO-POS",
+      "id_type": "session",
+      "message_count": 4,
+      "seen": 1.1,
+      "rid_source": "ble"
+    }
+  ]
+}

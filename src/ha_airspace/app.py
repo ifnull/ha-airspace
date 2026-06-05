@@ -39,7 +39,11 @@ from ha_airspace.enrichment import Enricher
 from ha_airspace.metrics import MetricsRegistry
 from ha_airspace.mqtt.client import MqttClient
 from ha_airspace.mqtt.publisher import Publisher
-from ha_airspace.receivers import HttpJsonReceiver, ReceiverSource
+from ha_airspace.receivers import (
+    HttpJsonReceiver,
+    ReceiverSource,
+    RemoteIdHttpReceiver,
+)
 from ha_airspace.tracker import AircraftTracker
 
 if TYPE_CHECKING:
@@ -97,6 +101,12 @@ class App:
         self._intervals: dict[str, float] = {
             rc.name: config.poll_interval_for(rc) for rc in config.receivers
         }
+        # Remote ID feeds resolve the same way (own interval else service default).
+        default_interval = config.service.poll_interval_s
+        for rc in config.remoteid:
+            self._intervals[rc.name] = (
+                rc.poll_interval_s if rc.poll_interval_s is not None else default_interval
+            )
 
         # The tracker and publisher must republish the discovery + status set
         # on every connect, so the client calls back into us.
@@ -280,6 +290,17 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
         for rc in config.receivers
         if rc.enabled
     ]
+    # Drone Remote ID feeds: same poll-loop + merger machinery, band="remoteid".
+    receivers.extend(
+        RemoteIdHttpReceiver(
+            rc.name,
+            rc.url,
+            timeout_s=config.service.http_timeout_s,
+            metrics=metrics,
+        )
+        for rc in config.remoteid
+        if rc.enabled
+    )
     if not receivers:
         raise ValueError("no enabled receivers in config")
 
