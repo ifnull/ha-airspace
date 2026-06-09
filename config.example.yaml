@@ -82,6 +82,19 @@ receivers:
   #   band: "978"
 
 # --------------------------------------------------------------------------
+# remoteid — drone Remote ID feeds (dump3411 / ASTM F3411 over BLE + WiFi).
+# Optional; omit for ADS-B only. Drones merge into the same airspace view as
+# aircraft but get their own HA entities (drone_count, nearest_drone with
+# operator location) and adsb/drone/<id> topics. No band/auth — just a URL.
+# Names share the receiver namespace and must be unique across both lists.
+# --------------------------------------------------------------------------
+# remoteid:
+#   - name: dump3411
+#     url: http://dump3411.local:8754/data/remoteid.json
+#     # poll_interval_s: 1.0      # optional override
+#     enabled: true
+
+# --------------------------------------------------------------------------
 # databases — reference DBs that enrich aircraft (registration, type, model,
 # and the military / interesting / PIA / LADD flags the `sources` matcher
 # below reads). Optional; omit to run with no DB enrichment. The files are

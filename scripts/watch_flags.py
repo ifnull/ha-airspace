@@ -12,6 +12,7 @@ Run from the repo root:
     uv run python scripts/watch_flags.py --url http://192.168.1.8:8080/data/aircraft.json
     uv run python scripts/watch_flags.py --interval 2 --all      # show every flagged hit
     uv run python scripts/watch_flags.py --only military,emergency
+    uv run python scripts/watch_flags.py --drone-url http://192.168.1.204:8754/data/remoteid.json
 
 The reference DBs (~24 MB gzip'd) download once to a cache dir (default
 /tmp/adsb-db-cache) and are reused; pass --refresh to force a re-download.
@@ -40,7 +41,7 @@ from ha_airspace.config import EnrichmentConfig, FlagConfig
 from ha_airspace.databases import DatabaseStore, parse_adsbexchange, parse_mictronics
 from ha_airspace.enrichment import Enricher
 from ha_airspace.models import AircraftState
-from ha_airspace.receivers import HttpJsonReceiver
+from ha_airspace.receivers import HttpJsonReceiver, RemoteIdHttpReceiver
 
 DEFAULT_URL = "http://192.168.1.8:8080/data/aircraft.json"
 _MICTRONICS_URL = "https://github.com/wiedehopf/tar1090-db/raw/csv/aircraft.csv.gz"
@@ -151,6 +152,26 @@ def _fmt(state: AircraftState, wanted: set[str]) -> str:
     return f"{color}{line}{_RESET}" if color else line
 
 
+_DRONE_COLOR = "\033[1;35m"  # bold magenta — drones stand out from aircraft
+
+
+def _fmt_drone(state: AircraftState) -> str:
+    """One drone line: id, position, native AGL, and operator location if
+    known. Like the aircraft view, this watcher does no geometry — the feed's
+    own lat/lon/AGL/operator fields are shown directly."""
+    d = state.canonical.drone
+    lat, lon = state.canonical.lat, state.canonical.lon
+    pos = f"{lat:.4f},{lon:.4f}" if lat is not None and lon is not None else "no-fix"
+    agl = d.agl_ft if d else None
+    agl_s = f"{agl:>6.0f}ft AGL" if agl is not None else "  --      "
+    op = ""
+    if d and d.operator_lat is not None and d.operator_lon is not None:
+        op = f"  operator=({d.operator_lat:.4f},{d.operator_lon:.4f})"
+    ua = (d.ua_type if d else None) or "?"
+    line = f"DRONE {state.track_id:<20s} {pos:<18s} {agl_s}  {ua}{op}"
+    return f"{_DRONE_COLOR}{line}{_RESET}"
+
+
 async def watch(args: argparse.Namespace) -> int:
     wanted = {f.strip() for f in args.only.split(",")} if args.only else set(_FLAGS)
     unknown = wanted - set(_FLAGS)
@@ -162,38 +183,78 @@ async def watch(args: argparse.Namespace) -> int:
     store = load_databases(Path(args.cache_dir), refresh=args.refresh)
     enricher = Enricher(EnrichmentConfig(flags=flags), db_store=store)
     receiver = HttpJsonReceiver("watch", "1090", args.url)
+    drone_rx = RemoteIdHttpReceiver("watch-drone", args.drone_url) if args.drone_url else None
 
     print(f"Watching {args.url} every {args.interval}s — Ctrl-C to stop")
+    if drone_rx is not None:
+        print(f"Drone feed: {args.drone_url}")
     print(f"Flags: {', '.join(sorted(wanted))}\n")
     seen_hits: set[str] = set()
+    seen_drones: set[str] = set()
     try:
         while True:
-            observations = await receiver.fetch()
-            hits = []
-            for obs in observations:
-                state = AircraftState.from_first_observation(obs)
-                enricher.enrich(state)
-                if state.flags & wanted:
-                    hits.append(state)
-            hits.sort(key=lambda s: s.distance_to.get("home", 1e9))
-
-            stamp = datetime.now(UTC).strftime("%H:%M:%S")
-            new = [h for h in hits if h.hex not in seen_hits]
-            if args.all:
-                print(f"[{stamp}] {len(observations)} aircraft, {len(hits)} flagged:")
-                for h in hits:
-                    print(f"  {_fmt(h, wanted)}")  # indented under the header
-            else:
-                # Quiet mode: only announce newly-seen flagged aircraft.
-                for h in new:
-                    print(f"[{stamp}] {_fmt(h, wanted)}")
+            n_aircraft, hits = await _poll_flagged(receiver, enricher, wanted)
+            drones = await _poll_drones(drone_rx)
+            _render(args.all, n_aircraft, hits, drones, seen_hits, seen_drones, wanted)
             seen_hits = {h.hex for h in hits}
+            seen_drones = {d.track_id for d in drones}
             await asyncio.sleep(args.interval)
     except KeyboardInterrupt:
         print("\nstopped")
         return 0
     finally:
         await receiver.aclose()
+        if drone_rx is not None:
+            await drone_rx.aclose()
+
+
+async def _poll_flagged(
+    receiver: HttpJsonReceiver, enricher: Enricher, wanted: set[str]
+) -> tuple[int, list[AircraftState]]:
+    """Fetch + enrich aircraft, return (total count, flagged sorted nearest)."""
+    observations = await receiver.fetch()
+    hits = []
+    for obs in observations:
+        state = AircraftState.from_first_observation(obs)
+        enricher.enrich(state)
+        if state.flags & wanted:
+            hits.append(state)
+    hits.sort(key=lambda s: s.distance_to.get("home", 1e9))
+    return len(observations), hits
+
+
+async def _poll_drones(drone_rx: RemoteIdHttpReceiver | None) -> list[AircraftState]:
+    """Fetch drones (every drone is shown — no flag filter). Empty if no feed."""
+    if drone_rx is None:
+        return []
+    return [AircraftState.from_first_observation(obs) for obs in await drone_rx.fetch()]
+
+
+def _render(
+    show_all: bool,
+    n_aircraft: int,
+    hits: list[AircraftState],
+    drones: list[AircraftState],
+    seen_hits: set[str],
+    seen_drones: set[str],
+    wanted: set[str],
+) -> None:
+    """Print one cycle: full lists in --all mode, else only newly-seen tracks."""
+    stamp = datetime.now(UTC).strftime("%H:%M:%S")
+    if show_all:
+        summary = f"{n_aircraft} aircraft, {len(hits)} flagged, {len(drones)} drones"
+        print(f"[{stamp}] {summary}:")
+        for h in hits:
+            print(f"  {_fmt(h, wanted)}")
+        for d in drones:
+            print(f"  {_fmt_drone(d)}")
+        return
+    for h in hits:
+        if h.hex not in seen_hits:
+            print(f"[{stamp}] {_fmt(h, wanted)}")
+    for d in drones:
+        if d.track_id not in seen_drones:
+            print(f"[{stamp}] {_fmt_drone(d)}")
 
 
 def main() -> int:
@@ -208,6 +269,11 @@ def main() -> int:
     p.add_argument("--only", default="", help="comma-separated subset of flags to watch")
     p.add_argument("--cache-dir", default="/tmp/adsb-db-cache", help="DB cache directory")
     p.add_argument("--refresh", action="store_true", help="force re-download of the DBs")
+    p.add_argument(
+        "--drone-url",
+        default="",
+        help="optional dump3411 remoteid.json URL; when set, drones are shown too",
+    )
     args = p.parse_args()
     return asyncio.run(watch(args))
 

@@ -806,13 +806,19 @@ Each slice ships independently and gathers feedback before the next.
 
 ---
 
-# Appendix: Remote ID / drone source (future — Phase 3+)
+# Appendix: Remote ID / drone source (shipped — Phase 3)
 
-A companion project, `drone-aware-zero`, detects nearby drones via ASTM F3411
-**Remote ID** (BLE + WiFi) on a Raspberry Pi Zero W. It is a good fit to surface
+A companion project, [`dump3411`](https://github.com/ifnull/dump3411), detects
+nearby drones via ASTM F3411 **Remote ID** (BLE + WiFi) on Linux. It surfaces
 through this service's pipeline (watchpoint distance/bearing, nearest-entity,
-alert rules, MQTT + HA discovery) — but as a **separate project integrated by
-contract, not a code merge.**
+MQTT + HA discovery) as a **separate project integrated by contract, not a code
+merge.**
+
+**Status: implemented in Phase 3.** `RemoteIdHttpReceiver` consumes the
+`remoteid.json` feed (config `remoteid:`); drones merge as `band="remoteid"`
+tracks keyed by UAS id, get distinct HA entities (`drone_count`,
+`nearest_drone` with operator location) and `adsb/drone/<id>` topics, and skip
+reference-DB lookup. The design notes below record the decisions as made.
 
 ## Integration shape
 
