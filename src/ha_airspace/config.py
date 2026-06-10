@@ -393,6 +393,27 @@ class DatabasesConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Journal (Phase 2b) — durable first_seen + event history
+# ---------------------------------------------------------------------------
+
+
+class JournalConfig(BaseModel):
+    """SQLite journal for durable history. The whole section being absent
+    means no journal — ``first_seen`` then resets on every restart (the pre-2b
+    behavior), and nothing is written to disk. Worth omitting on a Raspberry Pi
+    SD-card install where you want to minimize writes."""
+
+    model_config = _STRICT
+
+    path: str = "/data/journal.db"
+    retention_observations_days: float = Field(default=90.0, gt=0)
+    write_coalesce_s: float = Field(default=30.0, gt=0)
+    """Flush the pending write buffer at least this often."""
+    write_coalesce_events: int = Field(default=50, gt=0)
+    """Flush early once this many records are buffered."""
+
+
+# ---------------------------------------------------------------------------
 # Top-level Config
 # ---------------------------------------------------------------------------
 
@@ -416,6 +437,9 @@ class Config(BaseModel):
     """Drone Remote ID feeds (dump3411). Optional; omit for ADS-B only."""
     enrichment: EnrichmentConfig = Field(default_factory=EnrichmentConfig)
     databases: DatabasesConfig = Field(default_factory=DatabasesConfig)
+    journal: JournalConfig | None = None
+    """SQLite history journal. Absent = no persistence (first_seen resets on
+    restart). See ``JournalConfig``."""
 
     @model_validator(mode="after")
     def _watchpoint_names_unique(self) -> Self:
@@ -528,6 +552,7 @@ __all__ = [
     "DatabasesConfig",
     "EnrichmentConfig",
     "FlagConfig",
+    "JournalConfig",
     "MatchBlock",
     "MqttConfig",
     "PrometheusConfig",

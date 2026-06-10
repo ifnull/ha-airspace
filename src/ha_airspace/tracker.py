@@ -30,6 +30,7 @@ import structlog
 from ha_airspace.alerts import AlertEvaluator, AlertTransition
 from ha_airspace.enrichment import Enricher
 from ha_airspace.geo import bearing, haversine
+from ha_airspace.journal import Journal
 from ha_airspace.merger import Merger
 from ha_airspace.metrics import MetricsRegistry
 from ha_airspace.models import AircraftObservation, AircraftState, Lifecycle, Watchpoint
@@ -90,6 +91,7 @@ class AircraftTracker:
         merger: Merger | None = None,
         enricher: Enricher | None = None,
         alerts: AlertEvaluator | None = None,
+        journal: Journal | None = None,
         has_drone_source: bool = False,
         metrics: MetricsRegistry | None = None,
         clock: Callable[[], datetime] = _default_clock,
@@ -103,6 +105,7 @@ class AircraftTracker:
         self._merger = merger if merger is not None else Merger()
         self._enricher = enricher
         self._alerts = alerts
+        self._journal = journal
         # Only publish the drone summary when a Remote ID source is configured,
         # so ADS-B-only installs don't get spurious empty drone topics.
         self._has_drone_source = has_drone_source
@@ -131,6 +134,11 @@ class AircraftTracker:
         Called per observation; the merger handles cross-receiver canonical
         selection. Does not publish — that happens in ``tick``."""
         state = self._merger.ingest(obs)
+        if self._journal is not None:
+            # Buffer the durable first_seen / last_seen (coalesced; no disk IO
+            # on this path). first_seen was already restored by the merger if
+            # the track was known.
+            self._journal.record(state.track_id, state.hex, state.first_seen, state.last_seen)
         self._recompute_geometry(state)
         if self._enricher is not None:
             # Flags / DB join depend on the freshly merged canonical +

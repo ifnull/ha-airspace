@@ -36,7 +36,8 @@ from typing import TYPE_CHECKING
 from ha_airspace.models import AircraftState
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
+    from datetime import datetime
 
     from ha_airspace.models import AircraftObservation
 
@@ -89,19 +90,31 @@ class Merger:
       canonical_window_s: Observations older than this (relative to the
         freshest observation for a hex) are excluded from canonical selection.
         Defaults to ``DEFAULT_CANONICAL_WINDOW_S``.
+      first_seen_for: Optional ``track_id -> datetime | None`` lookup. On new-
+        track creation, a hit overrides the fresh ``observed_at`` so a track
+        reappearing after a restart keeps its original ``first_seen`` (Phase 2b
+        durable history). Injected as a plain callable so the merger stays
+        IO-free — the journal is not imported here.
 
     Not async, no IO. The tracker drives ``ingest`` per observation and reads
     ``states`` to run the rest of the pipeline.
     """
 
-    def __init__(self, *, canonical_window_s: float = DEFAULT_CANONICAL_WINDOW_S) -> None:
+    def __init__(
+        self,
+        *,
+        canonical_window_s: float = DEFAULT_CANONICAL_WINDOW_S,
+        first_seen_for: Callable[[str], datetime | None] | None = None,
+    ) -> None:
         self._window_s = canonical_window_s
+        self._first_seen_for = first_seen_for
         self.states: dict[str, AircraftState] = {}
 
     def ingest(self, obs: AircraftObservation) -> AircraftState:
         """Upsert one observation; return the (re)merged state for its hex.
 
-        New hex -> fresh state. Existing hex -> record this receiver's latest
+        New hex -> fresh state (with ``first_seen`` restored from the journal
+        lookup if one exists). Existing hex -> record this receiver's latest
         observation, accumulate ``seen_by`` / ``bands``, advance ``last_seen``
         to the newest ``observed_at``, and recompute canonical among the
         current observations.
@@ -109,6 +122,10 @@ class Merger:
         state = self.states.get(obs.track_id)
         if state is None:
             state = AircraftState.from_first_observation(obs)
+            if self._first_seen_for is not None:
+                prior = self._first_seen_for(obs.track_id)
+                if prior is not None:
+                    state.first_seen = prior
             self.states[obs.track_id] = state
             return state
 
