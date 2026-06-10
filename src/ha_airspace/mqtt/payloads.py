@@ -1,0 +1,283 @@
+"""Pydantic models for the JSON payloads published to MQTT.
+
+These ARE the external API surface — what HA, Grafana, Node-RED, custom
+scripts, and every other consumer sees. They live separately from
+``ha_airspace.models`` (internal runtime types) so the boundary between
+"private state" and "public contract" is visible at the import path.
+
+Versioning posture: per the CEO + Daniel-as-primary-user decision, no
+``schema_version`` field is included during Phases 1-3. Pydantic still
+serves as the canonical serializer (consistency, type safety) but the
+shape is allowed to evolve freely. Schema lock + ``schema_version: 1``
+is a Phase 4 prerequisite alongside Docker / add-on packaging.
+
+Phase-2 fields (``flags``, ``db_metadata``, ``predicted_*``) are
+present in Phase 1 payloads but always empty / None. The shape stays
+stable; Phase 2 just fills them in.
+
+Serialization: callers invoke ``model_dump_json()`` to produce bytes
+ready for MQTT publish. Datetimes serialize to ISO 8601 with explicit
+offset (e.g. ``2026-01-01T12:00:00+00:00``); both HA and standard JSON
+parsers handle this. Sets serialize as sorted lists for deterministic
+output.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any, Self
+
+from pydantic import BaseModel, ConfigDict
+
+from ha_airspace.models import AircraftState, ReceiverLocation
+
+
+class AircraftPayload(BaseModel):
+    """Serialized form of an ``AircraftState`` for the
+    ``adsb/aircraft/<hex>`` topic.
+
+    Power-user wildcard topic only — never auto-discovered as HA
+    entities (would explode HA's entity registry). Subscribed to
+    directly by Grafana, Node-RED, custom scripts.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # --- Identity ------------------------------------------------------
+    track_id: str
+    """The merge key: ICAO hex for ADS-B, UAS id for Remote ID. Always present
+    — the stable per-track identifier consumers should key on."""
+    hex: str | None = None
+    """ICAO hex, or ``None`` for non-ICAO (Remote ID) tracks."""
+    flight: str | None = None
+    registration: str | None = None
+    squawk: str | None = None
+
+    # --- Position ------------------------------------------------------
+    lat: float | None = None
+    lon: float | None = None
+    alt_baro_ft: int | None = None
+    alt_geom_ft: int | None = None
+
+    # --- Movement ------------------------------------------------------
+    ground_speed_kt: float | None = None
+    track_deg: float | None = None
+    vertical_rate_fpm: int | None = None
+    on_ground: bool | None = None
+
+    # --- Provenance / classification ----------------------------------
+    bands: list[str]
+    """Sorted list of bands the canonical observation came in on
+    (Phase 1 always single-element; Phase 3 may be 2 for 1090+978)."""
+    seen_by: list[str]
+    """Sorted list of receiver names that have ever observed this
+    hex. Phase 1 single-element; Phase 3+ may be more."""
+    category: str | None = None
+    aircraft_type: str | None = None
+    is_tisb: bool = False
+
+    # --- Timing --------------------------------------------------------
+    first_seen: datetime
+    last_seen: datetime
+
+    # --- Geometry (per-watchpoint) ------------------------------------
+    distance_to: dict[str, float]
+    """Watchpoint name -> great-circle distance in nautical miles."""
+    bearing_to: dict[str, float]
+    """Watchpoint name -> bearing in degrees (0=N, 90=E)."""
+
+    # --- Predictive (schema reserved Phase 2c, impl Phase 5) -----------
+    predicted_eta_to_home_s: float | None = None
+    predicted_closest_approach_nm: float | None = None
+
+    # --- Enrichment (Phase 2a+) ---------------------------------------
+    flags: list[str]
+    """Sorted list of flag names from rule evaluation. Empty in Phase 1."""
+    db_metadata: dict[str, Any]
+    """Mictronics + ADSBex merged fields. Empty dict in Phase 1."""
+
+    @classmethod
+    def from_state(cls, state: AircraftState) -> Self:
+        """Project an internal ``AircraftState`` into the published
+        payload shape. Sets are sorted for deterministic JSON output
+        (some MQTT consumers cache by message hash; non-deterministic
+        ordering causes false cache misses).
+        """
+        canonical = state.canonical
+        return cls(
+            track_id=state.track_id,
+            hex=state.hex,
+            flight=canonical.flight,
+            registration=canonical.registration,
+            squawk=canonical.squawk,
+            lat=canonical.lat,
+            lon=canonical.lon,
+            alt_baro_ft=canonical.alt_baro_ft,
+            alt_geom_ft=canonical.alt_geom_ft,
+            ground_speed_kt=canonical.ground_speed_kt,
+            track_deg=canonical.track_deg,
+            vertical_rate_fpm=canonical.vertical_rate_fpm,
+            on_ground=canonical.on_ground,
+            bands=sorted(state.bands),
+            seen_by=sorted(state.seen_by),
+            category=canonical.category,
+            aircraft_type=canonical.aircraft_type,
+            is_tisb=canonical.is_tisb,
+            first_seen=state.first_seen,
+            last_seen=state.last_seen,
+            distance_to=dict(state.distance_to),
+            bearing_to=dict(state.bearing_to),
+            predicted_eta_to_home_s=state.predicted_eta_to_home_s,
+            predicted_closest_approach_nm=state.predicted_closest_approach_nm,
+            flags=sorted(state.flags),
+            db_metadata=dict(state.db_metadata),
+        )
+
+
+class DronePayload(BaseModel):
+    """Serialized form of a Remote ID (drone) ``AircraftState`` for the
+    ``adsb/drone/<track_id>`` topic and the ``adsb/summary/nearest_drone``
+    sensor.
+
+    Drones are not aircraft: this carries the Remote-ID-only fields (UAS id
+    type, native AGL, transport, and — the security-relevant part — operator
+    location) that have no place on ``AircraftPayload``. Distance/bearing are
+    the drone's own; operator distance/bearing are computed by the consumer
+    from ``operator_lat``/``operator_lon`` if wanted.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # --- Identity ------------------------------------------------------
+    track_id: str
+    """UAS id — the stable per-drone key."""
+    id_type: str
+    """``serial`` | ``caa_reg`` | ``utm_uuid`` | ``session`` | ``unknown``."""
+    ua_type: str | None = None
+
+    # --- Position / movement ------------------------------------------
+    lat: float | None = None
+    lon: float | None = None
+    alt_geom_ft: int | None = None
+    agl_ft: float | None = None
+    """Height above takeoff/ground, broadcast natively by Remote ID."""
+    ground_speed_kt: float | None = None
+    track_deg: float | None = None
+    vertical_rate_fpm: int | None = None
+
+    # --- Operator (the novel, security-relevant entity) ---------------
+    operator_lat: float | None = None
+    operator_lon: float | None = None
+    operator_id: str | None = None
+    operator_alt_takeoff_ft: float | None = None
+
+    # --- Provenance ----------------------------------------------------
+    rid_source: str | None = None
+    seen_by: list[str]
+    first_seen: datetime
+    last_seen: datetime
+
+    # --- Geometry (drone position, per-watchpoint) --------------------
+    distance_to: dict[str, float]
+    bearing_to: dict[str, float]
+
+    # --- Enrichment ----------------------------------------------------
+    flags: list[str]
+
+    @classmethod
+    def from_state(cls, state: AircraftState) -> Self:
+        """Project a ``band="remoteid"`` ``AircraftState`` into the drone
+        payload. ``state.canonical.drone`` carries the RID-only fields."""
+        canonical = state.canonical
+        drone = canonical.drone
+        return cls(
+            track_id=state.track_id,
+            id_type=drone.id_type if drone else "unknown",
+            ua_type=drone.ua_type if drone else None,
+            lat=canonical.lat,
+            lon=canonical.lon,
+            alt_geom_ft=canonical.alt_geom_ft,
+            agl_ft=drone.agl_ft if drone else None,
+            ground_speed_kt=canonical.ground_speed_kt,
+            track_deg=canonical.track_deg,
+            vertical_rate_fpm=canonical.vertical_rate_fpm,
+            operator_lat=drone.operator_lat if drone else None,
+            operator_lon=drone.operator_lon if drone else None,
+            operator_id=drone.operator_id if drone else None,
+            operator_alt_takeoff_ft=drone.operator_alt_takeoff_ft if drone else None,
+            rid_source=drone.rid_source if drone else None,
+            seen_by=sorted(state.seen_by),
+            first_seen=state.first_seen,
+            last_seen=state.last_seen,
+            distance_to=dict(state.distance_to),
+            bearing_to=dict(state.bearing_to),
+            flags=sorted(state.flags),
+        )
+
+
+class ReceiverStatsPayload(BaseModel):
+    """Per-receiver stats published to ``adsb/receiver/<name>/stats``.
+
+    HA discovery extracts individual fields via ``value_template`` so
+    multiple HA sensors can read from the one stats blob without
+    duplicate publishes.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    aircraft_count: int
+    """Aircraft from the last successful poll."""
+    messages_per_sec: float
+    """Receiver-reported decoded-message rate. 0.0 if unknown."""
+    last_success: datetime | None
+    """When the last successful poll completed (UTC). None before
+    first success."""
+    consecutive_failures: int
+    online: bool
+    """False after the failure threshold is exceeded; flips back True
+    on the next success."""
+
+    @classmethod
+    def from_health(cls, health: dict[str, Any]) -> Self:
+        """Build from a ``ReceiverSource.health()`` snapshot."""
+        return cls(
+            aircraft_count=health["aircraft_count"],
+            messages_per_sec=health["messages_per_sec"],
+            last_success=health["last_success"],
+            consecutive_failures=health["consecutive_failures"],
+            online=health["online"],
+        )
+
+
+class ReceiverLocationPayload(BaseModel):
+    """Per-receiver location published to ``adsb/receiver/<name>/location``.
+
+    Fetched once at startup from the receiver's ``receiver.json`` (or
+    overridden by config); republished on every successful broker
+    reconnect so HA never loses it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    lat: float
+    lon: float
+    alt_m: float | None = None
+    source: str
+    """Provenance: ``"receiver_json"`` | ``"config"`` | ``"default"``."""
+
+    @classmethod
+    def from_runtime(cls, location: ReceiverLocation) -> Self:
+        return cls(
+            lat=location.lat,
+            lon=location.lon,
+            alt_m=location.alt_m,
+            source=location.source,
+        )
+
+
+__all__ = [
+    "AircraftPayload",
+    "DronePayload",
+    "ReceiverLocationPayload",
+    "ReceiverStatsPayload",
+]

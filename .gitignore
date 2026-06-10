@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+build/
+dist/
+.installed.cfg
+
+# Virtual envs
+.venv/
+venv/
+ENV/
+
+# uv
+.uv/
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+
+# pytest
+.pytest_cache/
+
+# mypy / ruff caches
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# gstack working state
+.gstack/
+
+# Local config / secrets
+config.local.yaml
+*.env
+.env.*
+!.env.example
+
+# Runtime data (when running locally)
+/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

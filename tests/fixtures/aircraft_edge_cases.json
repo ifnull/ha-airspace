@@ -1,0 +1,45 @@
+{
+  "now": 1730000010.0,
+  "messages": 12345700,
+  "aircraft": [
+    {
+      "hex": "~ae9999",
+      "alt_baro": 30000
+    },
+    {
+      "flight": "GHOST",
+      "alt_baro": 25000
+    },
+    {
+      "hex": "AE0002",
+      "flight": "        ",
+      "alt_baro": null,
+      "rssi": -14.2,
+      "type": "adsb_icao"
+    },
+    {
+      "hex": "ae0003",
+      "flight": "MIL001  ",
+      "lat": 30.500000,
+      "lon": -98.000000,
+      "alt_baro": 2500,
+      "gs": 250.0,
+      "track": 180.0,
+      "baro_rate": -512,
+      "category": "A3",
+      "nic": 7,
+      "nac_p": 9,
+      "rssi": -18.5,
+      "seen": 0.3,
+      "seen_pos": 0.3,
+      "type": "adsb_icao"
+    },
+    "not an object",
+    {
+      "hex": "not-hex-at-all"
+    },
+    {
+      "hex": ""
+    }
+  ]
+}

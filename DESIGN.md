@@ -1,4 +1,4 @@
-# adsb-enrich — Design Document
+# ha-airspace — Design Document
 
 A multi-source ADS-B enrichment service that consumes `aircraft.json` from one or more receivers, joins against reference databases, applies tagging/alert rules, and publishes to MQTT for Home Assistant (or any MQTT consumer).
 
@@ -32,6 +32,53 @@ This service centralizes that work and exposes a clean MQTT interface.
 - Not a feeder. Users continue feeding FlightAware/ADSBex/etc. independently.
 - Not a flight tracking website. No public-facing UI; MQTT is the interface.
 - Not a HACS custom integration (see "Distribution" section for rationale).
+
+---
+
+## Positioning & differentiation
+
+The "ADS-B in Home Assistant" space already has projects. This one is
+deliberately *not* competing on the same axis as most of them. The landscape,
+as of mid-2026, splits cleanly:
+
+**Cloud-API projects** (the popular ones) poll a hosted API, no local hardware:
+- `home-assistant-flightradar24` (~459★) — the market leader; FlightRadar24 API.
+- `whats-that-plane` (~91★) — FR24 API, "cone of vision" filtering.
+- `flightradar-flight-card` (~36★) — a Lovelace card on top of the FR24 integration.
+- `SkyRadar Fusion` (~7★) — Airplanes.Live + FR24 hybrid.
+
+**Local-receiver projects** (our camp) consume a receiver on your LAN:
+- `adsb-aircraft-tracker` (~10★, MIT) — the closest comparable: local dump1090/
+  tar1090, tar1090-db military list, emergency squawks, nearest-aircraft
+  sensors, mobile notifications. A polling custom-integration.
+
+We are not first, and "track nearby aircraft + flag military from a local
+receiver" is not by itself differentiated — `adsb-aircraft-tracker` ships that
+today. The differentiation is four specific, defensible wedges:
+
+1. **Drones / Remote ID — nobody else in the HA ecosystem has this.** None of
+   the projects above touch unmanned traffic. We ingest ASTM F3411 Remote ID
+   (via the companion `dump3411` detector) as a first-class source alongside
+   ADS-B. "What's flying near me, *including drones and their operators*" is a
+   category, not a feature, and it is timely as Remote ID mandates expand. This
+   is the headline.
+2. **Architecture: a standalone MQTT service with a multi-source merger** —
+   not a single-source polling integration. We merge 1090 + 978 + Remote ID,
+   multiple receivers, multiple sites, dedup by position quality (NIC → NAC_p →
+   …). No competitor merges sources. This is the technical moat for the
+   serious multi-receiver / homelab audience.
+3. **Reference-DB depth.** Two databases (Mictronics + ADSBexchange) merged
+   with conflict-resolution priority, full dbFlags decode (military,
+   interesting, PIA, LADD) — not just a single military list.
+4. **Built to last.** Strict typing, a large test suite, broker integration
+   tests, phased delivery. Most competitors are explicitly hobby projects;
+   for something meant to become household infrastructure, durability is itself
+   a differentiator.
+
+**The audience is people who already run a receiver** (and increasingly, a
+drone detector) — not the casual FR24 user. We will not out-polish the
+zero-hardware cloud apps on first-run experience, and we should not try. We
+win on local-first, multi-source, drones, and rigor.
 
 ---
 
@@ -307,26 +354,36 @@ After the merger updates `AircraftState`, run enrichment:
 - **2b:** SQLite journal (`first_seen` durability, history-aware alerts).
 - **2c:** Photo enrichment + predictive schema fields (impl deferred to Phase 5).
 
-**Flag rules are declarative.** Adding a new flag is a config change, not a code change:
+**Flag rules are declarative.** Adding a new flag is a config change, not a code change. Flags and alerts live under one `enrichment` section (consolidated in Phase 2a — see the Configuration section). Each flag carries exactly one matcher, identified by its field name:
 
 ```yaml
-flags:
-  military:
-    sources: ["mictronics:mil", "adsbexchange:mil"]   # OR logic across sources
-  callsign_prefix:
-    patterns: ["RCH", "SAM", "EVAC", "MEDEVAC"]
+enrichment:
+  flags:
+    military:
+      sources: ["mictronics:mil", "adsbexchange:mil"]   # OR logic across sources (DB-backed)
+    callsign_prefix:
+      patterns: ["RCH", "SAM", "EVAC", "MEDEVAC"]        # callsign starts-with
+    emergency_squawk:
+      squawks: ["7500", "7600", "7700"]                  # exact squawk
+    heavy_mil:
+      types: ["B52", "C17", "U2"]                        # ICAO type designator
+    rotorcraft:
+      categories: ["A7"]                                  # ADS-B emitter category
 ```
 
-**Alert rules compose flags:**
+Matcher kinds: `sources` (DB-backed; truthy `db_metadata` field), `patterns` (callsign prefix), `squawks` (exact), `types` (ICAO type designator), `categories` (emitter category). The `categories` matcher was added in Phase 2a so rules like `low_helicopter` (below) can reference a flag without a reference database.
+
+**Alert rules compose flags** (also under `enrichment`):
 
 ```yaml
-alerts:
-  rules:
-    - name: "military_close"
-      match:
-        flags: ["military"]            # list within key = OR
-        max_distance_nm: 30            # different keys = AND
-        watchpoint: "home"
+enrichment:
+  alerts:
+    rules:
+      - name: "military_close"
+        match:
+          flags: ["military"]            # list within key = OR
+          max_distance_nm: 30            # different keys = AND
+          watchpoint: "home"
 ```
 
 **`match` block semantics (locked):**
@@ -413,7 +470,7 @@ observes the retained `offline`. Distinguishing "user stopped service" from
 ## Configuration schema
 
 ```yaml
-# adsb-enrich config.yaml
+# ha-airspace config.yaml
 
 service:
   poll_interval_s: 1.0          # default; receivers can override
@@ -497,7 +554,7 @@ receivers:
     url: "http://piaware.home.arpa:8080/skyaware978/data/aircraft.json"
     band: "978"
 
-enrichment:
+enrichment:                      # Phase 2a — flags (slice 1) + alerts (slice 3)
   flags:
     military:
       sources: ["mictronics:mil", "adsbexchange:mil"]
@@ -511,14 +568,10 @@ enrichment:
       patterns: ["RCH", "SAM", "EVAC", "MEDEVAC", "LIFEGUARD", "N1"]
     type_code:
       types: ["B52", "C17", "C5M", "U2", "B1", "B2", "F22", "F35", "MQ9", "RC135"]
+    rotorcraft:
+      categories: ["A7"]                  # emitter category; no DB needed
 
-publish:
-  all_aircraft:
-    enabled: true
-    max_distance_nm: 100
-
-  alerts:
-    enabled: true
+  alerts:                        # Phase 2a slice 3
     cooldown_s: 60               # min seconds between EXIT and re-ENTER for
                                   # the same (rule, hex). Prevents thrashing
                                   # when a flag oscillates near a threshold.
@@ -538,10 +591,13 @@ publish:
           flags: ["emergency_squawk"]
       - name: "low_helicopter"
         match:
-          category: ["A7"]
-          max_alt_agl_ft: 2000
+          category: ["A7"]                 # alert match keys can read raw fields
+          max_alt_agl_ft: 2000             # directly, not only flags
           max_distance_nm: 10
           watchpoint: "home"
+
+# publish.all_aircraft (max_distance filter for the wildcard topic) is a
+# topic/MQTT concern; deferred and likely to move near `mqtt`. Not in 2a.
 ```
 
 **Notes:**
@@ -573,17 +629,17 @@ Distribution mechanism: **add-on repository**. Users add a Git URL to their HA a
 Repo layout:
 
 ```
-adsb-enrich-addon/
+ha-airspace-addon/
 ├── repository.yaml            # add-on store metadata
-└── adsb-enrich/
+└── ha-airspace/
     ├── config.yaml            # add-on schema, options, ports
-    ├── Dockerfile             # builds on adsb-enrich Docker image
+    ├── Dockerfile             # builds on ha-airspace Docker image
     ├── run.sh                 # supervisor entrypoint
     ├── README.md
     └── icon.png
 ```
 
-The add-on Dockerfile is thin — it pulls the published `adsb-enrich` Docker image and adds add-on-specific shims (s6-overlay if needed, config translation from add-on options to YAML config).
+The add-on Dockerfile is thin — it pulls the published `ha-airspace` Docker image and adds add-on-specific shims (s6-overlay if needed, config translation from add-on options to YAML config).
 
 ### Docker image
 
@@ -594,13 +650,13 @@ Published to Docker Hub and GHCR. Multi-arch (amd64, arm64, armv7).
 ```bash
 docker run -d \
   -v ./config.yaml:/config/config.yaml \
-  -v adsb-enrich-data:/data \
-  ghcr.io/<user>/adsb-enrich:latest
+  -v ha-airspace-data:/data \
+  ghcr.io/<user>/ha-airspace:latest
 ```
 
 ### Python package
 
-For HA Core users on bare-metal Python, or for development. `pip install adsb-enrich` plus a systemd unit.
+For HA Core users on bare-metal Python, or for development. `pip install ha-airspace` plus a systemd unit.
 
 ### Why not HACS
 
@@ -617,7 +673,7 @@ A good gut check — these four users should all work without code changes:
 1. **Stock PiAware appliance, single 1090 receiver, HA on a NUC.** Add-on, point at appliance IP, done.
 2. **Custom build, 1090 + 978 on same Pi, HA on same network.** Add-on, two receiver entries, done.
 3. **Five receivers across two houses on Tailscale, HA on one of them.** Add-on, five receiver entries with Tailscale IPs.
-4. **HA Core on Debian, dump1090 in Docker on the same box, no add-on support.** `pip install adsb-enrich`, run as systemd service, point at `localhost:8080`.
+4. **HA Core on Debian, dump1090 in Docker on the same box, no add-on support.** `pip install ha-airspace`, run as systemd service, point at `localhost:8080`.
 
 If all four work without code changes, the universality goal is met.
 
@@ -747,3 +803,64 @@ Each slice ships independently and gathers feedback before the next.
 - **LADD** — Limit Aircraft Data Displayed. FAA blocklist; aircraft on the list shouldn't be shown by FAA-source-based trackers.
 - **Mictronics database** — Community-maintained mapping of hex → registration, type, operator, military flag. Used by readsb / tar1090.
 - **MLAT** — Multilateration. Position calculation from time-of-arrival differences across multiple receivers, for aircraft without ADS-B.
+
+---
+
+# Appendix: Remote ID / drone source (shipped — Phase 3)
+
+A companion project, [`dump3411`](https://github.com/ifnull/dump3411), detects
+nearby drones via ASTM F3411 **Remote ID** (BLE + WiFi) on Linux. It surfaces
+through this service's pipeline (watchpoint distance/bearing, nearest-entity,
+MQTT + HA discovery) as a **separate project integrated by contract, not a code
+merge.**
+
+**Status: implemented in Phase 3.** `RemoteIdHttpReceiver` consumes the
+`remoteid.json` feed (config `remoteid:`); drones merge as `band="remoteid"`
+tracks keyed by UAS id, get distinct HA entities (`drone_count`,
+`nearest_drone` with operator location) and `adsb/drone/<id>` topics, and skip
+reference-DB lookup. The design notes below record the decisions as made.
+
+## Integration shape
+
+The detector serves its current detections as a JSON document over HTTP; this
+service consumes it as just another source. The two repos share **zero code** —
+only a documented feed contract (`FEED.md`, canonical copy in this repo).
+
+- It is **not** `aircraft.json` and is **not** for dump1090-family tools.
+  Drones are not manned aircraft; a literal `aircraft.json` clone would force a
+  string UAS ID into the ICAO `hex` field (breaking Phase-2 reference-DB
+  lookups) and would have nowhere to put operator location.
+- We reuse dump1090's *envelope idioms* (`now`, `seen`/`seen_pos` as
+  seconds-since, a polled ~1 Hz array) because the receiver/ingest plumbing
+  already handles them — `seen→timestamp` conversion, staleness aging, purge.
+- The *object schema* is purpose-built for Remote ID. See `FEED.md`.
+
+## Key design decisions (free to make correctly now)
+
+- **`band: "remoteid"`.** A drone is a third band alongside `1090`/`978`. It
+  drops straight into the existing multi-band track model (`bands: [...]`) and
+  the merger's per-band dedup. Remote ID `id` and ICAO hex are different
+  namespaces and are **never** cross-matched.
+- **Source-agnostic identity.** The track key is "whichever identity is present"
+  (ICAO hex / TIS-B / Remote ID `id`), not a hardcoded ICAO assumption — same
+  spirit as the `~`-prefixed non-ICAO flag for TIS-B/ADS-R. No reference-DB
+  lookup is attempted for `remoteid` tracks. *This model decision is cheap to
+  bake in during Phase 1's modeling even though the receiver is Phase 3.*
+- **Operator location is a first-class, novel entity.** "Drone 400 m NE,
+  operator 1.2 km S" — security-relevant and absent from ADS-B. Drones get their
+  own HA discovery surface (drone count, nearest drone, operator location),
+  distinct from the aircraft entities.
+- **Native AGL for free.** Remote ID broadcasts height-above-takeoff directly —
+  the AGL that Phase 5 wants for aircraft (and is hard to derive there) arrives
+  in the feed.
+
+## Phasing
+
+- **Now (Phase 1):** keep the identity/observation model source-agnostic; leave
+  a `# TODO(phase-3): RemoteIdHttpReceiver` hook where natural. Do **not** build
+  the receiver — it needs the merger (Phase 3).
+- **Phase 3:** add `RemoteIdHttpReceiver` (reuses the HTTP polling/backoff/
+  `health()` plumbing) mapping the feed → the source-agnostic track model.
+- **Producer side (`drone-aware-zero`):** an additive opt-in `--serve` mode
+  (stdlib `http.server`, snapshot-only handler — the Zero W's single ARMv6 core
+  is already saturated by decode). Tracked in that repo's `FEED.md`.
