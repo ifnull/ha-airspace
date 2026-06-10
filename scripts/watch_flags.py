@@ -318,6 +318,16 @@ async def watch_merged(args: argparse.Namespace) -> int:
     bands + seen_by, highlighting any that merged across receivers/bands —
     the Phase 3 merger working on live data."""
     config = load_config(args.config)
+    # --only filters which configured flags to announce; default = all of them.
+    configured = set(config.enrichment.flags)
+    wanted = {f.strip() for f in args.only.split(",")} if args.only else configured
+    unknown = wanted - configured
+    if unknown:
+        print(
+            f"--only names flags not in the config: {sorted(unknown)}; have: {sorted(configured)}"
+        )
+        return 2
+
     store = load_databases(Path(args.cache_dir), refresh=args.refresh)
     enricher = Enricher(config.enrichment, db_store=store)
     watchpoints = config.watchpoints_runtime()
@@ -327,8 +337,10 @@ async def watch_merged(args: argparse.Namespace) -> int:
     names = ", ".join(f"{s.name}({s.band})" for s in sources)
     print(f"Merge mode — sources: {names}")
     print(f"Polling every {args.interval}s — Ctrl-C to stop")
-    print("(announces tracks as they start/stop merging; heartbeat every ~30s)\n")
+    print(f"Flags: {', '.join(sorted(wanted)) or '(none configured)'}")
+    print("(announces flagged aircraft + merges as they appear; heartbeat ~30s)\n")
     seen_merged: set[str] = set()
+    seen_flagged: set[str] = set()
     last_beat = 0.0
     try:
         while True:
@@ -337,27 +349,34 @@ async def watch_merged(args: argparse.Namespace) -> int:
                     state = merger.ingest(obs)
                     _apply_geometry(state, watchpoints)
                     enricher.enrich(state)
+            stamp = datetime.now(UTC).strftime("%H:%M:%S")
+
+            # Flagged aircraft (honors --only) — announce newly-seen ones.
+            flagged = {s.track_id: s for s in merger.states.values() if s.flags & wanted}
+            for tid in flagged.keys() - seen_flagged:
+                print(f"[{stamp}] {_fmt(flagged[tid], wanted)}")
+            seen_flagged = set(flagged)
+
+            # Merges — announce a track that started (MERGE) or stopped merging.
             merged = {
                 s.track_id: s
                 for s in merger.states.values()
                 if len(s.seen_by) > 1 or len(s.bands) > 1
             }
-            stamp = datetime.now(UTC).strftime("%H:%M:%S")
-            # Announce only transitions: a track that just started merging,
-            # and one that stopped — not the full list every cycle.
             for tid in merged.keys() - seen_merged:
                 print(f"[{stamp}] MERGE  {_fmt_merged(merged[tid])}")
             for tid in seen_merged - merged.keys():
                 print(f"[{stamp}] unmerge {tid}")
             seen_merged = set(merged)
 
-            # Heartbeat: a single periodic line so an idle (no-merge) airspace
-            # still shows the watcher is alive and counting.
+            # Heartbeat: a single periodic line so an idle airspace still shows
+            # the watcher is alive and counting.
             now = asyncio.get_event_loop().time()
             if now - last_beat >= 30.0:
                 bands = _band_breakdown(merger)
                 print(
-                    f"[{stamp}] alive — {len(merger.states)} tracks ({bands}), {len(merged)} merged"
+                    f"[{stamp}] alive — {len(merger.states)} tracks ({bands}), "
+                    f"{len(flagged)} flagged, {len(merged)} merged"
                 )
                 last_beat = now
             await asyncio.sleep(args.interval)
