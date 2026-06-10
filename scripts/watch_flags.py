@@ -8,11 +8,11 @@ terminal as they appear. Built for sitting and watching during busy traffic.
 
 Run from the repo root:
 
-    uv run python scripts/watch_flags.py
+    uv run python scripts/watch_flags.py                         # aircraft + drones
     uv run python scripts/watch_flags.py --url http://192.168.1.8:8080/data/aircraft.json
     uv run python scripts/watch_flags.py --interval 2 --all      # show every flagged hit
     uv run python scripts/watch_flags.py --only military,emergency
-    uv run python scripts/watch_flags.py --drone-url http://192.168.1.204:8754/data/remoteid.json
+    uv run python scripts/watch_flags.py --no-drones            # ADS-B only
 
 The reference DBs (~24 MB gzip'd) download once to a cache dir (default
 /tmp/adsb-db-cache) and are reused; pass --refresh to force a re-download.
@@ -44,6 +44,7 @@ from ha_airspace.models import AircraftState
 from ha_airspace.receivers import HttpJsonReceiver, RemoteIdHttpReceiver
 
 DEFAULT_URL = "http://192.168.1.8:8080/data/aircraft.json"
+DEFAULT_DRONE_URL = "http://192.168.1.204:8754/data/remoteid.json"
 _MICTRONICS_URL = "https://github.com/wiedehopf/tar1090-db/raw/csv/aircraft.csv.gz"
 _ADSBEX_URL = "https://downloads.adsbexchange.com/downloads/basic-ac-db.json.gz"
 
@@ -271,10 +272,17 @@ def main() -> int:
     p.add_argument("--refresh", action="store_true", help="force re-download of the DBs")
     p.add_argument(
         "--drone-url",
-        default="",
-        help="optional dump3411 remoteid.json URL; when set, drones are shown too",
+        default=DEFAULT_DRONE_URL,
+        help="dump3411 remoteid.json URL (drones shown alongside aircraft)",
+    )
+    p.add_argument(
+        "--no-drones",
+        action="store_true",
+        help="disable the drone feed (ADS-B only)",
     )
     args = p.parse_args()
+    if args.no_drones:
+        args.drone_url = ""
     return asyncio.run(watch(args))
 
 
