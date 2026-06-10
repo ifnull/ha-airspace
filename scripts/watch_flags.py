@@ -326,7 +326,10 @@ async def watch_merged(args: argparse.Namespace) -> int:
 
     names = ", ".join(f"{s.name}({s.band})" for s in sources)
     print(f"Merge mode — sources: {names}")
-    print(f"Polling every {args.interval}s — Ctrl-C to stop\n")
+    print(f"Polling every {args.interval}s — Ctrl-C to stop")
+    print("(announces tracks as they start/stop merging; heartbeat every ~30s)\n")
+    seen_merged: set[str] = set()
+    last_beat = 0.0
     try:
         while True:
             for src in sources:
@@ -334,13 +337,29 @@ async def watch_merged(args: argparse.Namespace) -> int:
                     state = merger.ingest(obs)
                     _apply_geometry(state, watchpoints)
                     enricher.enrich(state)
-            merged = [s for s in merger.states.values() if len(s.seen_by) > 1 or len(s.bands) > 1]
+            merged = {
+                s.track_id: s
+                for s in merger.states.values()
+                if len(s.seen_by) > 1 or len(s.bands) > 1
+            }
             stamp = datetime.now(UTC).strftime("%H:%M:%S")
-            print(
-                f"[{stamp}] {len(merger.states)} tracks, {len(merged)} merged across source/band:"
-            )
-            for s in merged:
-                print(f"  {_fmt_merged(s)}")
+            # Announce only transitions: a track that just started merging,
+            # and one that stopped — not the full list every cycle.
+            for tid in merged.keys() - seen_merged:
+                print(f"[{stamp}] MERGE  {_fmt_merged(merged[tid])}")
+            for tid in seen_merged - merged.keys():
+                print(f"[{stamp}] unmerge {tid}")
+            seen_merged = set(merged)
+
+            # Heartbeat: a single periodic line so an idle (no-merge) airspace
+            # still shows the watcher is alive and counting.
+            now = asyncio.get_event_loop().time()
+            if now - last_beat >= 30.0:
+                bands = _band_breakdown(merger)
+                print(
+                    f"[{stamp}] alive — {len(merger.states)} tracks ({bands}), {len(merged)} merged"
+                )
+                last_beat = now
             await asyncio.sleep(args.interval)
     except KeyboardInterrupt:
         print("\nstopped")
@@ -350,6 +369,15 @@ async def watch_merged(args: argparse.Namespace) -> int:
             aclose = getattr(src, "aclose", None)
             if aclose is not None:
                 await aclose()
+
+
+def _band_breakdown(merger: Merger) -> str:
+    """Compact per-band track count for the heartbeat, e.g. '1090:20 978:2'."""
+    counts: dict[str, int] = {}
+    for s in merger.states.values():
+        for band in s.bands:
+            counts[band] = counts.get(band, 0) + 1
+    return " ".join(f"{b}:{counts[b]}" for b in sorted(counts)) or "none"
 
 
 def _apply_geometry(state: AircraftState, watchpoints: list) -> None:  # type: ignore[type-arg]
