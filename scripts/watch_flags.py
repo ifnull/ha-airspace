@@ -21,7 +21,9 @@ Flags evaluated (a superset worth watching):
     military       DB mil flag (Mictronics + ADSBex)
     interesting    DB interesting flag (Mictronics)
     pia / ladd     FAA privacy / limited-display (ADSBex + Mictronics)
-    emergency      squawk 7500 / 7600 / 7700
+    emergency      ICAO emergency triad: squawk 7500 (hijack) / 7600 (radio) / 7700
+    mil_squawk     squawk 7777 (US military interceptor ops — not distress)
+    uas_lost_link  squawk 7400 (FAA UAS lost command link)
     rotorcraft     emitter category A7
     heavy          emitter category A5 (large/heavy)
 """
@@ -54,7 +56,13 @@ _FLAGS: dict[str, FlagConfig] = {
     "interesting": FlagConfig(sources=["mictronics:interesting"]),
     "pia": FlagConfig(sources=["adsbexchange:pia", "mictronics:pia"]),
     "ladd": FlagConfig(sources=["adsbexchange:ladd", "mictronics:ladd"]),
+    # The real ICAO emergency triad — hijack / radio-fail / general emergency.
     "emergency": FlagConfig(squawks=["7500", "7600", "7700"]),
+    # 7777 is US military interceptor ops (not distress); 7400 is FAA UAS
+    # lost-link. Kept as separate, honestly-labeled flags rather than folded
+    # into "emergency".
+    "mil_squawk": FlagConfig(squawks=["7777"]),
+    "uas_lost_link": FlagConfig(squawks=["7400"]),
     "rotorcraft": FlagConfig(categories=["A7"]),
     "heavy": FlagConfig(categories=["A5"]),
 }
@@ -63,6 +71,8 @@ _FLAGS: dict[str, FlagConfig] = {
 _COLORS = {
     "military": "\033[1;31m",  # bold red
     "emergency": "\033[1;33m",  # bold yellow
+    "mil_squawk": "\033[1;31m",  # bold red (military ops)
+    "uas_lost_link": "\033[1;33m",  # bold yellow (drone in trouble)
     "interesting": "\033[36m",  # cyan
     "pia": "\033[35m",  # magenta
     "ladd": "\033[35m",  # magenta
@@ -134,13 +144,17 @@ def load_databases(cache_dir: Path, *, refresh: bool) -> DatabaseStore:
     return store
 
 
+_PRIORITY_COLORS = ("military", "mil_squawk", "emergency", "uas_lost_link", "interesting")
+
+
 def _fmt(state: AircraftState, wanted: set[str]) -> str:
     flags = sorted(state.flags & wanted)
-    color = next((_COLORS[f] for f in ("military", "emergency", "interesting") if f in flags), "")
+    color = next((_COLORS[f] for f in _PRIORITY_COLORS if f in flags), "")
     meta = state.db_metadata
     reg = str(meta.get("reg") or "")
     model = str(meta.get("model") or meta.get("type") or "")
     flight = (state.canonical.flight or "").strip()
+    squawk = state.canonical.squawk or "----"
     dist = state.distance_to.get("home")
     dist_s = f"{dist:5.1f}nm" if dist is not None else "   --  "
     alt = state.canonical.alt_baro_ft
@@ -149,7 +163,10 @@ def _fmt(state: AircraftState, wanted: set[str]) -> str:
     # No leading indent here — the caller adds its own prefix. Color wraps only
     # the content, so a caller can lstrip/prefix without tripping over the ANSI
     # escape that would otherwise sit before the leading spaces.
-    line = f"{state.hex}  {flight:<8s} {dist_s} {alt_s}  {reg:<10s} {model:<18s} [{flagstr}]"
+    line = (
+        f"{state.hex}  {flight:<8s} sq:{squawk:<4s} {dist_s} {alt_s}  "
+        f"{reg:<10s} {model:<18s} [{flagstr}]"
+    )
     return f"{color}{line}{_RESET}" if color else line
 
 
