@@ -8,11 +8,11 @@ terminal as they appear. Built for sitting and watching during busy traffic.
 
 Run from the repo root:
 
-    uv run python scripts/watch_flags.py                         # aircraft + drones
+    uv run python scripts/watch_flags.py                         # ADS-B only
+    uv run python scripts/watch_flags.py --drone-url             # + drones (default feed)
     uv run python scripts/watch_flags.py --url http://192.168.1.8:8080/data/aircraft.json
     uv run python scripts/watch_flags.py --interval 2 --all      # show every flagged hit
     uv run python scripts/watch_flags.py --only military,emergency
-    uv run python scripts/watch_flags.py --no-drones            # ADS-B only
 
 The reference DBs (~24 MB gzip'd) download once to a cache dir (default
 /tmp/adsb-db-cache) and are reused; pass --refresh to force a re-download.
@@ -272,17 +272,15 @@ def main() -> int:
     p.add_argument("--refresh", action="store_true", help="force re-download of the DBs")
     p.add_argument(
         "--drone-url",
-        default=DEFAULT_DRONE_URL,
-        help="dump3411 remoteid.json URL (drones shown alongside aircraft)",
-    )
-    p.add_argument(
-        "--no-drones",
-        action="store_true",
-        help="disable the drone feed (ADS-B only)",
+        nargs="?",
+        const=DEFAULT_DRONE_URL,
+        default="",
+        help=(
+            "show drones too. Omit for ADS-B only; bare --drone-url uses the "
+            f"default ({DEFAULT_DRONE_URL}); or pass a URL to override."
+        ),
     )
     args = p.parse_args()
-    if args.no_drones:
-        args.drone_url = ""
     return asyncio.run(watch(args))
 
 
