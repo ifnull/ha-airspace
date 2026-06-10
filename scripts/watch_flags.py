@@ -10,9 +10,11 @@ Run from the repo root:
 
     uv run python scripts/watch_flags.py                         # ADS-B only
     uv run python scripts/watch_flags.py --drone-url             # + drones (default feed)
-    uv run python scripts/watch_flags.py --url http://192.168.1.8:8080/data/aircraft.json
     uv run python scripts/watch_flags.py --interval 2 --all      # show every flagged hit
     uv run python scripts/watch_flags.py --only military,emergency
+    uv run python scripts/watch_flags.py --config config.yaml    # MERGE MODE: real
+                                                                 # multi-source merger
+                                                                 # (1090 + 978 + drones)
 
 The reference DBs (~24 MB gzip'd) download once to a cache dir (default
 /tmp/adsb-db-cache) and are reused; pass --refresh to force a re-download.
@@ -39,11 +41,17 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ha_airspace.config import EnrichmentConfig, FlagConfig
+from ha_airspace.config import Config, EnrichmentConfig, FlagConfig, load_config
 from ha_airspace.databases import DatabaseStore, parse_adsbexchange, parse_mictronics
 from ha_airspace.enrichment import Enricher
+from ha_airspace.geo import bearing, haversine
+from ha_airspace.merger import Merger
 from ha_airspace.models import AircraftState
-from ha_airspace.receivers import HttpJsonReceiver, RemoteIdHttpReceiver
+from ha_airspace.receivers import (
+    HttpJsonReceiver,
+    ReceiverSource,
+    RemoteIdHttpReceiver,
+)
 
 DEFAULT_URL = "http://192.168.1.8:8080/data/aircraft.json"
 DEFAULT_DRONE_URL = "http://192.168.1.204:8754/data/remoteid.json"
@@ -191,6 +199,9 @@ def _fmt_drone(state: AircraftState) -> str:
 
 
 async def watch(args: argparse.Namespace) -> int:
+    if args.config:
+        return await watch_merged(args)
+
     wanted = {f.strip() for f in args.only.split(",")} if args.only else set(_FLAGS)
     unknown = wanted - set(_FLAGS)
     if unknown:
@@ -275,9 +286,98 @@ def _render(
             print(f"[{stamp}] {_fmt_drone(d)}")
 
 
+# ---------------------------------------------------------------------------
+# Merge mode (--config): real multi-source merger over the project config
+# ---------------------------------------------------------------------------
+
+
+def _build_sources(config: Config) -> list[ReceiverSource]:
+    """Construct receivers from the project config — ADS-B + Remote ID — so
+    the watcher merges exactly what the real service would."""
+    sources: list[ReceiverSource] = [
+        HttpJsonReceiver(rc.name, rc.band, rc.url) for rc in config.receivers if rc.enabled
+    ]
+    sources.extend(RemoteIdHttpReceiver(rc.name, rc.url) for rc in config.remoteid if rc.enabled)
+    return sources
+
+
+def _fmt_merged(state: AircraftState) -> str:
+    """Merge-mode line: emphasizes bands + seen_by so cross-source merges are
+    visible. A track seen by >1 receiver or on >1 band is highlighted."""
+    bands = "+".join(sorted(state.bands))
+    seen = ",".join(sorted(state.seen_by))
+    merged = len(state.seen_by) > 1 or len(state.bands) > 1
+    ident = state.canonical.flight or state.track_id
+    flagstr = (" [" + ",".join(sorted(state.flags)) + "]") if state.flags else ""
+    line = f"{state.track_id:<10s} {(ident or '').strip():<10s} band={bands:<9s} seen_by={seen}{flagstr}"
+    return f"\033[1;32m{line}  <- MERGED\033[0m" if merged else line
+
+
+async def watch_merged(args: argparse.Namespace) -> int:
+    """Real merger over all configured sources. Shows every track with its
+    bands + seen_by, highlighting any that merged across receivers/bands —
+    the Phase 3 merger working on live data."""
+    config = load_config(args.config)
+    store = load_databases(Path(args.cache_dir), refresh=args.refresh)
+    enricher = Enricher(config.enrichment, db_store=store)
+    watchpoints = config.watchpoints_runtime()
+    sources = _build_sources(config)
+    merger = Merger()
+
+    names = ", ".join(f"{s.name}({s.band})" for s in sources)
+    print(f"Merge mode — sources: {names}")
+    print(f"Polling every {args.interval}s — Ctrl-C to stop\n")
+    try:
+        while True:
+            for src in sources:
+                for obs in await src.fetch():
+                    state = merger.ingest(obs)
+                    _apply_geometry(state, watchpoints)
+                    enricher.enrich(state)
+            merged = [s for s in merger.states.values() if len(s.seen_by) > 1 or len(s.bands) > 1]
+            stamp = datetime.now(UTC).strftime("%H:%M:%S")
+            print(
+                f"[{stamp}] {len(merger.states)} tracks, {len(merged)} merged across source/band:"
+            )
+            for s in merged:
+                print(f"  {_fmt_merged(s)}")
+            await asyncio.sleep(args.interval)
+    except KeyboardInterrupt:
+        print("\nstopped")
+        return 0
+    finally:
+        for src in sources:
+            aclose = getattr(src, "aclose", None)
+            if aclose is not None:
+                await aclose()
+
+
+def _apply_geometry(state: AircraftState, watchpoints: list) -> None:  # type: ignore[type-arg]
+    """Compute distance/bearing from each watchpoint (the tracker does this in
+    the real service; the watcher replicates it so merged tracks have distance)."""
+    c = state.canonical
+    if c.lat is None or c.lon is None:
+        state.distance_to.clear()
+        state.bearing_to.clear()
+        return
+    for wp in watchpoints:
+        state.distance_to[wp.name] = haversine(wp.lat, wp.lon, c.lat, c.lon)
+        state.bearing_to[wp.name] = bearing(wp.lat, wp.lon, c.lat, c.lon)
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description="Live flag watcher for ha-airspace.")
-    p.add_argument("--url", default=DEFAULT_URL, help="receiver aircraft.json URL")
+    p.add_argument(
+        "--config",
+        default="",
+        help=(
+            "path to a project config.yaml. When set, runs MERGE MODE: builds "
+            "the real multi-source Merger from config receivers + remoteid + "
+            "enrichment and shows cross-source/band merges. Without it, the "
+            "single-feed flag watcher runs."
+        ),
+    )
+    p.add_argument("--url", default=DEFAULT_URL, help="receiver aircraft.json URL (no --config)")
     p.add_argument("--interval", type=float, default=2.0, help="poll seconds")
     p.add_argument(
         "--all",
