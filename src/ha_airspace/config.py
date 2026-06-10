@@ -6,11 +6,11 @@ with strict typing and never re-validates. Bad config exits the process
 non-zero at startup with a field-path error.
 
 Current surface: ``service``, ``watchpoints``, ``mqtt``, ``prometheus``,
-``receivers``, ``databases`` (Phase 2a), and ``enrichment`` (flags + alerts,
-Phase 2a). Phase 2b will add ``journal`` and Phase 2c ``photos`` when those
-modules land. Strict mode rejects unknown top-level keys, so a typo or a
-config from a future phase fails loudly — the right behavior pre-public;
-Daniel iterates and the schema can break.
+``receivers``, ``remoteid``, ``databases`` + ``enrichment`` (Phase 2a), and
+``journal`` (Phase 2b). Phase 2c will add ``photos``. Strict mode rejects
+unknown top-level keys, so a typo or a config from a future phase fails
+loudly — the right behavior pre-public; Daniel iterates and the schema can
+break.
 """
 
 from __future__ import annotations
