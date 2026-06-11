@@ -532,8 +532,9 @@ journal:                         # Phase 2b — SQLite history (optional; omit
   retention_observations_days: 90
   write_coalesce_s: 30            # flush at least this often
   write_coalesce_events: 50       # flush early once this many records buffer
-  # (Slice 1 = durable first_seen. Slice 2 = flag/alert event history + prune.
-  #  The full-observation firehose, ~4M rows/day/receiver, stays out of scope.)
+  # Persists durable first_seen plus flag/alert ENTER/EXIT events (pruned by
+  # retention). The full-observation firehose, ~4M rows/day/receiver, stays out
+  # of scope — this is a history ledger, not a track recorder.
 
 photos:                          # Phase 2c — Planespotters photo enrichment
   enabled: false                 # off by default

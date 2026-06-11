@@ -198,3 +198,91 @@ class TestBackgroundWriter:
         assert j2.first_seen_for("ae0001") == _T0
         await j2.close()
         await j.close()
+
+
+# ---------------------------------------------------------------------------
+# Event history (slice 2)
+# ---------------------------------------------------------------------------
+
+
+class TestEvents:
+    async def test_record_and_load_events(self, tmp_path: Path) -> None:
+        j = await _opened(_config(tmp_path))
+        j.record_event("ae0001", "flag_enter", "military", _T0)
+        j.record_event("ae0001", "alert_enter", "military_close", _T0 + timedelta(seconds=1))
+        await j.close()
+
+        j2 = await _opened(_config(tmp_path))
+        events = await j2.load_events()
+        assert [(e[1], e[2]) for e in events] == [
+            ("flag_enter", "military"),
+            ("alert_enter", "military_close"),
+        ]
+        await j2.close()
+
+    async def test_events_are_append_only(self, tmp_path: Path) -> None:
+        # Same (track, kind, detail) twice -> two distinct rows (history).
+        j = await _opened(_config(tmp_path))
+        j.record_event("ae0001", "flag_enter", "military", _T0)
+        j.record_event("ae0001", "flag_exit", "military", _T0 + timedelta(minutes=5))
+        j.record_event("ae0001", "flag_enter", "military", _T0 + timedelta(minutes=10))
+        await j.close()
+        j2 = await _opened(_config(tmp_path))
+        assert len(await j2.load_events("ae0001")) == 3
+        await j2.close()
+
+    async def test_load_events_filtered_by_track(self, tmp_path: Path) -> None:
+        j = await _opened(_config(tmp_path))
+        j.record_event("ae0001", "flag_enter", "heavy", _T0)
+        j.record_event("ae0002", "flag_enter", "ladd", _T0)
+        await j.close()
+        j2 = await _opened(_config(tmp_path))
+        ae1 = await j2.load_events("ae0001")
+        assert [e[0] for e in ae1] == ["ae0001"]
+        await j2.close()
+
+    async def test_events_and_tracks_flush_together(self, tmp_path: Path) -> None:
+        j = await _opened(_config(tmp_path))
+        j.record("ae0001", "ae0001", _T0, _T0)
+        j.record_event("ae0001", "flag_enter", "military", _T0)
+        await j.close()
+        j2 = await _opened(_config(tmp_path))
+        assert j2.first_seen_for("ae0001") == _T0
+        assert len(await j2.load_events()) == 1
+        await j2.close()
+
+
+class TestRetentionPrune:
+    async def test_prune_deletes_old_events_keeps_recent_and_tracks(self, tmp_path: Path) -> None:
+        j = await _opened(_config(tmp_path, retention_observations_days=90))
+        old = datetime.now(UTC) - timedelta(days=200)
+        recent = datetime.now(UTC) - timedelta(days=1)
+        j.record("ae0001", "ae0001", old, recent)  # summary kept forever
+        j.record_event("ae0001", "flag_enter", "old", old)
+        j.record_event("ae0001", "flag_enter", "recent", recent)
+        # Flush, then force a prune (bypass the hourly gate).
+        await asyncio.to_thread(j._flush_sync)
+        await asyncio.to_thread(j._prune_sync)
+
+        events = await j.load_events()
+        details = {e[2] for e in events}
+        assert details == {"recent"}  # the 200-day-old event is gone
+        await j.close()
+
+        # Reopen: the track summary survived the prune (pruning is events-only),
+        # so first_seen warm-loads back as the original 200-day-old timestamp.
+        j2 = await _opened(_config(tmp_path))
+        assert j2.first_seen_for("ae0001") == old
+        assert len(await j2.load_events()) == 1  # only the recent event remains
+        await j2.close()
+
+    async def test_prune_is_rate_limited(self, tmp_path: Path) -> None:
+        # Two prunes back-to-back: the second is gated by _PRUNE_INTERVAL_S and
+        # must not run (the loop calls _maybe_prune every flush — cheap, hourly).
+        j = await _opened(_config(tmp_path))
+        await j._maybe_prune()
+        first_stamp = j._last_prune
+        assert first_stamp > 0.0
+        await j._maybe_prune()
+        assert j._last_prune == first_stamp
+        await j.close()

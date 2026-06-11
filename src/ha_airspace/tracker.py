@@ -114,6 +114,9 @@ class AircraftTracker:
         self._clock = clock
         self._stale_after_s = stale_after_s
         self._expire_after_s = expire_after_s
+        # Last-known flag set per track, for journaling flag transitions.
+        # Pruned alongside the track on expiry so it never grows unbounded.
+        self._prev_flags: dict[str, frozenset[str]] = {}
 
     @property
     def _states(self) -> dict[str, AircraftState]:
@@ -144,6 +147,25 @@ class AircraftTracker:
             # Flags / DB join depend on the freshly merged canonical +
             # geometry, so enrich after both.
             self._enricher.enrich(state)
+        self._record_flag_transitions(state)
+
+    def _record_flag_transitions(self, state: AircraftState) -> None:
+        """Journal flag-state changes for this track: a flag newly present is a
+        ``flag_enter``, one newly absent a ``flag_exit``. No-op without a
+        journal (the journal is wired once at startup, never mid-run, so the
+        prev-flags bookkeeping only earns its keep when there's a sink)."""
+        if self._journal is None:
+            return
+        prev = self._prev_flags.get(state.track_id, frozenset())
+        now = state.flags
+        if prev == now:
+            return
+        at = self._clock()
+        for flag in now - prev:
+            self._journal.record_event(state.track_id, "flag_enter", flag, at)
+        for flag in prev - now:
+            self._journal.record_event(state.track_id, "flag_exit", flag, at)
+        self._prev_flags[state.track_id] = frozenset(now)
 
     async def tick(self) -> None:
         """Run lifecycle, alerts, summary, and metrics once over all merged
@@ -211,6 +233,12 @@ class AircraftTracker:
                     await self._publisher.purge_aircraft(track_id)
                 self._merger.remove(track_id)
                 purged.append(track_id)
+                # Any flags the track still carried implicitly exit on purge;
+                # record them and drop the prev-flags entry so it never leaks.
+                stale_flags = self._prev_flags.pop(track_id, frozenset())
+                if self._journal is not None:
+                    for flag in stale_flags:
+                        self._journal.record_event(track_id, "flag_exit", flag, now)
                 log.debug("track_purged", track_id=track_id)
                 continue
             if is_drone:
@@ -232,9 +260,17 @@ class AircraftTracker:
             if event.transition is AlertTransition.ENTER and event.state is not None:
                 await self._publisher.publish_alert(event.rule, event.state)
                 log.info("alert_enter", rule=event.rule, track_id=event.track_id)
+                if self._journal is not None:
+                    self._journal.record_event(
+                        event.track_id, "alert_enter", event.rule, self._clock()
+                    )
             elif event.transition is AlertTransition.EXIT:
                 await self._publisher.clear_alert(event.rule, event.track_id)
                 log.info("alert_exit", rule=event.rule, track_id=event.track_id)
+                if self._journal is not None:
+                    self._journal.record_event(
+                        event.track_id, "alert_exit", event.rule, self._clock()
+                    )
         # Refresh the active flag for any rule that saw a transition.
         active = self._alerts.active_rules()
         for rule in touched_rules:
