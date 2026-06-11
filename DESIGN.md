@@ -522,16 +522,18 @@ databases:                       # Phase 2a
       url: "https://downloads.adsbexchange.com/downloads/basic-ac-db.json.gz"
       enabled: true
 
-journal:                         # Phase 2b — SQLite observation journal
-  path: "/data/journal.db"
-  # Cadence: write rows only on flag-state changes and alert ENTER/EXIT
-  # transitions, not every poll. Coalesce writes via a 30s timer or 50-event
-  # threshold (whichever first). WAL mode + synchronous=NORMAL keep SD-card
-  # write amplification low.
-  retention_observations_days: 90 # auto-prune older observation rows; aircraft
-                                  # summary rows (hex, first_seen) kept forever
-  every_poll: false               # opt-in; default off because it generates
-                                  # ~4M rows/day per receiver
+journal:                         # Phase 2b — SQLite history (optional; omit
+  path: "/data/journal.db"        #   = no persistence, first_seen resets on
+                                  #   restart — the right call on a Pi SD card)
+  # Writes are coalesced (buffered, flushed on a timer or event threshold),
+  # never per poll. WAL + synchronous=NORMAL keep SD-card write amplification
+  # low. Track summary rows (track_id, hex, first_seen) are kept forever;
+  # event-history rows are pruned after retention_observations_days.
+  retention_observations_days: 90
+  write_coalesce_s: 30            # flush at least this often
+  write_coalesce_events: 50       # flush early once this many records buffer
+  # (Slice 1 = durable first_seen. Slice 2 = flag/alert event history + prune.
+  #  The full-observation firehose, ~4M rows/day/receiver, stays out of scope.)
 
 photos:                          # Phase 2c — Planespotters photo enrichment
   enabled: false                 # off by default

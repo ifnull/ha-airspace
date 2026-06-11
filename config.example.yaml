@@ -163,3 +163,17 @@ receivers:
 #           max_alt_agl_ft: 2000           # needs home.elevation_m set above
 #           max_distance_nm: 10
 #           watchpoint: home
+
+# --------------------------------------------------------------------------
+# journal — SQLite history (Phase 2b). Optional; OMIT to disable persistence,
+# which is the right call on a Raspberry Pi SD card where you want to minimize
+# writes. When present, `first_seen` survives restarts (otherwise it resets to
+# "now" each time a track reappears). Writes are coalesced (buffered, flushed
+# on a timer or threshold) — never per poll. Track summary rows are kept
+# forever; event-history rows are pruned after retention_observations_days.
+# --------------------------------------------------------------------------
+# journal:
+#   path: /data/journal.db
+#   retention_observations_days: 90
+#   write_coalesce_s: 30            # flush at least this often
+#   write_coalesce_events: 50       # flush early once this many records buffer

@@ -576,3 +576,42 @@ class TestAlertsConfig:
         # No 'home', rule omits watchpoint -> defaults to home -> not defined.
         with pytest.raises(ValidationError, match="not defined"):
             Config.model_validate(base)
+
+
+# ---------------------------------------------------------------------------
+# Journal config (Phase 2b)
+# ---------------------------------------------------------------------------
+
+
+class TestJournalConfig:
+    def test_absent_means_none(self) -> None:
+        cfg = Config.model_validate(_minimal_config_dict())
+        assert cfg.journal is None
+
+    def test_present_with_defaults(self) -> None:
+        base = _minimal_config_dict()
+        base["journal"] = {"path": "/data/journal.db"}
+        cfg = Config.model_validate(base)
+        assert cfg.journal is not None
+        assert cfg.journal.path == "/data/journal.db"
+        assert cfg.journal.retention_observations_days == 90.0
+        assert cfg.journal.write_coalesce_events == 50
+
+    def test_overrides(self) -> None:
+        base = _minimal_config_dict()
+        base["journal"] = {
+            "path": "/tmp/j.db",
+            "retention_observations_days": 30,
+            "write_coalesce_s": 10,
+            "write_coalesce_events": 5,
+        }
+        cfg = Config.model_validate(base)
+        assert cfg.journal is not None
+        assert cfg.journal.retention_observations_days == 30
+        assert cfg.journal.write_coalesce_events == 5
+
+    def test_unknown_key_rejected(self) -> None:
+        base = _minimal_config_dict()
+        base["journal"] = {"path": "/x", "typo": True}
+        with pytest.raises(ValidationError, match="Extra inputs"):
+            Config.model_validate(base)

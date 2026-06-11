@@ -36,6 +36,8 @@ from ha_airspace.alerts import AlertEvaluator
 from ha_airspace.config import Config
 from ha_airspace.databases import DatabaseLoader, DatabaseStore
 from ha_airspace.enrichment import Enricher
+from ha_airspace.journal import Journal
+from ha_airspace.merger import Merger
 from ha_airspace.metrics import MetricsRegistry
 from ha_airspace.mqtt.client import MqttClient
 from ha_airspace.mqtt.publisher import Publisher
@@ -76,6 +78,7 @@ class App:
         publisher: Publisher,
         tracker: AircraftTracker,
         db_loader: DatabaseLoader | None = None,
+        journal: Journal | None = None,
         metrics: MetricsRegistry | None = None,
     ) -> None:
         self._config = config
@@ -84,6 +87,7 @@ class App:
         self._publisher = publisher
         self._tracker = tracker
         self._db_loader = db_loader
+        self._journal = journal
         self._metrics = metrics
 
         # Receiver name -> cached self-reported location (fetched once at
@@ -132,18 +136,27 @@ class App:
         """
         self._install_signal_handlers()
         await self._cache_locations()
+        # Open + warm-load the journal BEFORE any poll runs, so first_seen is
+        # restorable on the very first sighting after a restart.
+        if self._journal is not None:
+            await self._journal.open()
+            await self._journal.warm_load()
 
         try:
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(self._client.run(), name="mqtt-client")
                 if self._db_loader is not None:
                     tg.create_task(self._db_loader.run(), name="db-loader")
+                if self._journal is not None:
+                    tg.create_task(self._journal.run(), name="journal")
                 for receiver in self._receivers:
                     tg.create_task(self._poll_loop(receiver), name=f"poll-{receiver.name}")
                 tg.create_task(self._pipeline_loop(), name="pipeline")
                 tg.create_task(self._stop_watcher(), name="stop-watcher")
         finally:
             await self._close_receivers()
+            if self._journal is not None:
+                await self._journal.close()  # final flush
             log.info("service_stopped")
 
     # ------------------------------------------------------------------
@@ -243,6 +256,8 @@ class App:
         log.info("service_stopping")
         if self._db_loader is not None:
             await self._db_loader.stop()
+        if self._journal is not None:
+            await self._journal.stop()
         await self._client.stop()
 
     async def _close_receivers(self) -> None:
@@ -325,11 +340,21 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
             elevation_m_for=elevations.get,
         )
 
+    # Journal: only when configured. The merger restores first_seen from it
+    # (in-memory after warm-load); the tracker records track summaries to it.
+    # App.run() opens + warm-loads it before the poll loop and runs its writer.
+    journal: Journal | None = Journal(config.journal) if config.journal is not None else None
+    merger = Merger(
+        first_seen_for=journal.first_seen_for if journal is not None else None,
+    )
+
     tracker = AircraftTracker(
         publisher,
         config.watchpoints_runtime(),
+        merger=merger,
         enricher=Enricher(config.enrichment, db_store=db_store),
         alerts=alerts,
+        journal=journal,
         has_drone_source=any(rc.enabled for rc in config.remoteid),
         metrics=metrics,
     )
@@ -340,6 +365,7 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
         publisher=publisher,
         tracker=tracker,
         db_loader=db_loader,
+        journal=journal,
         metrics=metrics,
     )
 
