@@ -13,22 +13,21 @@ Design (DESIGN §2b):
   *coalesced*: buffered in memory and flushed on a timer (``write_coalesce_s``)
   or once the buffer hits ``write_coalesce_events`` — never one write per poll.
 * **Two retention policies.** ``track`` summary rows (``first_seen``) are kept
-  **forever**; ``event`` rows (Phase 2b slice 2) are pruned after
+  **forever**; ``event`` rows (flag/alert transitions) are pruned after
   ``retention_observations_days``.
 * **Warm-load at boot.** ``load_first_seen()`` reads the whole track table once
   into a dict so the per-track restore on a busy first poll is a dict lookup,
   not a DB hit per new track.
 * **Fail-soft.** A locked/slow DB degrades to "history not saved," never a
   stalled poll loop — same posture as receivers and the DB loader.
-
-# TODO(phase-2b-slice-2): event rows (flag/alert transitions) + retention prune.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -86,8 +85,13 @@ class Journal:
         # Pending writes, keyed by track_id so repeated updates within a flush
         # window collapse to one row (last_seen advances, first_seen min-wins).
         self._pending: dict[str, tuple[str | None, datetime, datetime]] = {}
+        # Pending event rows (flag/alert transitions). Append-only — every
+        # transition is a distinct historical row, so no per-key collapse.
+        self._pending_events: list[tuple[str, str, str | None, datetime]] = []
         self._stop = asyncio.Event()
         self._flush_now = asyncio.Event()
+        # Monotonic time of the last retention prune; gates the prune cadence.
+        self._last_prune: float = 0.0
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -143,6 +147,29 @@ class Journal:
             return recorded[1]
         return self._first_seen.get(track_id)
 
+    async def load_events(
+        self, track_id: str | None = None
+    ) -> list[tuple[str, str, str | None, datetime]]:
+        """Read event rows (``(track_id, kind, detail, at)``), oldest first,
+        optionally filtered to one track. The read substrate for Phase 5
+        history-aware alert rules ("first time this month")."""
+        return await asyncio.to_thread(self._load_events_sync, track_id)
+
+    def _load_events_sync(
+        self, track_id: str | None
+    ) -> list[tuple[str, str, str | None, datetime]]:
+        assert self._conn is not None
+        if track_id is None:
+            rows = self._conn.execute(
+                "SELECT track_id, kind, detail, at FROM event ORDER BY at"
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT track_id, kind, detail, at FROM event WHERE track_id = ? ORDER BY at",
+                (track_id,),
+            ).fetchall()
+        return [(tid, kind, detail, _parse_dt(at)) for tid, kind, detail, at in rows]
+
     # ------------------------------------------------------------------
     # Writes (buffered)
     # ------------------------------------------------------------------
@@ -161,58 +188,120 @@ class Journal:
             first_seen = min(first_seen, prev_first)
             last_seen = max(last_seen, prev_last)
         self._pending[track_id] = (hex_code, first_seen, last_seen)
-        if len(self._pending) >= self._config.write_coalesce_events:
+        self._maybe_trip_threshold()
+
+    def record_event(self, track_id: str, kind: str, detail: str | None, at: datetime) -> None:
+        """Buffer a history event row — a flag or alert transition. Append-only
+        (each transition is its own row); pruned after the retention window.
+        ``kind`` is one of ``flag_enter`` | ``flag_exit`` | ``alert_enter`` |
+        ``alert_exit``; ``detail`` is the flag or rule name. Never touches disk
+        on the calling path."""
+        self._pending_events.append((track_id, kind, detail, at))
+        self._maybe_trip_threshold()
+
+    def _maybe_trip_threshold(self) -> None:
+        """Wake the flush loop early once the combined buffer hits the event
+        threshold, so a burst doesn't sit unbounded between timer ticks."""
+        if len(self._pending) + len(self._pending_events) >= self._config.write_coalesce_events:
             self._flush_now.set()
 
     async def run(self) -> None:
         """Background flush loop: flush on the coalesce timer or when the buffer
-        threshold trips. Runs as a task in the app TaskGroup until ``stop()``."""
+        threshold trips, and prune expired event rows on a slow cadence. Runs
+        as a task in the app TaskGroup until ``stop()``."""
         while not self._stop.is_set():
-            try:
+            # Wake on either the coalesce timer or an early threshold trip; a
+            # timeout just means "timer fired, time to flush".
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(
                     self._flush_now.wait(), timeout=self._config.write_coalesce_s
                 )
-            except TimeoutError:
-                pass
             self._flush_now.clear()
             await asyncio.to_thread(self._flush_sync)
+            await self._maybe_prune()
 
     async def stop(self) -> None:
         self._stop.set()
         self._flush_now.set()
 
     def _flush_sync(self) -> None:
-        """Write the pending buffer in one transaction. Fail-soft: a DB error
-        is logged and the buffer kept for the next attempt, never raised into
-        the poll loop."""
-        if self._conn is None or not self._pending:
+        """Write both pending buffers (track summaries + events) in one
+        transaction. Fail-soft: a DB error is logged and the buffers kept for
+        the next attempt, never raised into the poll loop."""
+        if self._conn is None or (not self._pending and not self._pending_events):
             return
-        batch = self._pending
+        track_batch = self._pending
+        event_batch = self._pending_events
         self._pending = {}
-        rows = [
+        self._pending_events = []
+        track_rows = [
             (track_id, hex_code, _fmt_dt(first), _fmt_dt(last))
-            for track_id, (hex_code, first, last) in batch.items()
+            for track_id, (hex_code, first, last) in track_batch.items()
+        ]
+        event_rows = [
+            (track_id, kind, detail, _fmt_dt(at)) for track_id, kind, detail, at in event_batch
         ]
         try:
             # Upsert: first_seen is min-wins (keep the earliest ever recorded),
             # last_seen advances, hex backfills if it was NULL.
-            self._conn.executemany(
-                """
-                INSERT INTO track (track_id, hex, first_seen, last_seen)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(track_id) DO UPDATE SET
-                    hex = COALESCE(excluded.hex, track.hex),
-                    first_seen = MIN(track.first_seen, excluded.first_seen),
-                    last_seen = MAX(track.last_seen, excluded.last_seen)
-                """,
-                rows,
-            )
+            if track_rows:
+                self._conn.executemany(
+                    """
+                    INSERT INTO track (track_id, hex, first_seen, last_seen)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(track_id) DO UPDATE SET
+                        hex = COALESCE(excluded.hex, track.hex),
+                        first_seen = MIN(track.first_seen, excluded.first_seen),
+                        last_seen = MAX(track.last_seen, excluded.last_seen)
+                    """,
+                    track_rows,
+                )
+            if event_rows:
+                self._conn.executemany(
+                    "INSERT INTO event (track_id, kind, detail, at) VALUES (?, ?, ?, ?)",
+                    event_rows,
+                )
             self._conn.commit()
         except sqlite3.Error as exc:
-            log.warning("journal_flush_failed", error=str(exc), buffered=len(batch))
-            # Keep the batch for the next flush rather than dropping history.
-            for track_id, value in batch.items():
+            log.warning(
+                "journal_flush_failed",
+                error=str(exc),
+                tracks=len(track_batch),
+                events=len(event_batch),
+            )
+            # Keep both batches for the next flush rather than dropping history.
+            for track_id, value in track_batch.items():
                 self._pending.setdefault(track_id, value)
+            self._pending_events = event_batch + self._pending_events
+
+    # ------------------------------------------------------------------
+    # Retention prune (event rows only — track summaries kept forever)
+    # ------------------------------------------------------------------
+
+    _PRUNE_INTERVAL_S: float = 3600.0
+    """Run the prune at most hourly — it deletes by an indexed timestamp, so
+    it is cheap, but there is no point doing it every flush."""
+
+    async def _maybe_prune(self) -> None:
+        now = asyncio.get_event_loop().time()
+        if now - self._last_prune < self._PRUNE_INTERVAL_S:
+            return
+        self._last_prune = now
+        await asyncio.to_thread(self._prune_sync)
+
+    def _prune_sync(self) -> None:
+        """Delete event rows older than the retention window. ``track`` rows
+        (and thus ``first_seen``) are never pruned. Fail-soft."""
+        if self._conn is None:
+            return
+        cutoff = datetime.now(UTC) - timedelta(days=self._config.retention_observations_days)
+        try:
+            cur = self._conn.execute("DELETE FROM event WHERE at < ?", (_fmt_dt(cutoff),))
+            self._conn.commit()
+            if cur.rowcount:
+                log.info("journal_pruned_events", deleted=cur.rowcount)
+        except sqlite3.Error as exc:
+            log.warning("journal_prune_failed", error=str(exc))
 
 
 def _fmt_dt(dt: datetime) -> str:

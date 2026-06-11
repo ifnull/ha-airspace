@@ -16,7 +16,9 @@ Cover:
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -28,9 +30,11 @@ from ha_airspace.config import (
     AlertsConfig,
     EnrichmentConfig,
     FlagConfig,
+    JournalConfig,
     MatchBlock,
 )
 from ha_airspace.enrichment import Enricher
+from ha_airspace.journal import Journal
 from ha_airspace.metrics import MetricsRegistry
 from ha_airspace.models import AircraftObservation, AircraftState, DroneInfo, Watchpoint
 from ha_airspace.tracker import AircraftTracker
@@ -590,3 +594,120 @@ class TestDroneRouting:
         await tracker.process_poll([])
         assert "Drone1" in publisher.drones_purged
         assert "Drone1" not in publisher.purged
+
+
+# ---------------------------------------------------------------------------
+# Journal event history (Phase 2b slice 2) — flag/alert transitions recorded
+# ---------------------------------------------------------------------------
+
+
+class TestJournalEvents:
+    async def _journal(self, tmp_path: Path) -> Journal:
+        j = Journal(JournalConfig(path=str(tmp_path / "journal.db")))
+        await j.open()
+        await j.warm_load()
+        return j
+
+    @staticmethod
+    async def _events(j: Journal) -> list[tuple[str, str, str | None]]:
+        # record_event only buffers; flush before reading.
+        await asyncio.to_thread(j._flush_sync)
+        return [(tid, kind, detail) for tid, kind, detail, _at in await j.load_events()]
+
+    def _tracker(
+        self,
+        publisher: FakePublisher,
+        clock: Clock,
+        journal: Journal,
+        *,
+        alerts: AlertEvaluator | None = None,
+    ) -> AircraftTracker:
+        enricher = Enricher(EnrichmentConfig(flags={"heavy": FlagConfig(categories=["A3"])}))
+        return AircraftTracker(
+            publisher,  # type: ignore[arg-type]
+            [_HOME],
+            enricher=enricher,
+            alerts=alerts,
+            clock=clock,
+            journal=journal,
+        )
+
+    async def test_flag_enter_recorded(
+        self, publisher: FakePublisher, clock: Clock, tmp_path: Path
+    ) -> None:
+        journal = await self._journal(tmp_path)
+        tracker = self._tracker(publisher, clock, journal)
+        await tracker.process_poll([_obs("ae0001", category="A3")])  # A3 -> heavy
+        assert ("ae0001", "flag_enter", "heavy") in await self._events(journal)
+        await journal.close()
+
+    async def test_flag_exit_recorded_when_flag_drops(
+        self, publisher: FakePublisher, clock: Clock, tmp_path: Path
+    ) -> None:
+        journal = await self._journal(tmp_path)
+        tracker = self._tracker(publisher, clock, journal)
+        await tracker.process_poll([_obs("ae0001", at=clock.now, category="A3")])
+        clock.advance(1.0)
+        # Same track, no longer A3 -> heavy flag drops -> flag_exit.
+        await tracker.process_poll([_obs("ae0001", at=clock.now, category="A1")])
+        events = await self._events(journal)
+        assert ("ae0001", "flag_enter", "heavy") in events
+        assert ("ae0001", "flag_exit", "heavy") in events
+        await journal.close()
+
+    async def test_unchanged_flags_record_no_event(
+        self, publisher: FakePublisher, clock: Clock, tmp_path: Path
+    ) -> None:
+        journal = await self._journal(tmp_path)
+        tracker = self._tracker(publisher, clock, journal)
+        await tracker.process_poll([_obs("ae0001", at=clock.now, category="A3")])
+        clock.advance(1.0)
+        await tracker.process_poll([_obs("ae0001", at=clock.now, category="A3")])
+        # The flag set is identical across polls -> exactly one flag_enter, no churn.
+        kinds = [(k, d) for _t, k, d in await self._events(journal)]
+        assert kinds == [("flag_enter", "heavy")]
+        await journal.close()
+
+    async def test_flag_exit_recorded_on_purge(
+        self, publisher: FakePublisher, clock: Clock, tmp_path: Path
+    ) -> None:
+        journal = await self._journal(tmp_path)
+        tracker = self._tracker(publisher, clock, journal)
+        await tracker.process_poll([_obs("ae0001", at=clock.now, category="A3")])
+        clock.advance(61.0)
+        await tracker.process_poll([])  # ae0001 expires + purges
+        assert ("ae0001", "flag_exit", "heavy") in await self._events(journal)
+        await journal.close()
+
+    async def test_alert_enter_and_exit_recorded(
+        self, publisher: FakePublisher, clock: Clock, tmp_path: Path
+    ) -> None:
+        journal = await self._journal(tmp_path)
+        alerts = AlertEvaluator(
+            AlertsConfig(rules=[AlertRule(name="heavy_close", match=MatchBlock(flags=["heavy"]))]),
+            elevation_m_for=lambda _n: None,
+            clock=clock,
+        )
+        tracker = self._tracker(publisher, clock, journal, alerts=alerts)
+        await tracker.process_poll([_obs("ae0001", at=clock.now, category="A3")])  # ENTER
+        clock.advance(61.0)
+        await tracker.process_poll([])  # expire -> alert EXIT
+        events = await self._events(journal)
+        assert ("ae0001", "alert_enter", "heavy_close") in events
+        assert ("ae0001", "alert_exit", "heavy_close") in events
+        await journal.close()
+
+    async def test_no_journal_means_no_recording(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        # The prev-flags map is still maintained, but nothing is journaled and
+        # no crash occurs on the None-journal path.
+        enricher = Enricher(EnrichmentConfig(flags={"heavy": FlagConfig(categories=["A3"])}))
+        tracker = AircraftTracker(
+            publisher,  # type: ignore[arg-type]
+            [_HOME],
+            enricher=enricher,
+            clock=clock,
+        )
+        await tracker.process_poll([_obs("ae0001", category="A3")])
+        assert tracker.tracked_count == 1  # no exception, flags still tracked
