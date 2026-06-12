@@ -846,9 +846,12 @@ only a documented feed contract (`FEED.md`, canonical copy in this repo).
   namespaces and are **never** cross-matched.
 - **Source-agnostic identity.** The track key is "whichever identity is present"
   (ICAO hex / TIS-B / Remote ID `id`), not a hardcoded ICAO assumption — same
-  spirit as the `~`-prefixed non-ICAO flag for TIS-B/ADS-R. No reference-DB
-  lookup is attempted for `remoteid` tracks. *This model decision is cheap to
-  bake in during Phase 1's modeling even though the receiver is Phase 3.*
+  spirit as the `~`-prefixed non-ICAO flag for TIS-B/ADS-R. The *ICAO* reference
+  DBs (Mictronics/adsbexchange) are not run against `remoteid` tracks — a UAS
+  serial is the wrong namespace for them. A serial-keyed FAA DB is the correct
+  lookup for that namespace; see the deferred FAA enrichment below. *This model
+  decision is cheap to bake in during Phase 1's modeling even though the
+  receiver is Phase 3.*
 - **Operator location is a first-class, novel entity.** "Drone 400 m NE,
   operator 1.2 km S" — security-relevant and absent from ADS-B. Drones get their
   own HA discovery surface (drone count, nearest drone, operator location),
@@ -856,6 +859,32 @@ only a documented feed contract (`FEED.md`, canonical copy in this repo).
 - **Native AGL for free.** Remote ID broadcasts height-above-takeoff directly —
   the AGL that Phase 5 wants for aircraft (and is hard to derive there) arrives
   in the feed.
+
+## Deferred: FAA UAS make/model enrichment
+
+Bundled with the deferred drone-history slice (durable drone sightings +
+operator location in the journal). The broadcast serial we already capture
+(`DroneInfo.id_type == "serial"`, ANSI/CTA-2063-A) can be joined against the
+FAA UAS **Declaration of Compliance** registry to add make / model / model
+description / compliance status — the drone analogue of Mictronics for ICAO.
+
+- **Source.** FAA UAS DOC system at `uasdoc.faa.gov`, public `publicDOCRev` +
+  `serialNumbers` APIs. Reference impl: `github.com/jlrjr/faa-rid-lookup`
+  (Python; pre-builds a ~640 KB SQLite of ~4,150 records, ~37 min bulk build,
+  optional live-API fallback with a 5 s throttle).
+- **What it returns — and what it does NOT.** Make, model, description, status,
+  RID tracking number. It is **compliance/product data, not operator identity**:
+  FAA does not expose registrant/owner publicly. Operator *location* still comes
+  from the Remote ID broadcast itself (`operator_lat/lon`), never from FAA — the
+  two are complementary, not substitutes.
+- **Architectural fit.** A `databases/`-style reference DB + an enrichment join,
+  serial-keyed instead of hex-keyed. Resolvable only for `id_type == "serial"`;
+  `session` / `utm_uuid` / `caa_reg` ids have nothing to look up. Many serials
+  will miss (the DOC set is small and declaration-based) — a miss is normal,
+  enrich what's there and move on.
+- **SD-card posture.** Ship/cache the prebuilt SQLite and refresh on the DB
+  loader's slow cadence; the live API is fallback-only and throttled. No
+  per-detection network calls.
 
 ## Phasing
 
