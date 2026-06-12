@@ -217,6 +217,17 @@ class TestLogging:
         configure_logging(level="nonsense", renderer="json")
         assert logging.getLogger().level == logging.INFO
 
+    def test_httpx_capped_at_warning_when_not_debug(self) -> None:
+        # httpx's per-request INFO line floods the console at ~1 Hz polling.
+        configure_logging(level="info", renderer="json")
+        assert logging.getLogger("httpx").level == logging.WARNING
+        assert logging.getLogger("httpcore").level == logging.WARNING
+
+    def test_httpx_not_capped_at_debug(self) -> None:
+        # A debugging operator who asked for debug should still see requests.
+        configure_logging(level="debug", renderer="json")
+        assert logging.getLogger("httpx").level == logging.DEBUG
+
 
 # ---------------------------------------------------------------------------
 # module shim
