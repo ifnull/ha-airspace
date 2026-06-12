@@ -1,5 +1,7 @@
 # ha-airspace
 
+[![ci](https://github.com/ifnull/ha-airspace/actions/workflows/ci.yml/badge.svg)](https://github.com/ifnull/ha-airspace/actions/workflows/ci.yml)
+
 **Local-first airspace awareness for Home Assistant — manned aircraft *and*
 drones.** `ha-airspace` polls `aircraft.json` from one or more local ADS-B
 receivers (**dump1090**, **dump1090-fa**, **readsb**, **dump978** / UAT) and
@@ -72,6 +74,26 @@ entities below — no YAML templates required.
 
 Bad config fails fast: a missing file or invalid schema prints a clear error
 (with the offending field path) and exits non-zero before anything connects.
+
+### Run with Docker
+
+The image is multi-arch (amd64 / arm64 / armv7) and reads its config from
+`/config` with persistent state in `/data`:
+
+```bash
+docker run -d --name ha-airspace \
+  -v ./config.yaml:/config/config.yaml:ro \
+  -v ha-airspace-data:/data \
+  ghcr.io/ifnull/ha-airspace:latest
+```
+
+### Run as a Home Assistant add-on
+
+Add this repo as an add-on store (Settings → Add-ons → Add-on Store → ⋮ →
+**Repositories**): `https://github.com/ifnull/ha-airspace`, then install
+**ha-airspace**. Receivers, watchpoints, and MQTT are configured from the
+add-on UI; with the Mosquitto add-on installed the MQTT connection auto-fills.
+Full reference: [`addon/DOCS.md`](addon/DOCS.md).
 
 ---
 

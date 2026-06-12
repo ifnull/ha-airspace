@@ -24,12 +24,13 @@ the Supervisor's add-on options into the service's native `config.yaml`, then
 The option→config translation is unit-tested against the real config schema in
 `tests/test_addon_render.py`, so the add-on and the service can't silently drift.
 
-> **Note:** building this add-on requires the service image to be published to
-> GHCR (Phase 4 slice 3). Until then, build the base image locally and tag it
-> `ghcr.io/ifnull/ha-airspace:latest` first.
+The add-on builds on the published multi-arch service image, pinned by
+`build.yaml`. That image is published to GHCR by the release workflow when a
+`v*` tag is pushed; until the first release tag exists, build the base image
+locally and tag it `ghcr.io/ifnull/ha-airspace:latest` before installing.
 
 ## Still TODO before store release
 
+- A first release tag (`v*`) so the published `ghcr.io/ifnull/ha-airspace`
+  image `build.yaml` pins actually exists.
 - `icon.png` / `logo.png` add-on artwork.
-- A published, versioned multi-arch service image for `build.yaml` to pin
-  (slice 3 — CI publish).

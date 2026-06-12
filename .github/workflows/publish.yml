@@ -1,0 +1,66 @@
+# Publish the multi-arch service image to GHCR on a version tag.
+#
+# Trigger: pushing a tag like v0.1.0. Nothing publishes on ordinary commits —
+# a release is an explicit, deliberate `git tag` + `git push --tags`.
+#
+# Auth uses the built-in GITHUB_TOKEN (packages: write) — no registry secret to
+# configure. The image lands at ghcr.io/<owner>/<repo> = ghcr.io/ifnull/ha-airspace,
+# which is what addon/build.yaml pins, so a published `latest` unblocks the
+# add-on build.
+#
+# NOTE: the in-app version string (`ha-airspace --version`, service_starting log)
+# still reads the pyproject version until dynamic git-tag versioning is wired —
+# tracked as a follow-up. The image *tag* is correct; only the embedded string
+# lags.
+name: publish
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  service-image:
+    name: build + push multi-arch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # QEMU enables the arm64 + armv7 cross-builds; buildx drives the
+      # multi-platform manifest.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags + labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build + push (amd64 · arm64 · armv7)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Clean manifest list (no extra attestation entries) so HA's add-on
+          # builder resolves the per-arch base image cleanly.
+          provenance: false
