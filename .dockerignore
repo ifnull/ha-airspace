@@ -1,0 +1,46 @@
+# Keep the build context lean and secrets out of image layers.
+
+# Real deployment config with live broker creds — MUST never enter a layer.
+config.local.yaml
+*.local.yaml
+
+# Python / build artifacts
+.venv/
+**/__pycache__/
+*.pyc
+*.pyo
+dist/
+build/
+*.egg-info/
+
+# Test + coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+tests/
+
+# VCS + tooling
+.git/
+.github/
+.gitignore
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Docs + add-on (not needed in the service image)
+docs/
+addon/
+*.md
+!README.md
+
+# Local runtime data
+data/
+*.db
+*.db-wal
+*.db-shm

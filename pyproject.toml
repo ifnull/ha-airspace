@@ -44,9 +44,9 @@ dependencies = [
 ha-airspace = "ha_airspace.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/ifnull/ha-squitter"
-Repository = "https://github.com/ifnull/ha-squitter"
-Issues = "https://github.com/ifnull/ha-squitter/issues"
+Homepage = "https://github.com/ifnull/ha-airspace"
+Repository = "https://github.com/ifnull/ha-airspace"
+Issues = "https://github.com/ifnull/ha-airspace/issues"
 
 [dependency-groups]
 dev = [
