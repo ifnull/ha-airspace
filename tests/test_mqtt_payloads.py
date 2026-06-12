@@ -22,10 +22,13 @@ from pydantic import ValidationError
 from ha_airspace.models import (
     AircraftObservation,
     AircraftState,
+    DroneInfo,
     ReceiverLocation,
 )
 from ha_airspace.mqtt.payloads import (
+    PAYLOAD_SCHEMA_VERSION,
     AircraftPayload,
+    DronePayload,
     ReceiverLocationPayload,
     ReceiverStatsPayload,
 )
@@ -61,6 +64,44 @@ def _make_state(**state_overrides: object) -> AircraftState:
     for key, value in state_overrides.items():
         setattr(state, key, value)
     return state
+
+
+def _make_drone_state() -> AircraftState:
+    obs = AircraftObservation(
+        track_id="1581F5BK000000000001",
+        hex=None,
+        non_icao=True,
+        observed_at=_now(),
+        seen_by="dump3411",
+        band="remoteid",
+        lat=30.34,
+        lon=-97.98,
+        alt_geom_ft=400,
+        drone=DroneInfo(id_type="serial", agl_ft=300.0, operator_lat=30.33, operator_lon=-97.99),
+    )
+    return AircraftState.from_first_observation(obs)
+
+
+# ---------------------------------------------------------------------------
+# Contract: schema_version (Phase 4 lock)
+# ---------------------------------------------------------------------------
+
+
+class TestSchemaVersion:
+    def test_aircraft_payload_carries_version(self) -> None:
+        assert AircraftPayload.from_state(_make_state()).schema_version == PAYLOAD_SCHEMA_VERSION
+
+    def test_drone_payload_carries_version(self) -> None:
+        assert DronePayload.from_state(_make_drone_state()).schema_version == PAYLOAD_SCHEMA_VERSION
+
+    def test_version_is_one_at_phase_4(self) -> None:
+        assert PAYLOAD_SCHEMA_VERSION == 1
+
+    def test_version_present_in_json(self) -> None:
+        # Consumers branch on this before reading anything else, so it must be in
+        # the serialized payload, not just the model.
+        data = json.loads(AircraftPayload.from_state(_make_state()).model_dump_json())
+        assert data["schema_version"] == 1
 
 
 # ---------------------------------------------------------------------------

@@ -5,11 +5,13 @@ scripts, and every other consumer sees. They live separately from
 ``ha_airspace.models`` (internal runtime types) so the boundary between
 "private state" and "public contract" is visible at the import path.
 
-Versioning posture: per the CEO + Daniel-as-primary-user decision, no
-``schema_version`` field is included during Phases 1-3. Pydantic still
-serves as the canonical serializer (consistency, type safety) but the
-shape is allowed to evolve freely. Schema lock + ``schema_version: 1``
-is a Phase 4 prerequisite alongside Docker / add-on packaging.
+Versioning posture: the shape evolved freely through Phases 1-3 (Daniel
+the only consumer). Phase 4 freezes it: every consumer-facing entity
+payload now carries ``schema_version`` (``PAYLOAD_SCHEMA_VERSION``) as its
+first field, so a downstream consumer can branch on the contract version
+before reading anything else. Bump the constant on any breaking change to
+the published field set. Receiver stats/location payloads stay unversioned
+— they are internal diagnostics, not the public entity contract.
 
 Phase-2 fields (``flags``, ``db_metadata``, ``predicted_*``) are
 present in Phase 1 payloads but always empty / None. The shape stays
@@ -31,6 +33,12 @@ from pydantic import BaseModel, ConfigDict
 
 from ha_airspace.models import AircraftState, ReceiverLocation
 
+PAYLOAD_SCHEMA_VERSION = 1
+"""Version of the published MQTT entity-payload contract. Frozen at Phase 4.
+Bump on any breaking change to the ``AircraftPayload`` / ``DronePayload`` field
+set (removed/renamed/retyped field); additive optional fields do not require a
+bump. Emitted as ``schema_version`` on every consumer-facing entity payload."""
+
 
 class AircraftPayload(BaseModel):
     """Serialized form of an ``AircraftState`` for the
@@ -42,6 +50,10 @@ class AircraftPayload(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
+
+    # --- Contract ------------------------------------------------------
+    schema_version: int = PAYLOAD_SCHEMA_VERSION
+    """Published payload contract version. See ``PAYLOAD_SCHEMA_VERSION``."""
 
     # --- Identity ------------------------------------------------------
     track_id: str
@@ -147,6 +159,10 @@ class DronePayload(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
+
+    # --- Contract ------------------------------------------------------
+    schema_version: int = PAYLOAD_SCHEMA_VERSION
+    """Published payload contract version. See ``PAYLOAD_SCHEMA_VERSION``."""
 
     # --- Identity ------------------------------------------------------
     track_id: str
@@ -276,6 +292,7 @@ class ReceiverLocationPayload(BaseModel):
 
 
 __all__ = [
+    "PAYLOAD_SCHEMA_VERSION",
     "AircraftPayload",
     "DronePayload",
     "ReceiverLocationPayload",
