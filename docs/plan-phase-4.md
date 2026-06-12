@@ -30,10 +30,11 @@ our YAML config, and a one-field contract lock.
   `ifnull/ha-airspace`). The stale `ha-squitter` URLs in `pyproject.toml` get
   corrected to the real repo as part of Slice 1.
 - Image **`ghcr.io/ifnull/ha-airspace`**. Docker Hub can come later.
-- Arch targets **amd64 + arm64 + armv7** (Pi coverage). Base image
+- Arch targets **amd64 + arm64** for the first release (aarch64 covers all
+  64-bit HAOS Pis). **armv7 deferred** — `pydantic-core` (Rust) has no reliable
+  armv7 wheel, so that arch would compile from source under QEMU. Base image
   **`python:3.12-slim`** (glibc) over Alpine — manylinux wheels for
-  `pydantic-core`/`httpx` install cleanly; musl would force painful armv7 source
-  builds.
+  `pydantic-core`/`httpx` install cleanly on amd64/arm64.
 
 ---
 
@@ -74,9 +75,20 @@ Everything else builds on the base image, so it lands first.
 - `addon/repository.yaml`, `addon/README.md` / `DOCS.md`, `addon/icon.png`
   placeholder.
 
-### Slice 3 — CI multi-arch publish (DEFERRED, not this phase)
-`.github/workflows`: lint/type/test gate on PR; multi-arch buildx → GHCR on tag;
-add-on image build. Explicitly out of scope now per Daniel — Slices 1–2 first.
+### Slice 3 — CI multi-arch publish
+`.github/workflows`:
+- `ci.yml` — gate on PR + push to main: ruff lint, ruff format check, mypy,
+  pytest (the local gate, including `addon/`), plus an amd64 Docker build +
+  `--version` smoke so a Dockerfile break is caught in PR.
+- `publish.yml` — on a `v*` tag: buildx + QEMU multi-arch
+  (amd64/arm64/armv7) → `ghcr.io/ifnull/ha-airspace` via the built-in
+  `GITHUB_TOKEN`. `latest` + semver tags; `provenance: false` for a clean
+  manifest list the add-on builder resolves cleanly.
+
+Publishing only fires on an explicit version tag — ordinary commits never push
+images. Validated locally with `actionlint` (clean). Known gap: the in-app
+version string lags the image tag until git-tag dynamic versioning is wired
+(follow-up, noted in `publish.yml`).
 
 ---
 

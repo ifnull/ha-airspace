@@ -1,0 +1,8 @@
+# Home Assistant add-on repository metadata. Lets users add this GitHub repo as
+# an add-on store (Settings -> Add-ons -> Add-on Store -> Repositories). HA then
+# discovers each top-level folder containing a config.yaml as an add-on — here,
+# addon/. (The service's own config.example.yaml is not named config.yaml, so it
+# is not mistaken for an add-on.)
+name: ha-airspace
+url: https://github.com/ifnull/ha-airspace
+maintainer: Daniel Smith <danielalansmith@me.com>

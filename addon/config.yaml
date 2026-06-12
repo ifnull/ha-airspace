@@ -1,0 +1,71 @@
+# Home Assistant add-on manifest for ha-airspace.
+# Schema reference: https://developers.home-assistant.io/docs/add-ons/configuration/
+name: ha-airspace
+version: "0.1.0"
+slug: ha_airspace
+description: >-
+  Multi-source ADS-B + drone Remote ID enrichment to MQTT for Home Assistant.
+url: https://github.com/ifnull/ha-airspace
+# 64-bit only for now (aarch64 covers all 64-bit HAOS Pis; amd64 for NUC/VM).
+# armv7 is omitted until a clean pydantic-core build path is proven.
+arch:
+  - aarch64
+  - amd64
+init: false
+# Pull MQTT host/credentials from the HA Mosquitto add-on when the user leaves
+# the MQTT options blank (service discovery via the Supervisor API).
+services:
+  - mqtt:want
+hassio_api: true
+# Optional Prometheus /metrics exposition (enable_metrics option). Disabled
+# unless the user maps the port.
+ports:
+  9090/tcp: null
+ports_description:
+  9090/tcp: Prometheus /metrics (only when 'enable_metrics' is on)
+# Defaults shown in the add-on UI on first install.
+options:
+  log_level: info
+  mqtt_broker: ""
+  mqtt_port: 1883
+  mqtt_username: ""
+  mqtt_password: ""
+  mqtt_base_topic: adsb
+  watchpoints:
+    - name: home
+      lat: 0.0
+      lon: 0.0
+  receivers:
+    - name: home-1090
+      url: http://piaware.local:8080/skyaware/data/aircraft.json
+      band: "1090"
+  remoteid: []
+  enable_journal: true
+  enable_metrics: false
+  metrics_port: 9090
+  extra_config: ""
+schema:
+  log_level: list(debug|info|warning|error)
+  mqtt_broker: str?
+  mqtt_port: port?
+  mqtt_username: str?
+  mqtt_password: password?
+  mqtt_base_topic: str?
+  watchpoints:
+    - name: str
+      lat: float
+      lon: float
+      elevation_m: float?
+  receivers:
+    - name: str
+      url: str
+      band: list(1090|978)
+      username: str?
+      password: password?
+  remoteid:
+    - name: str
+      url: str
+  enable_journal: bool?
+  enable_metrics: bool?
+  metrics_port: port?
+  extra_config: str?

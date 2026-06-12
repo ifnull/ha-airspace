@@ -1,5 +1,7 @@
 # ha-airspace
 
+[![ci](https://github.com/ifnull/ha-airspace/actions/workflows/ci.yml/badge.svg)](https://github.com/ifnull/ha-airspace/actions/workflows/ci.yml)
+
 **Local-first airspace awareness for Home Assistant — manned aircraft *and*
 drones.** `ha-airspace` polls `aircraft.json` from one or more local ADS-B
 receivers (**dump1090**, **dump1090-fa**, **readsb**, **dump978** / UAT) and
@@ -50,10 +52,12 @@ MQTT discovery, aircraft tracker, military aircraft, ADSBexchange, Mictronics,
 
 ## Quick start
 
+**On Home Assistant OS**, install the **add-on** (see below) — that's the path
+on HAOS. **Elsewhere**, run the **Docker image** (also below). For development
+from a clone:
+
 ```bash
-# 1. Install (pip, or uv for development)
-pip install ha-airspace        # end users
-#   — or, from a clone, for development:
+# 1. Install dependencies (from a clone)
 uv sync
 
 # 2. Create your config from the example
@@ -61,10 +65,12 @@ cp config.example.yaml config.yaml
 $EDITOR config.yaml            # set your receiver URL, broker, and watchpoint
 
 # 3. Run
-ha-airspace --config config.yaml
-#   — or: python -m ha_airspace --config config.yaml
-#   — or, from a clone: uv run ha-airspace --config config.yaml
+uv run ha-airspace --config config.yaml
+#   — or: uv run python -m ha_airspace --config config.yaml
 ```
+
+> A PyPI release (`pip install ha-airspace`) is planned but not published yet;
+> for now use the add-on, the Docker image, or a clone.
 
 On startup the service connects to the broker, publishes the HA discovery
 payloads, and begins polling. Within a few seconds Home Assistant shows the
@@ -72,6 +78,26 @@ entities below — no YAML templates required.
 
 Bad config fails fast: a missing file or invalid schema prints a clear error
 (with the offending field path) and exits non-zero before anything connects.
+
+### Run with Docker
+
+The image is multi-arch (amd64 / arm64) and reads its config from `/config`
+with persistent state in `/data`:
+
+```bash
+docker run -d --name ha-airspace \
+  -v ./config.yaml:/config/config.yaml:ro \
+  -v ha-airspace-data:/data \
+  ghcr.io/ifnull/ha-airspace:latest
+```
+
+### Run as a Home Assistant add-on
+
+Add this repo as an add-on store (Settings → Add-ons → Add-on Store → ⋮ →
+**Repositories**): `https://github.com/ifnull/ha-airspace`, then install
+**ha-airspace**. Receivers, watchpoints, and MQTT are configured from the
+add-on UI; with the Mosquitto add-on installed the MQTT connection auto-fills.
+Full reference: [`addon/DOCS.md`](addon/DOCS.md).
 
 ---
 
