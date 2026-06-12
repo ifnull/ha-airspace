@@ -1,0 +1,44 @@
+# systemd unit for running ha-airspace as a service on bare metal / a VM
+# (i.e. not Home Assistant OS — there, use the add-on, which auto-starts).
+#
+# Install:
+#   1. Put the code somewhere stable, e.g. /opt/ha-airspace, and create its venv:
+#        cd /opt/ha-airspace && uv sync         # or: python -m venv .venv && .venv/bin/pip install ha-airspace
+#   2. Create a service user and a config + data dir:
+#        sudo useradd --system --home /opt/ha-airspace --shell /usr/sbin/nologin ha-airspace
+#        sudo install -d -o ha-airspace -g ha-airspace /etc/ha-airspace /var/lib/ha-airspace
+#        sudo cp config.example.yaml /etc/ha-airspace/config.yaml   # then edit it
+#   3. Install + enable the unit:
+#        sudo cp packaging/systemd/ha-airspace.service /etc/systemd/system/
+#        sudo systemctl daemon-reload
+#        sudo systemctl enable --now ha-airspace
+#   4. Logs:  journalctl -u ha-airspace -f
+#
+# Adjust ExecStart/User/paths to match your install.
+
+[Unit]
+Description=ha-airspace — ADS-B + drone Remote ID enrichment to MQTT
+Documentation=https://github.com/ifnull/ha-airspace
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=ha-airspace
+Group=ha-airspace
+WorkingDirectory=/opt/ha-airspace
+ExecStart=/opt/ha-airspace/.venv/bin/ha-airspace --config /etc/ha-airspace/config.yaml
+Restart=on-failure
+RestartSec=5
+# Point the journal/db cache here (match journal.path / databases.cache_dir).
+StateDirectory=ha-airspace
+
+# Hardening — the service only needs to read its config and write its state dir.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/ha-airspace
+
+[Install]
+WantedBy=multi-user.target
