@@ -30,10 +30,11 @@ our YAML config, and a one-field contract lock.
   `ifnull/ha-airspace`). The stale `ha-squitter` URLs in `pyproject.toml` get
   corrected to the real repo as part of Slice 1.
 - Image **`ghcr.io/ifnull/ha-airspace`**. Docker Hub can come later.
-- Arch targets **amd64 + arm64 + armv7** (Pi coverage). Base image
+- Arch targets **amd64 + arm64** for the first release (aarch64 covers all
+  64-bit HAOS Pis). **armv7 deferred** — `pydantic-core` (Rust) has no reliable
+  armv7 wheel, so that arch would compile from source under QEMU. Base image
   **`python:3.12-slim`** (glibc) over Alpine — manylinux wheels for
-  `pydantic-core`/`httpx` install cleanly; musl would force painful armv7 source
-  builds.
+  `pydantic-core`/`httpx` install cleanly on amd64/arm64.
 
 ---
 

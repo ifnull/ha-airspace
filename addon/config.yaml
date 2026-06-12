@@ -6,11 +6,11 @@ slug: ha_airspace
 description: >-
   Multi-source ADS-B + drone Remote ID enrichment to MQTT for Home Assistant.
 url: https://github.com/ifnull/ha-airspace
-# Multi-arch: the service image ships glibc wheels for all of these.
+# 64-bit only for now (aarch64 covers all 64-bit HAOS Pis; amd64 for NUC/VM).
+# armv7 is omitted until a clean pydantic-core build path is proven.
 arch:
   - aarch64
   - amd64
-  - armv7
 init: false
 # Pull MQTT host/credentials from the HA Mosquitto add-on when the user leaves
 # the MQTT options blank (service discovery via the Supervisor API).

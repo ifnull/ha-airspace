@@ -5,6 +5,5 @@
 build_from:
   aarch64: ghcr.io/ifnull/ha-airspace:latest
   amd64: ghcr.io/ifnull/ha-airspace:latest
-  armv7: ghcr.io/ifnull/ha-airspace:latest
 labels:
   org.opencontainers.image.source: https://github.com/ifnull/ha-airspace

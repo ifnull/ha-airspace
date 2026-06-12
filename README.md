@@ -52,10 +52,12 @@ MQTT discovery, aircraft tracker, military aircraft, ADSBexchange, Mictronics,
 
 ## Quick start
 
+**On Home Assistant OS**, install the **add-on** (see below) — that's the path
+on HAOS. **Elsewhere**, run the **Docker image** (also below). For development
+from a clone:
+
 ```bash
-# 1. Install (pip, or uv for development)
-pip install ha-airspace        # end users
-#   — or, from a clone, for development:
+# 1. Install dependencies (from a clone)
 uv sync
 
 # 2. Create your config from the example
@@ -63,10 +65,12 @@ cp config.example.yaml config.yaml
 $EDITOR config.yaml            # set your receiver URL, broker, and watchpoint
 
 # 3. Run
-ha-airspace --config config.yaml
-#   — or: python -m ha_airspace --config config.yaml
-#   — or, from a clone: uv run ha-airspace --config config.yaml
+uv run ha-airspace --config config.yaml
+#   — or: uv run python -m ha_airspace --config config.yaml
 ```
+
+> A PyPI release (`pip install ha-airspace`) is planned but not published yet;
+> for now use the add-on, the Docker image, or a clone.
 
 On startup the service connects to the broker, publishes the HA discovery
 payloads, and begins polling. Within a few seconds Home Assistant shows the
@@ -77,8 +81,8 @@ Bad config fails fast: a missing file or invalid schema prints a clear error
 
 ### Run with Docker
 
-The image is multi-arch (amd64 / arm64 / armv7) and reads its config from
-`/config` with persistent state in `/data`:
+The image is multi-arch (amd64 / arm64) and reads its config from `/config`
+with persistent state in `/data`:
 
 ```bash
 docker run -d --name ha-airspace \
