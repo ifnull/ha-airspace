@@ -12,7 +12,7 @@ entities without a custom integration.
   install it and this add-on auto-fills the connection (leave the MQTT options
   blank). For an external broker, fill in `mqtt_broker` etc.
 - At least one ADS-B receiver exposing `aircraft.json` over HTTP (dump1090-fa /
-  PiAware, readsb/tar1090, dump978-fa).
+  PiAware, reairspace/tar1090, dump978-fa).
 
 ## Configuration
 
@@ -33,7 +33,7 @@ entities without a custom integration.
 
 Leave `mqtt_broker` blank to use the HA Mosquitto add-on automatically. To
 target another broker, set `mqtt_broker`, `mqtt_port`, `mqtt_username`,
-`mqtt_password`. `mqtt_base_topic` defaults to `adsb`.
+`mqtt_password`. `mqtt_base_topic` defaults to `airspace`.
 
 ### Optional
 

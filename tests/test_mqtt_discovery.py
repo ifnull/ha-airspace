@@ -93,7 +93,7 @@ class TestSurface:
 
 class TestNoPerAircraftEntities:
     def test_no_payload_targets_aircraft_topic(self) -> None:
-        # The wildcard topic adsb/aircraft/<hex> must NEVER appear in
+        # The wildcard topic airspace/aircraft/<hex> must NEVER appear in
         # any discovery payload's state_topic. This is the protection
         # against blowing up HA's entity registry.
         cfg = _make_config()
@@ -128,27 +128,27 @@ class TestSummaryEntities:
     def test_count_entity_present(self) -> None:
         payloads = build_discovery_payloads(_make_config())
         bodies = _bodies_by_unique_id(payloads)
-        assert "adsb_count" in bodies
-        body = bodies["adsb_count"]
-        assert body["state_topic"] == "adsb/summary/count"
+        assert "airspace_count" in bodies
+        body = bodies["airspace_count"]
+        assert body["state_topic"] == "airspace/summary/count"
 
     def test_nearest_entity_present(self) -> None:
         payloads = build_discovery_payloads(_make_config())
         bodies = _bodies_by_unique_id(payloads)
-        assert "adsb_nearest" in bodies
-        body = bodies["adsb_nearest"]
-        assert body["state_topic"] == "adsb/summary/nearest"
+        assert "airspace_nearest" in bodies
+        body = bodies["airspace_nearest"]
+        assert body["state_topic"] == "airspace/summary/nearest"
         # Attributes topic should match — HA pulls full aircraft JSON
         # from there.
-        assert body["json_attributes_topic"] == "adsb/summary/nearest"
+        assert body["json_attributes_topic"] == "airspace/summary/nearest"
 
     def test_summary_entities_have_availability_topic(self) -> None:
         # HA marks entity unavailable when service goes offline (LWT).
         payloads = build_discovery_payloads(_make_config())
         bodies = _bodies_by_unique_id(payloads)
-        for unique_id in ("adsb_count", "adsb_nearest"):
+        for unique_id in ("airspace_count", "airspace_nearest"):
             body = bodies[unique_id]
-            assert body["availability_topic"] == "adsb/status"
+            assert body["availability_topic"] == "airspace/status"
             assert body["payload_available"] == "online"
             assert body["payload_not_available"] == "offline"
 
@@ -162,14 +162,14 @@ class TestReceiverEntities:
     def test_three_entities_per_receiver(self) -> None:
         payloads = build_discovery_payloads(_make_config())
         bodies = _bodies_by_unique_id(payloads)
-        assert "adsb_receiver_rx-home_status" in bodies
-        assert "adsb_receiver_rx-home_aircraft_count" in bodies
-        assert "adsb_receiver_rx-home_messages_per_sec" in bodies
+        assert "airspace_receiver_rx-home_status" in bodies
+        assert "airspace_receiver_rx-home_aircraft_count" in bodies
+        assert "airspace_receiver_rx-home_messages_per_sec" in bodies
 
     def test_status_entity_topic_and_class(self) -> None:
         payloads = build_discovery_payloads(_make_config())
-        body = _bodies_by_unique_id(payloads)["adsb_receiver_rx-home_status"]
-        assert body["state_topic"] == "adsb/receiver/rx-home/status"
+        body = _bodies_by_unique_id(payloads)["airspace_receiver_rx-home_status"]
+        assert body["state_topic"] == "airspace/receiver/rx-home/status"
         assert body["device_class"] == "connectivity"
         assert body["payload_on"] == "online"
         assert body["payload_off"] == "offline"
@@ -181,12 +181,12 @@ class TestReceiverEntities:
         payloads = build_discovery_payloads(_make_config())
         bodies = _bodies_by_unique_id(payloads)
 
-        ac = bodies["adsb_receiver_rx-home_aircraft_count"]
-        assert ac["state_topic"] == "adsb/receiver/rx-home/stats"
+        ac = bodies["airspace_receiver_rx-home_aircraft_count"]
+        assert ac["state_topic"] == "airspace/receiver/rx-home/stats"
         assert ac["value_template"] == "{{ value_json.aircraft_count }}"
 
-        mps = bodies["adsb_receiver_rx-home_messages_per_sec"]
-        assert mps["state_topic"] == "adsb/receiver/rx-home/stats"
+        mps = bodies["airspace_receiver_rx-home_messages_per_sec"]
+        assert mps["state_topic"] == "airspace/receiver/rx-home/stats"
         assert mps["value_template"] == "{{ value_json.messages_per_sec }}"
         assert mps["unit_of_measurement"] == "msg/s"
 
@@ -203,7 +203,7 @@ class TestReceiverEntities:
                 "aircraft_count",
                 "messages_per_sec",
             ):
-                unique_id = f"adsb_receiver_{receiver_name}_{entity_kind}"
+                unique_id = f"airspace_receiver_{receiver_name}_{entity_kind}"
                 assert unique_id in bodies, f"missing {unique_id}"
 
         assert len(payloads) == 2 + 6  # service-wide + per-receiver
@@ -232,10 +232,10 @@ class TestReceiverEntities:
         bodies = _bodies_by_unique_id(payloads)
         # rx-home is disabled — no discovery for it.
         for kind in ("status", "aircraft_count", "messages_per_sec"):
-            assert f"adsb_receiver_rx-home_{kind}" not in bodies
+            assert f"airspace_receiver_rx-home_{kind}" not in bodies
         # rx-other is enabled — should be present.
         for kind in ("status", "aircraft_count", "messages_per_sec"):
-            assert f"adsb_receiver_rx-other_{kind}" in bodies
+            assert f"airspace_receiver_rx-other_{kind}" in bodies
 
 
 # ---------------------------------------------------------------------------
@@ -247,12 +247,12 @@ class TestTopicFormat:
     def test_topic_uses_discovery_prefix_and_node_id(self) -> None:
         payloads = build_discovery_payloads(_make_config())
         for topic, _body in payloads:
-            # Format: <prefix>/<component>/adsb/<object_id>/config
+            # Format: <prefix>/<component>/airspace/<object_id>/config
             parts = topic.split("/")
             assert len(parts) == 5, f"unexpected topic shape: {topic}"
             assert parts[0] == "homeassistant"  # default discovery_prefix
             assert parts[1] in ("sensor", "binary_sensor")
-            assert parts[2] == "adsb"
+            assert parts[2] == "airspace"
             assert parts[4] == "config"
 
     def test_custom_discovery_prefix_flows_through(self) -> None:
@@ -266,9 +266,9 @@ class TestTopicFormat:
         payloads = build_discovery_payloads(cfg)
         bodies = _bodies_by_unique_id(payloads)
         # State topics should use the new base.
-        assert bodies["adsb_count"]["state_topic"] == "planes/summary/count"
+        assert bodies["airspace_count"]["state_topic"] == "planes/summary/count"
         assert (
-            bodies["adsb_receiver_rx-home_status"]["state_topic"]
+            bodies["airspace_receiver_rx-home_status"]["state_topic"]
             == "planes/receiver/rx-home/status"
         )
         # Availability topic too.
@@ -291,7 +291,7 @@ class TestDeviceBlock:
             assert "name" in device
 
     def test_all_entities_share_device_identifier(self) -> None:
-        # Single device card in HA grouping every adsb entity.
+        # Single device card in HA grouping every airspace entity.
         payloads = build_discovery_payloads(_make_config())
         ids = {tuple(body["device"]["identifiers"]) for _, body in payloads}
         assert ids == {("ha_airspace",)}
@@ -354,13 +354,13 @@ class TestAlertEntities:
     def test_binary_sensor_per_rule(self) -> None:
         payloads = build_discovery_payloads(self._config_with_alerts())
         bodies = _bodies_by_unique_id(payloads)
-        assert "adsb_alert_military_close" in bodies
-        assert "adsb_alert_emergency" in bodies
+        assert "airspace_alert_military_close" in bodies
+        assert "airspace_alert_emergency" in bodies
 
     def test_alert_sensor_shape(self) -> None:
         payloads = build_discovery_payloads(self._config_with_alerts())
-        body = _bodies_by_unique_id(payloads)["adsb_alert_military_close"]
-        assert body["state_topic"] == "adsb/alert/military_close/active"
+        body = _bodies_by_unique_id(payloads)["airspace_alert_military_close"]
+        assert body["state_topic"] == "airspace/alert/military_close/active"
         assert body["payload_on"] == "on"
         assert body["payload_off"] == "off"
         assert body["device_class"] == "safety"
@@ -392,18 +392,18 @@ class TestDroneEntities:
 
     def test_drone_entities_present(self) -> None:
         bodies = _bodies_by_unique_id(build_discovery_payloads(self._config_with_drones()))
-        assert "adsb_drone_count" in bodies
-        assert "adsb_nearest_drone" in bodies
+        assert "airspace_drone_count" in bodies
+        assert "airspace_nearest_drone" in bodies
 
     def test_drone_count_state_topic(self) -> None:
         bodies = _bodies_by_unique_id(build_discovery_payloads(self._config_with_drones()))
-        assert bodies["adsb_drone_count"]["state_topic"] == "adsb/summary/drone_count"
+        assert bodies["airspace_drone_count"]["state_topic"] == "airspace/summary/drone_count"
 
     def test_nearest_drone_has_attributes_topic(self) -> None:
         bodies = _bodies_by_unique_id(build_discovery_payloads(self._config_with_drones()))
-        body = bodies["adsb_nearest_drone"]
-        assert body["state_topic"] == "adsb/summary/nearest_drone"
-        assert body["json_attributes_topic"] == "adsb/summary/nearest_drone"
+        body = bodies["airspace_nearest_drone"]
+        assert body["state_topic"] == "airspace/summary/nearest_drone"
+        assert body["json_attributes_topic"] == "airspace/summary/nearest_drone"
 
     def test_no_drone_entities_without_remoteid_source(self) -> None:
         payloads = build_discovery_payloads(_make_config())

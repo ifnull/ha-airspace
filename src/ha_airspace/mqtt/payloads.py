@@ -42,7 +42,7 @@ bump. Emitted as ``schema_version`` on every consumer-facing entity payload."""
 
 class AircraftPayload(BaseModel):
     """Serialized form of an ``AircraftState`` for the
-    ``adsb/aircraft/<hex>`` topic.
+    ``airspace/aircraft/<hex>`` topic.
 
     Power-user wildcard topic only — never auto-discovered as HA
     entities (would explode HA's entity registry). Subscribed to
@@ -148,7 +148,7 @@ class AircraftPayload(BaseModel):
 
 class DronePayload(BaseModel):
     """Serialized form of a Remote ID (drone) ``AircraftState`` for the
-    ``adsb/drone/<track_id>`` topic and the ``adsb/summary/nearest_drone``
+    ``airspace/drone/<track_id>`` topic and the ``airspace/summary/nearest_drone``
     sensor.
 
     Drones are not aircraft: this carries the Remote-ID-only fields (UAS id
@@ -244,11 +244,11 @@ class PhotoPayload(BaseModel):
 
 
 class AlertPayload(AircraftPayload):
-    """The payload published to ``adsb/alert/<rule>/<track_id>``: the full
+    """The payload published to ``airspace/alert/<rule>/<track_id>``: the full
     aircraft contract plus an optional photo.
 
     Photos ride alert payloads only — never the high-cardinality wildcard
-    ``adsb/aircraft/<hex>`` topic — so the photo field lives here, not on
+    ``airspace/aircraft/<hex>`` topic — so the photo field lives here, not on
     ``AircraftPayload``. Inherits ``schema_version`` and every aircraft field.
     """
 
@@ -264,7 +264,7 @@ class AlertPayload(AircraftPayload):
 
 
 class ReceiverStatsPayload(BaseModel):
-    """Per-receiver stats published to ``adsb/receiver/<name>/stats``.
+    """Per-receiver stats published to ``airspace/receiver/<name>/stats``.
 
     HA discovery extracts individual fields via ``value_template`` so
     multiple HA sensors can read from the one stats blob without
@@ -298,7 +298,7 @@ class ReceiverStatsPayload(BaseModel):
 
 
 class ReceiverLocationPayload(BaseModel):
-    """Per-receiver location published to ``adsb/receiver/<name>/location``.
+    """Per-receiver location published to ``airspace/receiver/<name>/location``.
 
     Fetched once at startup from the receiver's ``receiver.json`` (or
     overridden by config); republished on every successful broker

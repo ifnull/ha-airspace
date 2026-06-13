@@ -162,11 +162,11 @@ class TestRun:
 
         topics = _topics(client)
         # Aircraft from the fixture was published.
-        assert any(t.startswith("adsb/aircraft/") for t in topics)
+        assert any(t.startswith("airspace/aircraft/") for t in topics)
         # Summary + per-receiver status + stats all published.
-        assert "adsb/summary/count" in topics
-        assert "adsb/receiver/rx-home/status" in topics
-        assert "adsb/receiver/rx-home/stats" in topics
+        assert "airspace/summary/count" in topics
+        assert "airspace/receiver/rx-home/status" in topics
+        assert "airspace/receiver/rx-home/stats" in topics
 
     async def test_two_receivers_merge_to_one_aircraft(self) -> None:
         # Two receivers (different bands) replaying the same fixture see the
@@ -198,25 +198,26 @@ class TestRun:
         await _run_until(
             lambda: (
                 any("summary/count" in t for t in _topics(client))
-                and any(t == "adsb/aircraft/ae0001" for t in _topics(client))
+                and any(t == "airspace/aircraft/ae0001" for t in _topics(client))
             )
         )
         # Give both poll loops a moment to both ingest before stopping.
         await _run_until(
             lambda: (
-                _latest_payload(client, "adsb/aircraft/ae0001") is not None
-                and len(json.loads(_latest_payload(client, "adsb/aircraft/ae0001"))["seen_by"]) == 2
+                _latest_payload(client, "airspace/aircraft/ae0001") is not None
+                and len(json.loads(_latest_payload(client, "airspace/aircraft/ae0001"))["seen_by"])
+                == 2
             )
         )
         app.request_stop()
         with contextlib.suppress(asyncio.CancelledError):
             await asyncio.wait_for(run_task, timeout=2.0)
 
-        body = json.loads(_latest_payload(client, "adsb/aircraft/ae0001"))
+        body = json.loads(_latest_payload(client, "airspace/aircraft/ae0001"))
         assert sorted(body["seen_by"]) == ["rx-1090", "rx-978"]
         assert sorted(body["bands"]) == ["1090", "978"]
         # Exactly one aircraft topic per hex (merged, not duplicated per receiver).
-        ae0001_topics = [t for t in _topics(client) if t == "adsb/aircraft/ae0001"]
+        ae0001_topics = [t for t in _topics(client) if t == "airspace/aircraft/ae0001"]
         assert len(ae0001_topics) >= 1  # republished each tick, but one topic
 
     async def test_on_connect_republishes_status_discovery_location(self) -> None:
@@ -238,11 +239,11 @@ class TestRun:
 
         topics = _topics(client)
         # status:online published (retained availability) on connect.
-        assert "adsb/status" in topics
+        assert "airspace/status" in topics
         # Discovery payloads published (homeassistant/.../config).
         assert any(t.startswith("homeassistant/") for t in topics)
         # Receiver location republished on connect.
-        assert "adsb/receiver/rx-home/location" in topics
+        assert "airspace/receiver/rx-home/location" in topics
 
     async def test_request_stop_unwinds_cleanly(self) -> None:
         client = FakeMqttClient()
@@ -279,7 +280,7 @@ class TestFlakyReceiver:
 
         run_task = asyncio.create_task(app.run())
         # The loop still runs and publishes receiver status (unhealthy path).
-        await _run_until(lambda: "adsb/receiver/rx-home/status" in _topics(client))
+        await _run_until(lambda: "airspace/receiver/rx-home/status" in _topics(client))
         app.request_stop()
         with contextlib.suppress(asyncio.CancelledError):
             await asyncio.wait_for(run_task, timeout=2.0)
@@ -333,7 +334,7 @@ class TestBuildApp:
 
 class TestClientOnConnectSetter:
     def test_set_on_connect_replaces_callback(self) -> None:
-        client = MqttClient(MqttConfig(broker="b", base_topic="adsb"))
+        client = MqttClient(MqttConfig(broker="b", base_topic="airspace"))
 
         async def cb() -> None:
             return None

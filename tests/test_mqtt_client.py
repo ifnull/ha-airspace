@@ -102,7 +102,7 @@ def fake_aiomqtt() -> None:
 
 @pytest.fixture
 def mqtt_config() -> MqttConfig:
-    return MqttConfig(broker="broker.local", port=1883, base_topic="adsb")
+    return MqttConfig(broker="broker.local", port=1883, base_topic="airspace")
 
 
 @pytest.fixture
@@ -254,7 +254,7 @@ class TestGracefulShutdown:
         assert FakeAiomqttClient.publishes
         last = FakeAiomqttClient.publishes[-1]
         topic, payload, _qos, retain = last
-        assert topic == "adsb/status"
+        assert topic == "airspace/status"
         assert payload == b"offline"
         assert retain is True
 
@@ -414,13 +414,13 @@ class TestLwtConfig:
         first_session = FakeAiomqttClient.sessions[0]
         will = first_session["kwargs"]["will"]
         # aiomqtt.Will exposes attributes; verify the locked spec.
-        assert will.topic == "adsb/status"
+        assert will.topic == "airspace/status"
         assert will.payload == b"offline"
         assert will.retain is True
         assert will.qos == 1
 
     async def test_credentials_passed_when_set(self) -> None:
-        cfg = MqttConfig(broker="b", username="u", password="p", base_topic="adsb")
+        cfg = MqttConfig(broker="b", username="u", password="p", base_topic="airspace")
         client = _make_client(cfg)
         async with asyncio.TaskGroup() as tg:
             task = tg.create_task(client.run())
@@ -447,7 +447,7 @@ class TestLwtConfig:
         assert "password" not in kwargs
 
     async def test_tls_context_built_when_enabled(self) -> None:
-        cfg = MqttConfig(broker="b", tls=True, base_topic="adsb")
+        cfg = MqttConfig(broker="b", tls=True, base_topic="airspace")
         client = _make_client(cfg)
         async with asyncio.TaskGroup() as tg:
             task = tg.create_task(client.run())

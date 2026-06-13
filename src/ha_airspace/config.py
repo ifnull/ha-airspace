@@ -95,17 +95,17 @@ class MqttConfig(BaseModel):
     port: int = Field(default=1883, ge=1, le=65535)
     username: str | None = None
     password: str | None = None
-    base_topic: str = "adsb"
+    base_topic: str = "airspace"
     discovery_prefix: str = "homeassistant"
     discovery_enabled: bool = True
     tls: bool = False
 
     publish_aircraft_min_interval_s: float = Field(default=1.0, ge=0)
-    """Per-hex throttle for ``adsb/aircraft/<hex>`` publishes. Absorbs
+    """Per-hex throttle for ``airspace/aircraft/<hex>`` publishes. Absorbs
     bursty receiver output without making HA wait."""
 
     publish_summary_min_interval_s: float = Field(default=1.0, ge=0)
-    """Global throttle for ``adsb/summary/*`` publishes."""
+    """Global throttle for ``airspace/summary/*`` publishes."""
 
 
 class PrometheusConfig(BaseModel):
@@ -165,7 +165,7 @@ class ReceiverConfig(BaseModel):
     model_config = _STRICT
 
     name: str = Field(..., min_length=1)
-    """Stable identifier used in MQTT topics (``adsb/receiver/<name>/...``)
+    """Stable identifier used in MQTT topics (``airspace/receiver/<name>/...``)
     and metric labels. Renaming is a breaking change for downstream
     dashboards."""
 

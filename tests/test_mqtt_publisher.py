@@ -164,7 +164,7 @@ class TestOnConnect:
         await pub.on_connect()
 
         first = fake_client.publishes[0]
-        assert first["topic"] == "adsb/status"
+        assert first["topic"] == "airspace/status"
         assert first["payload"] == b"online"
         assert first["retain"] is True
         assert first["topic_class"] == "status"
@@ -204,7 +204,7 @@ class TestOnConnect:
         await pub.on_connect()
         # Only status:online; no discovery.
         assert len(fake_client.publishes) == 1
-        assert fake_client.publishes[0]["topic"] == "adsb/status"
+        assert fake_client.publishes[0]["topic"] == "airspace/status"
 
     async def test_discovery_payload_is_valid_json(self, fake_client: FakeMqttClient) -> None:
         pub = _make_publisher(fake_client)
@@ -243,7 +243,7 @@ class TestPublishAircraft:
         assert published is True
         assert len(fake_client.publishes) == 1
         call = fake_client.publishes[0]
-        assert call["topic"] == "adsb/aircraft/ae0001"
+        assert call["topic"] == "airspace/aircraft/ae0001"
         assert call["retain"] is True
         assert call["topic_class"] == "aircraft"
 
@@ -317,7 +317,7 @@ class TestPurgeAircraft:
         await pub.purge_aircraft("ae0001")
 
         call = fake_client.publishes[0]
-        assert call["topic"] == "adsb/aircraft/ae0001"
+        assert call["topic"] == "airspace/aircraft/ae0001"
         assert call["payload"] == b""
         assert call["retain"] is True
         assert call["topic_class"] == "aircraft"
@@ -351,14 +351,16 @@ class TestPublishSummary:
         await pub.publish_summary(count=12, nearest=_make_state())
 
         topics = [c["topic"] for c in fake_client.publishes]
-        assert "adsb/summary/count" in topics
-        assert "adsb/summary/nearest" in topics
-        assert "adsb/summary/count_by_flag" in topics
+        assert "airspace/summary/count" in topics
+        assert "airspace/summary/nearest" in topics
+        assert "airspace/summary/count_by_flag" in topics
 
     async def test_count_is_string_encoded(self, fake_client: FakeMqttClient) -> None:
         pub = _make_publisher(fake_client)
         await pub.publish_summary(count=42, nearest=None)
-        count_call = next(c for c in fake_client.publishes if c["topic"] == "adsb/summary/count")
+        count_call = next(
+            c for c in fake_client.publishes if c["topic"] == "airspace/summary/count"
+        )
         assert count_call["payload"] == b"42"
         assert count_call["retain"] is True
 
@@ -366,7 +368,7 @@ class TestPublishSummary:
         pub = _make_publisher(fake_client)
         await pub.publish_summary(count=0, nearest=None)
         nearest_call = next(
-            c for c in fake_client.publishes if c["topic"] == "adsb/summary/nearest"
+            c for c in fake_client.publishes if c["topic"] == "airspace/summary/nearest"
         )
         assert nearest_call["payload"] == b""
         assert nearest_call["retain"] is True
@@ -377,7 +379,7 @@ class TestPublishSummary:
         pub = _make_publisher(fake_client)
         await pub.publish_summary(count=1, nearest=_make_state())
         nearest_call = next(
-            c for c in fake_client.publishes if c["topic"] == "adsb/summary/nearest"
+            c for c in fake_client.publishes if c["topic"] == "airspace/summary/nearest"
         )
         body = json.loads(nearest_call["payload"])
         assert body["hex"] == "ae0001"
@@ -386,7 +388,7 @@ class TestPublishSummary:
         pub = _make_publisher(fake_client)
         await pub.publish_summary(count=0, nearest=None)
         flag_call = next(
-            c for c in fake_client.publishes if c["topic"] == "adsb/summary/count_by_flag"
+            c for c in fake_client.publishes if c["topic"] == "airspace/summary/count_by_flag"
         )
         assert flag_call["payload"] == b"{}"
 
@@ -398,7 +400,7 @@ class TestPublishSummary:
             count_by_flag={"military": 1, "interesting": 0},
         )
         flag_call = next(
-            c for c in fake_client.publishes if c["topic"] == "adsb/summary/count_by_flag"
+            c for c in fake_client.publishes if c["topic"] == "airspace/summary/count_by_flag"
         )
         body = json.loads(flag_call["payload"])
         assert body == {"military": 1, "interesting": 0}
@@ -432,7 +434,7 @@ class TestReceiverTopics:
         pub = _make_publisher(fake_client)
         await pub.publish_receiver_status("rx-home", online=True)
         call = fake_client.publishes[0]
-        assert call["topic"] == "adsb/receiver/rx-home/status"
+        assert call["topic"] == "airspace/receiver/rx-home/status"
         assert call["payload"] == b"online"
         assert call["retain"] is True
         assert call["topic_class"] == "status"
@@ -471,7 +473,7 @@ class TestReceiverTopics:
             },
         )
         call = fake_client.publishes[0]
-        assert call["topic"] == "adsb/receiver/rx-home/stats"
+        assert call["topic"] == "airspace/receiver/rx-home/stats"
         body = json.loads(call["payload"])
         assert body["aircraft_count"] == 12
         assert body["messages_per_sec"] == 240.5
@@ -481,7 +483,7 @@ class TestReceiverTopics:
         loc = ReceiverLocation(lat=30.33, lon=-97.99, alt_m=200.0, source="receiver_json")
         await pub.publish_receiver_location("rx-home", loc)
         call = fake_client.publishes[0]
-        assert call["topic"] == "adsb/receiver/rx-home/location"
+        assert call["topic"] == "airspace/receiver/rx-home/location"
         body = json.loads(call["payload"])
         assert body["lat"] == 30.33
         assert body["source"] == "receiver_json"
@@ -526,7 +528,7 @@ class TestPublishDrone:
         published = await pub.publish_drone(_make_drone_state("Spoofed_Serial_1"))
         assert published is True
         call = fake_client.publishes[0]
-        assert call["topic"] == "adsb/drone/Spoofed_Serial_1"
+        assert call["topic"] == "airspace/drone/Spoofed_Serial_1"
         assert call["retain"] is True
         assert call["topic_class"] == "drone"
 
@@ -547,7 +549,7 @@ class TestPublishDrone:
         pub = _make_publisher(fake_client)
         await pub.purge_drone("Spoofed_Serial_1")
         call = fake_client.publishes[0]
-        assert call["topic"] == "adsb/drone/Spoofed_Serial_1"
+        assert call["topic"] == "airspace/drone/Spoofed_Serial_1"
         assert call["payload"] == b""
         assert call["retain"] is True
 
@@ -555,8 +557,8 @@ class TestPublishDrone:
         pub = _make_publisher(fake_client)
         await pub.publish_drone_summary(count=3, nearest=_make_drone_state())
         topics = [c["topic"] for c in fake_client.publishes]
-        assert "adsb/summary/drone_count" in topics
-        assert "adsb/summary/nearest_drone" in topics
+        assert "airspace/summary/drone_count" in topics
+        assert "airspace/summary/nearest_drone" in topics
         count_call = next(c for c in fake_client.publishes if c["topic"].endswith("drone_count"))
         assert count_call["payload"] == b"3"
 
@@ -576,7 +578,7 @@ class TestPublishDrone:
 
 
 def _status_publishes(client: FakeMqttClient, name: str = "rx-home") -> list[dict[str, Any]]:
-    return [p for p in client.publishes if p["topic"] == f"adsb/receiver/{name}/status"]
+    return [p for p in client.publishes if p["topic"] == f"airspace/receiver/{name}/status"]
 
 
 class TestReceiverStatusOnChange:

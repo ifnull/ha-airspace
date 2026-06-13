@@ -34,7 +34,7 @@ options:
   mqtt_port: 1883
   mqtt_username: ""
   mqtt_password: ""
-  mqtt_base_topic: adsb
+  mqtt_base_topic: airspace
   watchpoints:
     - name: home
       lat: 0.0
