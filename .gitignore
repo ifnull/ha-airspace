@@ -46,8 +46,10 @@ Thumbs.db
 # gstack working state
 .gstack/
 
-# Local config / secrets
+# Local config / secrets — real configs carry live broker/receiver creds.
+# The committed reference is config.example.yaml only.
 config.local.yaml
+config.yaml
 *.env
 .env.*
 !.env.example
