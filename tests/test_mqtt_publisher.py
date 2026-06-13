@@ -568,3 +568,55 @@ class TestPublishDrone:
         call = next(c for c in fake_client.publishes if c["topic"].endswith("nearest_drone"))
         assert call["payload"] == b""
         assert call["retain"] is True
+
+
+# ---------------------------------------------------------------------------
+# Receiver status — published on change only (deduped per receiver)
+# ---------------------------------------------------------------------------
+
+
+def _status_publishes(client: FakeMqttClient, name: str = "rx-home") -> list[dict[str, Any]]:
+    return [p for p in client.publishes if p["topic"] == f"adsb/receiver/{name}/status"]
+
+
+class TestReceiverStatusOnChange:
+    async def test_first_status_publishes(self, fake_client: FakeMqttClient) -> None:
+        pub = _make_publisher(fake_client)
+        await pub.publish_receiver_status("rx-home", online=True)
+        pubs = _status_publishes(fake_client)
+        assert len(pubs) == 1
+        assert pubs[0]["payload"] == b"online"
+        assert pubs[0]["retain"] is True
+
+    async def test_unchanged_status_not_republished(self, fake_client: FakeMqttClient) -> None:
+        pub = _make_publisher(fake_client)
+        for _ in range(5):  # five polls, status never changes
+            await pub.publish_receiver_status("rx-home", online=True)
+        assert len(_status_publishes(fake_client)) == 1  # only the first
+
+    async def test_transition_republishes(self, fake_client: FakeMqttClient) -> None:
+        pub = _make_publisher(fake_client)
+        await pub.publish_receiver_status("rx-home", online=True)
+        await pub.publish_receiver_status("rx-home", online=True, unhealthy=True)
+        await pub.publish_receiver_status("rx-home", online=False)
+        await pub.publish_receiver_status("rx-home", online=False)  # no-op repeat
+        payloads = [p["payload"] for p in _status_publishes(fake_client)]
+        assert payloads == [b"online", b"unhealthy", b"offline"]
+
+    async def test_dedup_is_per_receiver(self, fake_client: FakeMqttClient) -> None:
+        pub = _make_publisher(fake_client)
+        await pub.publish_receiver_status("rx-a", online=True)
+        await pub.publish_receiver_status("rx-b", online=True)  # different receiver
+        assert len(_status_publishes(fake_client, "rx-a")) == 1
+        assert len(_status_publishes(fake_client, "rx-b")) == 1
+
+    async def test_reconnect_clears_cache_and_republishes(
+        self, fake_client: FakeMqttClient
+    ) -> None:
+        # A broker restart can drop retained state; on_connect must forget the
+        # dedup cache so the next poll republishes status fresh.
+        pub = _make_publisher(fake_client)
+        await pub.publish_receiver_status("rx-home", online=True)
+        await pub.on_connect()  # reconnect
+        await pub.publish_receiver_status("rx-home", online=True)  # same value
+        assert len(_status_publishes(fake_client)) == 2  # republished after reconnect

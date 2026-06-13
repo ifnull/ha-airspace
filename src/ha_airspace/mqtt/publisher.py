@@ -73,6 +73,12 @@ class Publisher:
         self._last_summary_publish: float = 0.0
         self._last_drone_summary_publish: float = 0.0
 
+        # Last published receiver status string, per receiver. The status topic
+        # is retained and changes rarely (online/unhealthy/offline), so we only
+        # publish on transition — not once per poll. Cleared on (re)connect so a
+        # broker that dropped its retained state gets a fresh republish.
+        self._last_receiver_status: dict[str, str] = {}
+
     # ------------------------------------------------------------------
     # On-connect hook (status:online + discovery republish)
     # ------------------------------------------------------------------
@@ -89,6 +95,9 @@ class Publisher:
 
         The merger wires this into ``MqttClient.on_connect`` at startup.
         """
+        # Forget per-receiver status so the next poll republishes it — the
+        # broker may have lost its retained state across this (re)connect.
+        self._last_receiver_status.clear()
         await self._client.publish(
             f"{self._base}/status",
             b"online",
@@ -306,13 +315,21 @@ class Publisher:
     ) -> None:
         """Publish ``adsb/receiver/<name>/status``: ``online`` |
         ``unhealthy`` | ``offline``. Retained — HA's connectivity
-        binary_sensor reads from this directly via ``payload_on=online``."""
+        binary_sensor reads from this directly via ``payload_on=online``.
+
+        Published only when the status *changes* (deduped per receiver). The
+        value flips rarely, so republishing it every poll is pure broker/SD-card
+        churn; the retained topic already holds the current value for late
+        subscribers."""
         if not online:
             status = "offline"
         elif unhealthy:
             status = "unhealthy"
         else:
             status = "online"
+        if self._last_receiver_status.get(name) == status:
+            return
+        self._last_receiver_status[name] = status
         await self._client.publish(
             f"{self._base}/receiver/{name}/status",
             status.encode("utf-8"),

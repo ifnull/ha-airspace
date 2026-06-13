@@ -12,6 +12,10 @@ arch:
   - aarch64
   - amd64
 init: false
+# Auto-start: launch on Supervisor boot and run as a long-lived service. The
+# Supervisor restarts it on crash; the user can still stop/disable from the UI.
+boot: auto
+startup: application
 # Pull MQTT host/credentials from the HA Mosquitto add-on when the user leaves
 # the MQTT options blank (service discovery via the Supervisor API).
 services:

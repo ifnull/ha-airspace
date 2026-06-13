@@ -86,10 +86,14 @@ with persistent state in `/data`:
 
 ```bash
 docker run -d --name ha-airspace \
+  --restart unless-stopped \
   -v ./config.yaml:/config/config.yaml:ro \
   -v ha-airspace-data:/data \
   ghcr.io/ifnull/ha-airspace:latest
 ```
+
+`--restart unless-stopped` makes Docker bring it back on boot and after a
+crash. On Home Assistant OS the add-on handles this for you (boot: auto).
 
 ### Run as a Home Assistant add-on
 

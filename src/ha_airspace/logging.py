@@ -77,6 +77,15 @@ def configure_logging(*, level: str = "info", renderer: str = "json") -> None:
         force=True,
     )
 
+    # httpx/httpcore emit one INFO line per request ("HTTP Request: GET ...").
+    # At our ~1 Hz per-receiver polling that floods the console, so cap them at
+    # WARNING unless the operator explicitly asked for debug. Set explicitly in
+    # both cases so the result is idempotent across calls (these loggers are
+    # process-global and otherwise retain a previous call's level).
+    noisy_level = log_level if log_level <= logging.DEBUG else logging.WARNING
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(noisy_level)
+
 
 def renderer_for(log_destination: str) -> str:
     """Map ``service.log_destination`` to a renderer name.

@@ -277,12 +277,16 @@ class TestRetentionPrune:
         await j2.close()
 
     async def test_prune_is_rate_limited(self, tmp_path: Path) -> None:
-        # Two prunes back-to-back: the second is gated by _PRUNE_INTERVAL_S and
-        # must not run (the loop calls _maybe_prune every flush — cheap, hourly).
+        # Two prunes back-to-back: the first runs (never-pruned -> due), the
+        # second is gated by _PRUNE_INTERVAL_S and must not re-stamp. Asserts the
+        # None->set->unchanged transition, NOT an absolute clock value (loop.time
+        # is monotonic-from-boot, so its magnitude varies by host uptime — that
+        # exact assumption failed only on freshly-booted CI runners).
         j = await _opened(_config(tmp_path))
-        await j._maybe_prune()
+        assert j._last_prune is None  # never pruned yet
+        await j._maybe_prune()  # first: runs, stamps _last_prune
         first_stamp = j._last_prune
-        assert first_stamp > 0.0
-        await j._maybe_prune()
-        assert j._last_prune == first_stamp
+        assert first_stamp is not None
+        await j._maybe_prune()  # gated, no-op
+        assert j._last_prune == first_stamp  # unchanged
         await j.close()
