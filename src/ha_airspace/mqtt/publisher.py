@@ -27,7 +27,9 @@ from ha_airspace.mqtt.client import MqttClient
 from ha_airspace.mqtt.discovery import build_discovery_payloads
 from ha_airspace.mqtt.payloads import (
     AircraftPayload,
+    AlertPayload,
     DronePayload,
+    PhotoPayload,
     ReceiverLocationPayload,
     ReceiverStatsPayload,
 )
@@ -158,11 +160,16 @@ class Publisher:
     # Alert topics — per-rule/per-hex detail + per-rule active flag
     # ------------------------------------------------------------------
 
-    async def publish_alert(self, rule: str, state: AircraftState) -> None:
+    async def publish_alert(
+        self, rule: str, state: AircraftState, *, photo: PhotoPayload | None = None
+    ) -> None:
         """Publish ``adsb/alert/<rule>/<track_id>`` on rule ENTER: the
         triggering track's full state, retained so a late subscriber sees the
-        active alert. Cleared by ``clear_alert`` on EXIT."""
-        payload = AircraftPayload.from_state(state).model_dump_json()
+        active alert. Cleared by ``clear_alert`` on EXIT.
+
+        ``photo`` (Planespotters, Phase 2c) is injected here only — the alert
+        payload, never the wildcard aircraft topic."""
+        payload = AlertPayload.build(state, photo).model_dump_json()
         await self._client.publish(
             f"{self._base}/alert/{rule}/{state.track_id}",
             payload,

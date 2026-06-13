@@ -177,3 +177,15 @@ receivers:
 #   retention_observations_days: 90
 #   write_coalesce_s: 30            # flush at least this often
 #   write_coalesce_events: 50       # flush early once this many records buffer
+
+# --------------------------------------------------------------------------
+# photos — Planespotters aircraft photo enrichment (Phase 2c). Off by default.
+# When enabled, a photo URL (+ attribution) is looked up by hex and injected
+# into ALERT payloads only — never the high-cardinality adsb/aircraft/<hex>
+# wildcard. Cached in memory (no disk writes) and fails soft: a photo lookup
+# never blocks or breaks an alert. No API key required.
+# --------------------------------------------------------------------------
+# photos:
+#   enabled: true
+#   cache_ttl_days: 30              # how long a hit (or a confirmed miss) is cached
+#   inject_into: ["alerts"]         # only "alerts" is valid today

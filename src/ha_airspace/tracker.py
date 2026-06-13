@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import structlog
 
@@ -35,6 +36,10 @@ from ha_airspace.merger import Merger
 from ha_airspace.metrics import MetricsRegistry
 from ha_airspace.models import AircraftObservation, AircraftState, Lifecycle, Watchpoint
 from ha_airspace.mqtt.publisher import Publisher
+from ha_airspace.photos import PhotoEnricher
+
+if TYPE_CHECKING:
+    from ha_airspace.mqtt.payloads import PhotoPayload
 
 log = structlog.get_logger(__name__)
 
@@ -92,6 +97,7 @@ class AircraftTracker:
         enricher: Enricher | None = None,
         alerts: AlertEvaluator | None = None,
         journal: Journal | None = None,
+        photos: PhotoEnricher | None = None,
         has_drone_source: bool = False,
         metrics: MetricsRegistry | None = None,
         clock: Callable[[], datetime] = _default_clock,
@@ -106,6 +112,7 @@ class AircraftTracker:
         self._enricher = enricher
         self._alerts = alerts
         self._journal = journal
+        self._photos = photos
         # Only publish the drone summary when a Remote ID source is configured,
         # so ADS-B-only installs don't get spurious empty drone topics.
         self._has_drone_source = has_drone_source
@@ -258,7 +265,8 @@ class AircraftTracker:
         for event in events:
             touched_rules.add(event.rule)
             if event.transition is AlertTransition.ENTER and event.state is not None:
-                await self._publisher.publish_alert(event.rule, event.state)
+                photo = await self._photo_for(event.state)
+                await self._publisher.publish_alert(event.rule, event.state, photo=photo)
                 log.info("alert_enter", rule=event.rule, track_id=event.track_id)
                 if self._journal is not None:
                     self._journal.record_event(
@@ -275,6 +283,14 @@ class AircraftTracker:
         active = self._alerts.active_rules()
         for rule in touched_rules:
             await self._publisher.publish_alert_active(rule, active=rule in active)
+
+    async def _photo_for(self, state: AircraftState) -> PhotoPayload | None:
+        """Aircraft photo for an alerting track, when photo enrichment is
+        configured and the track has an ICAO hex (Planespotters is ICAO-keyed;
+        drones have none). Fails soft inside the enricher — never raises."""
+        if self._photos is None or state.hex is None:
+            return None
+        return await self._photos.photo_for(state.hex)
 
     async def _publish_summary(self) -> None:
         # Aircraft and drones are counted + "nearest"-ranked separately: the
