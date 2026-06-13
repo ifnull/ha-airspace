@@ -57,9 +57,11 @@ ENV PATH="/app/.venv/bin:${PATH}" \
 USER airspace
 WORKDIR /app
 
-# /config holds the YAML config (bind-mount or add-on-rendered); /data holds the
-# SQLite journal + reference-DB cache, both /data-friendly by default in config.
-VOLUME ["/config", "/data"]
+# Only /data is a declared volume — the SQLite journal + reference-DB cache, the
+# state worth persisting. /config is NOT declared: it is a read-only bind target
+# for the user's config, and declaring it would spawn a junk anonymous volume on
+# every run that doesn't bind-mount it.
+VOLUME ["/data"]
 
 # No HEALTHCHECK here on purpose: the container's main process *is* the service,
 # so a crash exits the container and the restart policy handles it. There is no
