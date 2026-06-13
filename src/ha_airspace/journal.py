@@ -91,7 +91,10 @@ class Journal:
         self._stop = asyncio.Event()
         self._flush_now = asyncio.Event()
         # Monotonic time of the last retention prune; gates the prune cadence.
-        self._last_prune: float = 0.0
+        # None = never pruned -> the first check is always due. (Don't init to
+        # 0.0: loop.time() is monotonic-from-boot, so on a freshly-booted host
+        # 0.0 would wrongly look "recent" and delay the first prune ~an hour.)
+        self._last_prune: float | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -284,7 +287,7 @@ class Journal:
 
     async def _maybe_prune(self) -> None:
         now = asyncio.get_event_loop().time()
-        if now - self._last_prune < self._PRUNE_INTERVAL_S:
+        if self._last_prune is not None and now - self._last_prune < self._PRUNE_INTERVAL_S:
             return
         self._last_prune = now
         await asyncio.to_thread(self._prune_sync)
