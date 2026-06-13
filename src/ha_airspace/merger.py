@@ -95,6 +95,10 @@ class Merger:
         reappearing after a restart keeps its original ``first_seen`` (Phase 2b
         durable history). Injected as a plain callable so the merger stays
         IO-free — the journal is not imported here.
+      last_seen_for: Optional ``track_id -> datetime | None`` lookup, same
+        injection style. On new-track creation it records the prior ``last_seen``
+        onto ``state.prior_last_seen`` (when we last saw the track before this
+        sighting) for history-aware alert criteria. ``None`` = never recorded.
 
     Not async, no IO. The tracker drives ``ingest`` per observation and reads
     ``states`` to run the rest of the pipeline.
@@ -105,9 +109,11 @@ class Merger:
         *,
         canonical_window_s: float = DEFAULT_CANONICAL_WINDOW_S,
         first_seen_for: Callable[[str], datetime | None] | None = None,
+        last_seen_for: Callable[[str], datetime | None] | None = None,
     ) -> None:
         self._window_s = canonical_window_s
         self._first_seen_for = first_seen_for
+        self._last_seen_for = last_seen_for
         self.states: dict[str, AircraftState] = {}
 
     def ingest(self, obs: AircraftObservation) -> AircraftState:
@@ -126,6 +132,11 @@ class Merger:
                 prior = self._first_seen_for(obs.track_id)
                 if prior is not None:
                     state.first_seen = prior
+            if self._last_seen_for is not None:
+                # Captured before the tracker records this sighting, so it is the
+                # last_seen as of the *previous* sighting — the input for
+                # history-aware alerts (None = never recorded).
+                state.prior_last_seen = self._last_seen_for(obs.track_id)
             self.states[obs.track_id] = state
             return state
 

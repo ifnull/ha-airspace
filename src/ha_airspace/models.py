@@ -257,6 +257,14 @@ class AircraftState:
     predicted_eta_to_home_s: float | None = None
     predicted_closest_approach_nm: float | None = None
 
+    # --- History (Phase 5) --------------------------------------------
+    prior_last_seen: datetime | None = None
+    """The journal's ``last_seen`` for this track as of *creation* — i.e. when
+    we last recorded seeing it before this sighting. ``None`` = never recorded.
+    Distinct from the live ``last_seen`` (which tracks the current session); set
+    once at creation by the merger and used by history-aware alert criteria
+    (``unseen_for_days``). Not published — purely an evaluation input."""
+
     @classmethod
     def from_first_observation(cls, obs: AircraftObservation) -> Self:
         """Build a fresh state from the first observation of a hex.

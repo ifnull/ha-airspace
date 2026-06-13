@@ -128,8 +128,11 @@ receivers:
 # it stops (EXIT). Each rule's `match` combines conditions: different keys are
 # AND, a list within one key is OR. ENTER publishes adsb/alert/<rule>/<hex>;
 # a per-rule binary_sensor.adsb_alert_<rule> turns on while any aircraft matches.
-# Match keys: flags, category, max_distance_nm, max_alt_agl_ft, watchpoint.
+# Match keys: flags, category, max_distance_nm, max_alt_agl_ft, watchpoint,
+# unseen_for_days.
 # (max_alt_agl_ft needs the watchpoint to have elevation_m; v1 AGL = MSL minus it.)
+# (unseen_for_days is history-aware: matches only when the track is new or hasn't
+#  been seen in N days. Requires the `journal` section below.)
 # --------------------------------------------------------------------------
 # enrichment:
 #   flags:
@@ -163,6 +166,11 @@ receivers:
 #           max_alt_agl_ft: 2000           # needs home.elevation_m set above
 #           max_distance_nm: 10
 #           watchpoint: home
+#       - name: new_military_this_month
+#         match:
+#           flags: ["military"]
+#           unseen_for_days: 30            # only if not seen in the last 30 days
+#                                          # (history-aware — needs `journal`)
 
 # --------------------------------------------------------------------------
 # journal — SQLite history (Phase 2b). Optional; OMIT to disable persistence,

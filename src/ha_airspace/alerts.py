@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
@@ -52,17 +52,36 @@ def _default_clock() -> datetime:
     return datetime.now(UTC)
 
 
+def _passes_alt_agl(
+    state: AircraftState,
+    max_alt_agl_ft: float,
+    elevation_m_for: Callable[[str], float | None],
+    wp_name: str,
+) -> bool:
+    """At or below ``max_alt_agl_ft`` above the watchpoint. v1 AGL is MSL minus
+    the watchpoint ground elevation (config-validated to exist when used).
+    Missing altitude can't satisfy it. 1 m = 3.28084 ft."""
+    alt_msl = state.canonical.alt_baro_ft
+    if alt_msl is None:
+        return False
+    ground_ft = (elevation_m_for(wp_name) or 0.0) * 3.28084
+    return (alt_msl - ground_ft) <= max_alt_agl_ft
+
+
 def rule_matches(
     state: AircraftState,
     match: MatchBlock,
     *,
     elevation_m_for: Callable[[str], float | None],
+    now: datetime | None = None,
 ) -> bool:
     """True if ``state`` satisfies every condition in ``match`` (AND); within
     a single list-valued condition any item suffices (OR).
 
     ``elevation_m_for`` resolves a watchpoint name to its elevation for the
-    v1 AGL approximation; only called when ``max_alt_agl_ft`` is set.
+    v1 AGL approximation; only called when ``max_alt_agl_ft`` is set. ``now`` is
+    the reference time for the history-aware ``unseen_for_days`` check; it
+    defaults to the current time when omitted (the evaluator passes its clock).
     """
     if match.flags is not None and not (state.flags & set(match.flags)):
         return False
@@ -79,16 +98,18 @@ def rule_matches(
         if distance is None or distance > match.max_distance_nm:
             return False
 
-    if match.max_alt_agl_ft is not None:
-        alt_msl = state.canonical.alt_baro_ft
-        if alt_msl is None:
-            return False
-        elevation_m = elevation_m_for(wp_name)
-        # v1 AGL: MSL minus watchpoint ground elevation (config-validated to
-        # exist when this condition is used). 1 m = 3.28084 ft.
-        ground_ft = (elevation_m or 0.0) * 3.28084
-        if (alt_msl - ground_ft) > match.max_alt_agl_ft:
-            return False
+    if match.max_alt_agl_ft is not None and not _passes_alt_agl(
+        state, match.max_alt_agl_ft, elevation_m_for, wp_name
+    ):
+        return False
+
+    if match.unseen_for_days is not None:
+        # Novel iff never recorded (None) or last seen at least N days ago.
+        prior = state.prior_last_seen
+        if prior is not None:
+            reference = now if now is not None else _default_clock()
+            if (reference - prior) < timedelta(days=match.unseen_for_days):
+                return False
 
     return True
 
@@ -131,7 +152,7 @@ class AlertEvaluator:
             currently = {
                 track_id
                 for track_id, state in by_id.items()
-                if rule_matches(state, rule.match, elevation_m_for=self._elevation_m_for)
+                if rule_matches(state, rule.match, elevation_m_for=self._elevation_m_for, now=now)
             }
             events.extend(self._transitions(rule.name, currently, by_id, now))
 

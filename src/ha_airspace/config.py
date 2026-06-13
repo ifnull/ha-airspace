@@ -302,16 +302,26 @@ class MatchBlock(BaseModel):
     watchpoint: str | None = None
     """Which watchpoint ``max_distance_nm`` / ``max_alt_agl_ft`` measure from.
     Defaults to ``home`` when omitted (validated against config)."""
+    unseen_for_days: float | None = Field(default=None, gt=0)
+    """History-aware (Phase 5): matches only when the track has NOT been seen in
+    the last this-many days — i.e. it is new (never recorded) or returning after
+    an absence. Requires ``journal`` to be configured (validated at load)."""
 
     @model_validator(mode="after")
     def _at_least_one_condition(self) -> Self:
         if not any(
             v is not None
-            for v in (self.flags, self.category, self.max_distance_nm, self.max_alt_agl_ft)
+            for v in (
+                self.flags,
+                self.category,
+                self.max_distance_nm,
+                self.max_alt_agl_ft,
+                self.unseen_for_days,
+            )
         ):
             raise ValueError(
                 "alert match must set at least one of "
-                "flags / category / max_distance_nm / max_alt_agl_ft"
+                "flags / category / max_distance_nm / max_alt_agl_ft / unseen_for_days"
             )
         for name in ("flags", "category"):
             val = getattr(self, name)
@@ -507,6 +517,21 @@ class Config(BaseModel):
                 raise ValueError(
                     f"alert rule '{rule.name}' uses max_alt_agl_ft but watchpoint "
                     f"{wp_name!r} has no elevation_m (required for the AGL approximation)"
+                )
+        return self
+
+    @model_validator(mode="after")
+    def _history_alerts_need_journal(self) -> Self:
+        """History-aware criteria (``unseen_for_days``) read the journal's prior
+        ``last_seen``. Without a journal there is no history, so the rule could
+        only ever misfire — fail fast at load rather than fire for everything."""
+        if self.journal is not None:
+            return self
+        for rule in self.enrichment.alerts.rules:
+            if rule.match.unseen_for_days is not None:
+                raise ValueError(
+                    f"alert rule '{rule.name}' uses unseen_for_days, which requires "
+                    "a 'journal' section (history-aware alerts need the journal)"
                 )
         return self
 

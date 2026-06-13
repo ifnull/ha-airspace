@@ -204,3 +204,38 @@ class TestNonIcaoIdentity:
         m.ingest(self._drone())
         # Two independent tracks: one ICAO aircraft, one Remote ID drone.
         assert set(m.states) == {"ae0001", "Spoofed_Serial_98067"}
+
+
+# ---------------------------------------------------------------------------
+# prior_last_seen capture for history-aware alerts (Phase 5)
+# ---------------------------------------------------------------------------
+
+
+class TestPriorLastSeen:
+    def test_captured_from_callback_on_new_track(self) -> None:
+        prior = _T0 - timedelta(days=40)
+        m = Merger(last_seen_for=lambda _tid: prior)
+        state = m.ingest(_obs(seen_by="rx", at=_T0))
+        assert state.prior_last_seen == prior
+
+    def test_none_when_never_recorded(self) -> None:
+        m = Merger(last_seen_for=lambda _tid: None)
+        assert m.ingest(_obs(seen_by="rx")).prior_last_seen is None
+
+    def test_none_when_no_callback(self) -> None:
+        assert Merger().ingest(_obs(seen_by="rx")).prior_last_seen is None
+
+    def test_captured_once_at_creation_not_on_update(self) -> None:
+        # The callback is consulted only when the track is created; later
+        # observations must not overwrite prior_last_seen (it is the *prior*
+        # sighting, fixed for the life of the track).
+        calls: list[str] = []
+
+        def cb(tid: str) -> datetime | None:
+            calls.append(tid)
+            return _T0 - timedelta(days=10)
+
+        m = Merger(last_seen_for=cb)
+        m.ingest(_obs(seen_by="rx-a", at=_T0))
+        m.ingest(_obs(seen_by="rx-b", at=_T0 + timedelta(seconds=1)))
+        assert calls == ["ae0001"]  # consulted exactly once

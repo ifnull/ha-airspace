@@ -355,6 +355,7 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
     journal: Journal | None = Journal(config.journal) if config.journal is not None else None
     merger = Merger(
         first_seen_for=journal.first_seen_for if journal is not None else None,
+        last_seen_for=journal.last_seen_for if journal is not None else None,
     )
 
     # Photo enrichment: only when enabled. A dedicated long-lived client with a

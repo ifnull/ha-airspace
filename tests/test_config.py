@@ -652,3 +652,39 @@ class TestPhotosConfig:
     def test_strict_rejects_unknown_field(self) -> None:
         with pytest.raises(ValidationError):
             PhotosConfig.model_validate({"enabled": True, "typo": 1})
+
+
+# ---------------------------------------------------------------------------
+# History-aware alerts: unseen_for_days requires a journal (Phase 5)
+# ---------------------------------------------------------------------------
+
+
+def _config_with_unseen_rule(*, with_journal: bool) -> dict[str, Any]:
+    d = _minimal_config_dict()
+    d["enrichment"] = {
+        "alerts": {
+            "rules": [
+                {"name": "novel_mil", "match": {"flags": ["military"], "unseen_for_days": 30}}
+            ]
+        }
+    }
+    if with_journal:
+        d["journal"] = {"path": "/data/journal.db"}
+    return d
+
+
+class TestHistoryAwareAlerts:
+    def test_unseen_for_days_without_journal_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="unseen_for_days"):
+            Config.model_validate(_config_with_unseen_rule(with_journal=False))
+
+    def test_unseen_for_days_with_journal_loads(self) -> None:
+        cfg = Config.model_validate(_config_with_unseen_rule(with_journal=True))
+        assert cfg.enrichment.alerts.rules[0].match.unseen_for_days == 30
+
+    def test_unseen_for_days_alone_is_a_valid_match(self) -> None:
+        MatchBlock.model_validate({"unseen_for_days": 7})
+
+    def test_unseen_for_days_must_be_positive(self) -> None:
+        with pytest.raises(ValidationError):
+            MatchBlock.model_validate({"unseen_for_days": 0})
