@@ -121,7 +121,7 @@ class TestMqttConfig:
     def test_minimal(self) -> None:
         m = MqttConfig(broker="broker.local")
         assert m.port == 1883
-        assert m.base_topic == "adsb"
+        assert m.base_topic == "airspace"
         assert m.discovery_prefix == "homeassistant"
         assert m.discovery_enabled is True
         assert m.tls is False

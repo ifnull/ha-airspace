@@ -21,7 +21,7 @@ def test_example_config_exists() -> None:
 def test_example_config_validates() -> None:
     config = load_config(_EXAMPLE)
     # Sanity: the documented defaults survive the round-trip.
-    assert config.mqtt.base_topic == "adsb"
+    assert config.mqtt.base_topic == "airspace"
     assert [w.name for w in config.watchpoints] == ["home"]
     assert config.receivers[0].band == "1090"
     assert config.receivers[0].enabled is True

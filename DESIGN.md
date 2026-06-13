@@ -398,7 +398,7 @@ This is a load-bearing spec — get it right in v1 so future config changes don'
 Topic structure:
 
 ```
-adsb/
+airspace/
 ├── status                                 # service-level: online/offline (LWT)
 │
 ├── receiver/
@@ -425,9 +425,9 @@ adsb/
 
 **Publication strategy:**
 
-- **`adsb/aircraft/<hex>`** publishes on every state change. **Power-user wildcard topic only.** This is NOT auto-discovered as HA entities — turning every aircraft into a discovered entity would melt HA's entity registry within a single busy day. Users who want per-aircraft data subscribe with their own consumer (Grafana, Node-RED, custom scripts). Retained, so late subscribers see current state; `null` payload clears on aircraft expiry. Per-aircraft publishes are min-throttled to one per second per hex to absorb bursty receiver outputs.
-- **`adsb/summary/*`** publishes on change with throttling (max 1/sec across all summary topics). This is what casual HA users bind to — a stable handful of entities rather than one per aircraft.
-- **`adsb/alert/<rule>/<hex>`** publishes on rule ENTER, cleared (null retained) on rule EXIT. After EXIT, a per-rule cooldown (default 60s) blocks re-ENTER for the same hex.
+- **`airspace/aircraft/<hex>`** publishes on every state change. **Power-user wildcard topic only.** This is NOT auto-discovered as HA entities — turning every aircraft into a discovered entity would melt HA's entity registry within a single busy day. Users who want per-aircraft data subscribe with their own consumer (Grafana, Node-RED, custom scripts). Retained, so late subscribers see current state; `null` payload clears on aircraft expiry. Per-aircraft publishes are min-throttled to one per second per hex to absorb bursty receiver outputs.
+- **`airspace/summary/*`** publishes on change with throttling (max 1/sec across all summary topics). This is what casual HA users bind to — a stable handful of entities rather than one per aircraft.
+- **`airspace/alert/<rule>/<hex>`** publishes on rule ENTER, cleared (null retained) on rule EXIT. After EXIT, a per-rule cooldown (default 60s) blocks re-ENTER for the same hex.
 
 **HA discovery payloads** publish on the configured discovery prefix and create
 **only the following entities** (locked — adding per-aircraft entities is an
@@ -450,14 +450,14 @@ HA would otherwise carry stale entities forever.
 the service distinguishes itself from a crash:
 
 ```python
-async with aiomqtt.Client(host, will=Will(topic="adsb/status", payload=b"offline", retain=True)) as client:
+async with aiomqtt.Client(host, will=Will(topic="airspace/status", payload=b"offline", retain=True)) as client:
     try:
         # ... main run loop ...
     finally:
         # Clean shutdown: publish offline non-retained, then exit context.
         # __aexit__ sends MQTT DISCONNECT before TCP close, which suppresses
         # the LWT will-message. HA observes a clean offline state.
-        await client.publish("adsb/status", b"offline", retain=False)
+        await client.publish("airspace/status", b"offline", retain=False)
         # context exit happens here automatically
 ```
 
@@ -498,12 +498,12 @@ mqtt:
   port: 1883
   username: !secret mqtt_user
   password: !secret mqtt_pass
-  base_topic: "adsb"
+  base_topic: "airspace"
   discovery_prefix: "homeassistant"
   discovery_enabled: true
   tls: false
-  publish_aircraft_min_interval_s: 1.0   # per-hex throttle for adsb/aircraft/<hex>
-  publish_summary_min_interval_s: 1.0    # global throttle for adsb/summary/*
+  publish_aircraft_min_interval_s: 1.0   # per-hex throttle for airspace/aircraft/<hex>
+  publish_summary_min_interval_s: 1.0    # global throttle for airspace/summary/*
 
 # Optional Prometheus /metrics endpoint (Phase 1).
 prometheus:
@@ -709,7 +709,7 @@ Each slice ships independently and gathers feedback before the next.
 - Per-rule cooldown (default 60s) to suppress thrashing
 - Per-alert MQTT topics + HA discovery binary_sensors
 
-**Done when:** military aircraft appear on `adsb/alert/military_close/<hex>` with full DB metadata in the payload.
+**Done when:** military aircraft appear on `airspace/alert/military_close/<hex>` with full DB metadata in the payload.
 
 **Phase 2b: Durable history.**
 - SQLite observation journal at `/data/journal.db` (WAL + synchronous=NORMAL, coalesced writes every 30s or 50 events, hand-rolled `PRAGMA user_version` migrations)
@@ -820,7 +820,7 @@ merge.**
 **Status: implemented in Phase 3.** `RemoteIdHttpReceiver` consumes the
 `remoteid.json` feed (config `remoteid:`); drones merge as `band="remoteid"`
 tracks keyed by UAS id, get distinct HA entities (`drone_count`,
-`nearest_drone` with operator location) and `adsb/drone/<id>` topics, and skip
+`nearest_drone` with operator location) and `airspace/drone/<id>` topics, and skip
 reference-DB lookup. The design notes below record the decisions as made.
 
 ## Integration shape

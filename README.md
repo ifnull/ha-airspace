@@ -146,13 +146,13 @@ overwhelm HA's registry; power users subscribe to the wildcard topic instead):
 
 | Entity | Source |
 |---|---|
-| `sensor.adsb_count` | total aircraft currently tracked |
-| `sensor.adsb_nearest` | distance to the closest aircraft; full details in its attributes |
-| `binary_sensor.adsb_receiver_<name>_status` | per-receiver connectivity |
-| `sensor.adsb_receiver_<name>_aircraft_count` | per-receiver aircraft count |
-| `sensor.adsb_receiver_<name>_messages_per_sec` | per-receiver message rate |
+| `sensor.airspace_count` | total aircraft currently tracked |
+| `sensor.airspace_nearest` | distance to the closest aircraft; full details in its attributes |
+| `binary_sensor.airspace_receiver_<name>_status` | per-receiver connectivity |
+| `sensor.airspace_receiver_<name>_aircraft_count` | per-receiver aircraft count |
+| `sensor.airspace_receiver_<name>_messages_per_sec` | per-receiver message rate |
 
-All carry an availability binding to the service's `adsb/status` topic, so they
+All carry an availability binding to the service's `airspace/status` topic, so they
 go *unavailable* when the service stops or crashes rather than showing stale
 values.
 
@@ -160,17 +160,17 @@ values.
 
 ## MQTT topics
 
-Published under `base_topic` (default `adsb`):
+Published under `base_topic` (default `airspace`):
 
 ```
-adsb/status                          online | offline (LWT + graceful shutdown)
-adsb/summary/count                   total aircraft
-adsb/summary/nearest                 JSON: closest aircraft (full state)
-adsb/summary/count_by_flag           JSON: counts per flag ({} until Phase 2 rules land)
-adsb/aircraft/<hex>                  JSON: per-aircraft state (wildcard; not an HA entity)
-adsb/receiver/<name>/status          online | unhealthy | offline
-adsb/receiver/<name>/stats           JSON: count, message rate, health
-adsb/receiver/<name>/location        JSON: receiver lat/lon
+airspace/status                          online | offline (LWT + graceful shutdown)
+airspace/summary/count                   total aircraft
+airspace/summary/nearest                 JSON: closest aircraft (full state)
+airspace/summary/count_by_flag           JSON: counts per flag ({} until Phase 2 rules land)
+airspace/aircraft/<hex>                  JSON: per-aircraft state (wildcard; not an HA entity)
+airspace/receiver/<name>/status          online | unhealthy | offline
+airspace/receiver/<name>/stats           JSON: count, message rate, health
+airspace/receiver/<name>/location        JSON: receiver lat/lon
 ```
 
 State-bearing topics are retained, so a freshly started consumer sees current

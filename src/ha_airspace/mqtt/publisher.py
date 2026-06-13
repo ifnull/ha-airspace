@@ -89,7 +89,7 @@ class Publisher:
         """Run after every successful broker connect.
 
         Order matters:
-          1. Publish ``adsb/status: online`` retained, so HA flips the
+          1. Publish ``airspace/status: online`` retained, so HA flips the
              availability sensors before discovery payloads land.
           2. Publish the full discovery payload set (idempotent on
              retained topics; protects against the broker losing
@@ -119,7 +119,7 @@ class Publisher:
     # ------------------------------------------------------------------
 
     async def publish_aircraft(self, state: AircraftState) -> bool:
-        """Publish per-track state to ``adsb/aircraft/<track_id>``.
+        """Publish per-track state to ``airspace/aircraft/<track_id>``.
 
         The topic key is the merge key — ICAO hex for ADS-B, UAS id for
         Remote ID — so a track is one topic regardless of source. Throttled
@@ -163,7 +163,7 @@ class Publisher:
     async def publish_alert(
         self, rule: str, state: AircraftState, *, photo: PhotoPayload | None = None
     ) -> None:
-        """Publish ``adsb/alert/<rule>/<track_id>`` on rule ENTER: the
+        """Publish ``airspace/alert/<rule>/<track_id>`` on rule ENTER: the
         triggering track's full state, retained so a late subscriber sees the
         active alert. Cleared by ``clear_alert`` on EXIT.
 
@@ -178,7 +178,7 @@ class Publisher:
         )
 
     async def clear_alert(self, rule: str, track_id: str) -> None:
-        """Clear ``adsb/alert/<rule>/<track_id>`` on rule EXIT (empty-retained),
+        """Clear ``airspace/alert/<rule>/<track_id>`` on rule EXIT (empty-retained),
         so the alert does not linger in HA after the track stops matching."""
         await self._client.publish(
             f"{self._base}/alert/{rule}/{track_id}",
@@ -188,7 +188,7 @@ class Publisher:
         )
 
     async def publish_alert_active(self, rule: str, *, active: bool) -> None:
-        """Publish ``adsb/alert/<rule>/active`` = ``on`` | ``off`` retained.
+        """Publish ``airspace/alert/<rule>/active`` = ``on`` | ``off`` retained.
         The per-rule HA ``binary_sensor`` reads this directly (payload_on=on),
         turning on while any aircraft matches the rule and off when none do."""
         await self._client.publish(
@@ -203,7 +203,7 @@ class Publisher:
     # ------------------------------------------------------------------
 
     async def publish_drone(self, state: AircraftState) -> bool:
-        """Publish per-drone state to ``adsb/drone/<track_id>`` (the UAS id).
+        """Publish per-drone state to ``airspace/drone/<track_id>`` (the UAS id).
 
         Throttled per-track by the aircraft min-interval (drones and aircraft
         share the per-track throttle dict; track_ids are unique across both).
@@ -235,7 +235,7 @@ class Publisher:
         self._last_aircraft_publish.pop(track_id, None)
 
     async def publish_drone_summary(self, *, count: int, nearest: AircraftState | None) -> bool:
-        """Publish ``adsb/summary/{drone_count, nearest_drone}``. Globally
+        """Publish ``airspace/summary/{drone_count, nearest_drone}``. Globally
         throttled like the aircraft summary. ``nearest=None`` clears the
         nearest-drone topic (empty-retained) so HA goes unavailable rather
         than showing a stale drone once the sky is clear of them."""
@@ -271,7 +271,7 @@ class Publisher:
         nearest: AircraftState | None,
         count_by_flag: dict[str, int] | None = None,
     ) -> bool:
-        """Publish ``adsb/summary/{count, nearest, count_by_flag}``.
+        """Publish ``airspace/summary/{count, nearest, count_by_flag}``.
 
         Globally throttled (one summary publish per ``mqtt.publish_summary_min_interval_s``).
         Returns True if published, False if throttled.
@@ -320,7 +320,7 @@ class Publisher:
     async def publish_receiver_status(
         self, name: str, *, online: bool, unhealthy: bool = False
     ) -> None:
-        """Publish ``adsb/receiver/<name>/status``: ``online`` |
+        """Publish ``airspace/receiver/<name>/status``: ``online`` |
         ``unhealthy`` | ``offline``. Retained — HA's connectivity
         binary_sensor reads from this directly via ``payload_on=online``.
 
@@ -345,7 +345,7 @@ class Publisher:
         )
 
     async def publish_receiver_stats(self, name: str, health: dict[str, object]) -> None:
-        """Publish ``adsb/receiver/<name>/stats`` as JSON. HA's
+        """Publish ``airspace/receiver/<name>/stats`` as JSON. HA's
         per-receiver count and message-rate sensors extract via
         ``value_template`` from this single topic."""
         payload = ReceiverStatsPayload.from_health(health).model_dump_json()
@@ -357,7 +357,7 @@ class Publisher:
         )
 
     async def publish_receiver_location(self, name: str, location: ReceiverLocation) -> None:
-        """Publish ``adsb/receiver/<name>/location`` as JSON. Published
+        """Publish ``airspace/receiver/<name>/location`` as JSON. Published
         once at startup (and republished on reconnect via on_connect)."""
         payload = ReceiverLocationPayload.from_runtime(location).model_dump_json()
         await self._client.publish(

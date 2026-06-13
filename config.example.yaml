@@ -41,12 +41,12 @@ mqtt:
   port: 1883
   # username: mqtt_user         # omit for anonymous brokers
   # password: mqtt_pass
-  base_topic: adsb              # all topics published under adsb/...
+  base_topic: airspace              # all topics published under airspace/...
   discovery_prefix: homeassistant
   discovery_enabled: true       # publish HA MQTT-discovery entities on connect
   tls: false
-  publish_aircraft_min_interval_s: 1.0   # per-hex throttle for adsb/aircraft/<hex>
-  publish_summary_min_interval_s: 1.0    # global throttle for adsb/summary/*
+  publish_aircraft_min_interval_s: 1.0   # per-hex throttle for airspace/aircraft/<hex>
+  publish_summary_min_interval_s: 1.0    # global throttle for airspace/summary/*
 
 # --------------------------------------------------------------------------
 # prometheus — optional /metrics endpoint. Off by default; localhost-only
@@ -85,7 +85,7 @@ receivers:
 # remoteid — drone Remote ID feeds (dump3411 / ASTM F3411 over BLE + WiFi).
 # Optional; omit for ADS-B only. Drones merge into the same airspace view as
 # aircraft but get their own HA entities (drone_count, nearest_drone with
-# operator location) and adsb/drone/<id> topics. No band/auth — just a URL.
+# operator location) and airspace/drone/<id> topics. No band/auth — just a URL.
 # Names share the receiver namespace and must be unique across both lists.
 # --------------------------------------------------------------------------
 # remoteid:
@@ -122,12 +122,12 @@ receivers:
 #   sources     — DB-backed (db:field); matches a truthy db_metadata field.
 #                 Requires the `databases` section above; without it these
 #                 never match (db_metadata stays empty).
-# Matched flag names appear in adsb/aircraft/<hex> and the summary count_by_flag.
+# Matched flag names appear in airspace/aircraft/<hex> and the summary count_by_flag.
 #
 # alerts: fire when an aircraft starts matching a rule (ENTER) and clear when
 # it stops (EXIT). Each rule's `match` combines conditions: different keys are
-# AND, a list within one key is OR. ENTER publishes adsb/alert/<rule>/<hex>;
-# a per-rule binary_sensor.adsb_alert_<rule> turns on while any aircraft matches.
+# AND, a list within one key is OR. ENTER publishes airspace/alert/<rule>/<hex>;
+# a per-rule binary_sensor.airspace_alert_<rule> turns on while any aircraft matches.
 # Match keys: flags, category, max_distance_nm, max_alt_agl_ft, watchpoint,
 # unseen_for_days.
 # (max_alt_agl_ft needs the watchpoint to have elevation_m; v1 AGL = MSL minus it.)
@@ -189,7 +189,7 @@ receivers:
 # --------------------------------------------------------------------------
 # photos — Planespotters aircraft photo enrichment (Phase 2c). Off by default.
 # When enabled, a photo URL (+ attribution) is looked up by hex and injected
-# into ALERT payloads only — never the high-cardinality adsb/aircraft/<hex>
+# into ALERT payloads only — never the high-cardinality airspace/aircraft/<hex>
 # wildcard. Cached in memory (no disk writes) and fails soft: a photo lookup
 # never blocks or breaks an alert. No API key required.
 # --------------------------------------------------------------------------

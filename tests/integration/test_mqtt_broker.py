@@ -29,7 +29,7 @@ from tests.integration.conftest import BrokerEndpoint, BrokerProbe
 pytestmark = pytest.mark.integration
 
 
-def _config(endpoint: BrokerEndpoint, *, base_topic: str = "adsb") -> MqttConfig:
+def _config(endpoint: BrokerEndpoint, *, base_topic: str = "airspace") -> MqttConfig:
     return MqttConfig(broker=endpoint.host, port=endpoint.port, base_topic=base_topic)
 
 

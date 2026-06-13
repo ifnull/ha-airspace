@@ -13,10 +13,10 @@ oldest message and increment ``adsb_mqtt_drops_total``.
 LWT and graceful shutdown:
 
 * The will message is configured at connect time:
-  ``topic=adsb/status, payload=offline, retain=True, qos=1``. If we
+  ``topic=airspace/status, payload=offline, retain=True, qos=1``. If we
   crash, the broker publishes that for us.
 * On graceful shutdown (``stop()`` called or ``run()`` cancelled) we
-  publish ``adsb/status: offline`` retained ourselves before exiting
+  publish ``airspace/status: offline`` retained ourselves before exiting
   the aiomqtt context. aiomqtt's ``__aexit__`` then sends MQTT
   DISCONNECT cleanly, which suppresses the LWT (broker won't fire it).
 * Either way HA sees the offline state. We deliberately publish
