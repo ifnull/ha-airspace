@@ -290,3 +290,41 @@ class TestRetentionPrune:
         await j._maybe_prune()  # gated, no-op
         assert j._last_prune == first_stamp  # unchanged
         await j.close()
+
+
+# ---------------------------------------------------------------------------
+# last_seen_for — substrate for history-aware alerts (Phase 5)
+# ---------------------------------------------------------------------------
+
+
+class TestLastSeen:
+    async def test_unknown_track_is_none(self, tmp_path: Path) -> None:
+        j = await _opened(_config(tmp_path))
+        assert j.last_seen_for("nope") is None
+        await j.close()
+
+    async def test_record_updates_in_memory_last_seen(self, tmp_path: Path) -> None:
+        # Visible immediately (before any flush), like first_seen_for.
+        j = await _opened(_config(tmp_path))
+        later = _T0 + timedelta(hours=2)
+        j.record("ae0001", "ae0001", _T0, later)
+        assert j.last_seen_for("ae0001") == later
+        await j.close()
+
+    async def test_last_seen_advances_max(self, tmp_path: Path) -> None:
+        j = await _opened(_config(tmp_path))
+        j.record("ae0001", "ae0001", _T0, _T0 + timedelta(hours=1))
+        j.record("ae0001", "ae0001", _T0, _T0 + timedelta(hours=3))
+        j.record("ae0001", "ae0001", _T0, _T0 + timedelta(hours=2))  # older, ignored
+        assert j.last_seen_for("ae0001") == _T0 + timedelta(hours=3)
+        await j.close()
+
+    async def test_warm_loads_after_restart(self, tmp_path: Path) -> None:
+        last = _T0 + timedelta(days=1)
+        j = await _opened(_config(tmp_path))
+        j.record("ae0001", "ae0001", _T0, last)
+        await j.close()
+
+        j2 = await _opened(_config(tmp_path))
+        assert j2.last_seen_for("ae0001") == last
+        await j2.close()

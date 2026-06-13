@@ -29,6 +29,7 @@ def _state(
     category: str | None = None,
     distance_home: float | None = None,
     alt_baro_ft: int | None = None,
+    prior_last_seen: datetime | None = None,
 ) -> AircraftState:
     obs = AircraftObservation(
         hex=hex_code,
@@ -43,6 +44,7 @@ def _state(
         state.flags = set(flags)
     if distance_home is not None:
         state.distance_to["home"] = distance_home
+    state.prior_last_seen = prior_last_seen
     return state
 
 
@@ -216,3 +218,66 @@ class TestActiveRules:
         enters = [e for e in events if e.transition is AlertTransition.ENTER]
         assert {e.track_id for e in enters} == {"ae0001", "ae0002"}
         assert ev.active_rules() == {"mil"}
+
+
+# ---------------------------------------------------------------------------
+# unseen_for_days — history-aware novelty (Phase 5)
+# ---------------------------------------------------------------------------
+
+
+class TestUnseenForDays:
+    def test_never_seen_matches(self) -> None:
+        # prior_last_seen None = never recorded = most novel -> matches.
+        match = MatchBlock(unseen_for_days=30)
+        assert rule_matches(
+            _state(prior_last_seen=None), match, elevation_m_for=_no_elevation, now=_T0
+        )
+
+    def test_seen_long_ago_matches(self) -> None:
+        match = MatchBlock(unseen_for_days=30)
+        old = _T0 - timedelta(days=40)
+        assert rule_matches(
+            _state(prior_last_seen=old), match, elevation_m_for=_no_elevation, now=_T0
+        )
+
+    def test_seen_recently_does_not_match(self) -> None:
+        match = MatchBlock(unseen_for_days=30)
+        recent = _T0 - timedelta(days=5)
+        assert not rule_matches(
+            _state(prior_last_seen=recent), match, elevation_m_for=_no_elevation, now=_T0
+        )
+
+    def test_boundary_exactly_n_days_matches(self) -> None:
+        # Exactly N days ago counts as "unseen for N days" (>= threshold).
+        match = MatchBlock(unseen_for_days=30)
+        boundary = _T0 - timedelta(days=30)
+        assert rule_matches(
+            _state(prior_last_seen=boundary), match, elevation_m_for=_no_elevation, now=_T0
+        )
+
+    def test_ands_with_flags(self) -> None:
+        # Novel AND military -> matches; novel but not military -> no.
+        match = MatchBlock(flags=["military"], unseen_for_days=30)
+        old = _T0 - timedelta(days=40)
+        assert rule_matches(
+            _state(flags={"military"}, prior_last_seen=old),
+            match,
+            elevation_m_for=_no_elevation,
+            now=_T0,
+        )
+        assert not rule_matches(
+            _state(flags={"civilian"}, prior_last_seen=old),
+            match,
+            elevation_m_for=_no_elevation,
+            now=_T0,
+        )
+
+    def test_recently_seen_military_does_not_match(self) -> None:
+        match = MatchBlock(flags=["military"], unseen_for_days=30)
+        recent = _T0 - timedelta(days=1)
+        assert not rule_matches(
+            _state(flags={"military"}, prior_last_seen=recent),
+            match,
+            elevation_m_for=_no_elevation,
+            now=_T0,
+        )

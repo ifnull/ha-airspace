@@ -82,6 +82,10 @@ class Journal:
         # The merger's restore lookup reads this in-memory map (a dict get),
         # never the DB — so a busy first poll does not hit disk per new track.
         self._first_seen: dict[str, datetime] = {}
+        # Warm-loaded + record()-maintained last_seen. Read by last_seen_for for
+        # history-aware alerts. Kept current on every record() (not just warm
+        # load) so a within-session re-acquire reads the recent sighting.
+        self._last_seen: dict[str, datetime] = {}
         # Pending writes, keyed by track_id so repeated updates within a flush
         # window collapse to one row (last_seen advances, first_seen min-wins).
         self._pending: dict[str, tuple[str | None, datetime, datetime]] = {}
@@ -130,16 +134,18 @@ class Journal:
     # ------------------------------------------------------------------
 
     async def warm_load(self) -> int:
-        """Bulk-read every known ``track_id -> first_seen`` into memory at
-        startup. Returns the count loaded. Call once after ``open()``."""
-        self._first_seen = await asyncio.to_thread(self._load_first_seen_sync)
+        """Bulk-read every known ``track_id -> (first_seen, last_seen)`` into
+        memory at startup. Returns the count loaded. Call once after ``open()``."""
+        self._first_seen, self._last_seen = await asyncio.to_thread(self._load_seen_sync)
         log.info("journal_warm_loaded", tracks=len(self._first_seen))
         return len(self._first_seen)
 
-    def _load_first_seen_sync(self) -> dict[str, datetime]:
+    def _load_seen_sync(self) -> tuple[dict[str, datetime], dict[str, datetime]]:
         assert self._conn is not None
-        rows = self._conn.execute("SELECT track_id, first_seen FROM track").fetchall()
-        return {track_id: _parse_dt(first_seen) for track_id, first_seen in rows}
+        rows = self._conn.execute("SELECT track_id, first_seen, last_seen FROM track").fetchall()
+        first = {track_id: _parse_dt(first_seen) for track_id, first_seen, _ in rows}
+        last = {track_id: _parse_dt(last_seen) for track_id, _, last_seen in rows}
+        return first, last
 
     def first_seen_for(self, track_id: str) -> datetime | None:
         """Restore lookup for the merger: the persisted ``first_seen`` for a
@@ -149,6 +155,14 @@ class Journal:
         if recorded is not None:
             return recorded[1]
         return self._first_seen.get(track_id)
+
+    def last_seen_for(self, track_id: str) -> datetime | None:
+        """The persisted ``last_seen`` for a track, or ``None`` if never
+        recorded. Warm-loaded and kept current by ``record()``, so it reflects
+        both prior sessions and earlier sightings this session. Read in-memory —
+        no disk IO. Used by history-aware alert criteria via the merger's
+        prior-last-seen capture at track creation."""
+        return self._last_seen.get(track_id)
 
     async def load_events(
         self, track_id: str | None = None
@@ -191,6 +205,10 @@ class Journal:
             first_seen = min(first_seen, prev_first)
             last_seen = max(last_seen, prev_last)
         self._pending[track_id] = (hex_code, first_seen, last_seen)
+        # Keep the in-memory last_seen current (max), so last_seen_for reflects
+        # this session's sightings, not just the warm-loaded boot snapshot.
+        known = self._last_seen.get(track_id)
+        self._last_seen[track_id] = last_seen if known is None else max(known, last_seen)
         self._maybe_trip_threshold()
 
     def record_event(self, track_id: str, kind: str, detail: str | None, at: datetime) -> None:
