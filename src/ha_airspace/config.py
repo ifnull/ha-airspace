@@ -413,6 +413,27 @@ class JournalConfig(BaseModel):
     """Flush early once this many records are buffered."""
 
 
+def _default_inject_into() -> list[Literal["alerts"]]:
+    return ["alerts"]
+
+
+class PhotosConfig(BaseModel):
+    """Planespotters aircraft-photo enrichment (Phase 2c). Off by default. When
+    enabled, a photo URL is looked up by hex and injected into alert payloads
+    only — never the high-cardinality wildcard topic. Cached in memory, fails
+    soft: a photo lookup never blocks or breaks an alert."""
+
+    model_config = _STRICT
+
+    enabled: bool = False
+    cache_ttl_days: float = Field(default=30.0, gt=0)
+    """How long a looked-up photo (or a confirmed absence) is cached before
+    refetch. In memory only — no disk writes."""
+    inject_into: list[Literal["alerts"]] = Field(default_factory=_default_inject_into)
+    """Which payloads carry the photo. Only ``alerts`` is valid today; the list
+    shape is forward-looking. Unknown targets are rejected at load."""
+
+
 # ---------------------------------------------------------------------------
 # Top-level Config
 # ---------------------------------------------------------------------------
@@ -440,6 +461,8 @@ class Config(BaseModel):
     journal: JournalConfig | None = None
     """SQLite history journal. Absent = no persistence (first_seen resets on
     restart). See ``JournalConfig``."""
+    photos: PhotosConfig = Field(default_factory=PhotosConfig)
+    """Planespotters photo enrichment for alert payloads. Off by default."""
 
     @model_validator(mode="after")
     def _watchpoint_names_unique(self) -> Self:
@@ -555,6 +578,7 @@ __all__ = [
     "JournalConfig",
     "MatchBlock",
     "MqttConfig",
+    "PhotosConfig",
     "PrometheusConfig",
     "ReceiverConfig",
     "ReceiverLocationConfig",

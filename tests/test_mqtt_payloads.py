@@ -28,7 +28,9 @@ from ha_airspace.models import (
 from ha_airspace.mqtt.payloads import (
     PAYLOAD_SCHEMA_VERSION,
     AircraftPayload,
+    AlertPayload,
     DronePayload,
+    PhotoPayload,
     ReceiverLocationPayload,
     ReceiverStatsPayload,
 )
@@ -311,3 +313,36 @@ class TestReceiverLocationPayload:
             "alt_m": 200.0,
             "source": "config",
         }
+
+
+# ---------------------------------------------------------------------------
+# AlertPayload — aircraft contract + optional photo (Phase 2c)
+# ---------------------------------------------------------------------------
+
+
+class TestAlertPayload:
+    def test_carries_all_aircraft_fields_plus_schema_version(self) -> None:
+        payload = AlertPayload.build(_make_state())
+        assert payload.hex == "ae0001"
+        assert payload.flight == "RCH171"
+        assert payload.schema_version == PAYLOAD_SCHEMA_VERSION
+
+    def test_photo_none_by_default(self) -> None:
+        assert AlertPayload.build(_make_state()).photo is None
+
+    def test_photo_injected(self) -> None:
+        photo = PhotoPayload(
+            thumbnail_url="https://t/img.jpg", link="https://p/1", photographer="Jane"
+        )
+        payload = AlertPayload.build(_make_state(), photo)
+        assert payload.photo is not None
+        assert payload.photo.thumbnail_url == "https://t/img.jpg"
+        data = json.loads(payload.model_dump_json())
+        assert data["photo"]["photographer"] == "Jane"
+        assert data["schema_version"] == 1
+
+    def test_aircraft_payload_has_no_photo_field(self) -> None:
+        # Photos ride alert payloads ONLY — the wildcard topic stays clean.
+        assert "photo" not in AircraftPayload.model_fields
+        data = json.loads(AircraftPayload.from_state(_make_state()).model_dump_json())
+        assert "photo" not in data

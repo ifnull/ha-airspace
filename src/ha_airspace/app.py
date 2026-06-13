@@ -29,6 +29,7 @@ import contextlib
 import signal
 from typing import TYPE_CHECKING
 
+import httpx
 import structlog
 
 from ha_airspace import __version__
@@ -41,6 +42,7 @@ from ha_airspace.merger import Merger
 from ha_airspace.metrics import MetricsRegistry
 from ha_airspace.mqtt.client import MqttClient
 from ha_airspace.mqtt.publisher import Publisher
+from ha_airspace.photos import PhotoEnricher
 from ha_airspace.receivers import (
     HttpJsonReceiver,
     ReceiverSource,
@@ -79,6 +81,7 @@ class App:
         tracker: AircraftTracker,
         db_loader: DatabaseLoader | None = None,
         journal: Journal | None = None,
+        photo_client: httpx.AsyncClient | None = None,
         metrics: MetricsRegistry | None = None,
     ) -> None:
         self._config = config
@@ -88,6 +91,9 @@ class App:
         self._tracker = tracker
         self._db_loader = db_loader
         self._journal = journal
+        # Long-lived client for photo lookups; closed on shutdown. None unless
+        # photo enrichment is enabled.
+        self._photo_client = photo_client
         self._metrics = metrics
 
         # Receiver name -> cached self-reported location (fetched once at
@@ -157,6 +163,9 @@ class App:
             await self._close_receivers()
             if self._journal is not None:
                 await self._journal.close()  # final flush
+            if self._photo_client is not None:
+                with contextlib.suppress(Exception):
+                    await self._photo_client.aclose()
             log.info("service_stopped")
 
     # ------------------------------------------------------------------
@@ -348,6 +357,23 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
         first_seen_for=journal.first_seen_for if journal is not None else None,
     )
 
+    # Photo enrichment: only when enabled. A dedicated long-lived client with a
+    # descriptive User-Agent (Planespotters asks for one) and a short timeout so
+    # a slow lookup never holds up an alert. App closes the client on shutdown.
+    photo_client: httpx.AsyncClient | None = None
+    photos: PhotoEnricher | None = None
+    if config.photos.enabled:
+        photo_client = httpx.AsyncClient(
+            timeout=config.service.http_timeout_s,
+            headers={
+                "User-Agent": f"ha-airspace/{__version__} (+https://github.com/ifnull/ha-airspace)"
+            },
+        )
+        photos = PhotoEnricher(
+            photo_client,
+            cache_ttl_s=config.photos.cache_ttl_days * 86400.0,
+        )
+
     tracker = AircraftTracker(
         publisher,
         config.watchpoints_runtime(),
@@ -355,6 +381,7 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
         enricher=Enricher(config.enrichment, db_store=db_store),
         alerts=alerts,
         journal=journal,
+        photos=photos,
         has_drone_source=any(rc.enabled for rc in config.remoteid),
         metrics=metrics,
     )
@@ -366,6 +393,7 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
         tracker=tracker,
         db_loader=db_loader,
         journal=journal,
+        photo_client=photo_client,
         metrics=metrics,
     )
 

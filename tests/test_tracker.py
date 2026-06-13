@@ -37,6 +37,7 @@ from ha_airspace.enrichment import Enricher
 from ha_airspace.journal import Journal
 from ha_airspace.metrics import MetricsRegistry
 from ha_airspace.models import AircraftObservation, AircraftState, DroneInfo, Watchpoint
+from ha_airspace.mqtt.payloads import PhotoPayload
 from ha_airspace.tracker import AircraftTracker
 
 # ---------------------------------------------------------------------------
@@ -56,6 +57,7 @@ class FakePublisher:
         self.purged: list[str] = []
         self.summaries: list[dict[str, Any]] = []
         self.alerts: list[tuple[str, str]] = []  # (rule, hex) ENTER publishes
+        self.alert_photos: list[tuple[str, Any]] = []  # (rule, photo) on ENTER
         self.alerts_cleared: list[tuple[str, str]] = []  # (rule, hex) EXIT clears
         self.alert_active: list[tuple[str, bool]] = []  # (rule, active)
         self.drones_published: list[AircraftState] = []
@@ -79,8 +81,9 @@ class FakePublisher:
         self.summaries.append({"count": count, "nearest": nearest, "count_by_flag": count_by_flag})
         return True
 
-    async def publish_alert(self, rule: str, state: AircraftState) -> None:
+    async def publish_alert(self, rule: str, state: AircraftState, *, photo: Any = None) -> None:
         self.alerts.append((rule, state.hex))
+        self.alert_photos.append((rule, photo))
 
     async def clear_alert(self, rule: str, hex_code: str) -> None:
         self.alerts_cleared.append((rule, hex_code))
@@ -711,3 +714,68 @@ class TestJournalEvents:
         )
         await tracker.process_poll([_obs("ae0001", category="A3")])
         assert tracker.tracked_count == 1  # no exception, flags still tracked
+
+
+# ---------------------------------------------------------------------------
+# Photo enrichment on alerts (Phase 2c)
+# ---------------------------------------------------------------------------
+
+
+class _StubPhotos:
+    """Records photo_for calls; returns a fixed photo (or None)."""
+
+    def __init__(self, photo: PhotoPayload | None) -> None:
+        self._photo = photo
+        self.calls: list[str] = []
+
+    async def photo_for(self, hex_code: str) -> PhotoPayload | None:
+        self.calls.append(hex_code)
+        return self._photo
+
+
+class TestAlertPhotos:
+    def _tracker(
+        self, publisher: FakePublisher, clock: Clock, photos: _StubPhotos | None
+    ) -> AircraftTracker:
+        enricher = Enricher(EnrichmentConfig(flags={"heavy": FlagConfig(categories=["A3"])}))
+        alerts = AlertEvaluator(
+            AlertsConfig(rules=[AlertRule(name="heavy_close", match=MatchBlock(flags=["heavy"]))]),
+            elevation_m_for=lambda _n: None,
+            clock=clock,
+        )
+        return AircraftTracker(
+            publisher,  # type: ignore[arg-type]
+            [_HOME],
+            enricher=enricher,
+            alerts=alerts,
+            photos=photos,  # type: ignore[arg-type]
+            clock=clock,
+        )
+
+    async def test_photo_passed_to_publish_alert_on_enter(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        photo = PhotoPayload(thumbnail_url="https://t/img.jpg", photographer="Jane")
+        stub = _StubPhotos(photo)
+        tracker = self._tracker(publisher, clock, stub)
+        await tracker.process_poll([_obs("ae0001", category="A3")])
+        assert stub.calls == ["ae0001"]  # looked up by hex
+        assert ("heavy_close", photo) in publisher.alert_photos
+
+    async def test_no_enricher_means_photo_none(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = self._tracker(publisher, clock, None)
+        await tracker.process_poll([_obs("ae0001", category="A3")])
+        # Alert still fires; photo is just None.
+        assert ("heavy_close", "ae0001") in publisher.alerts
+        assert publisher.alert_photos == [("heavy_close", None)]
+
+    async def test_miss_returns_none_but_alert_still_publishes(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        stub = _StubPhotos(None)  # no photo for this hex
+        tracker = self._tracker(publisher, clock, stub)
+        await tracker.process_poll([_obs("ae0001", category="A3")])
+        assert stub.calls == ["ae0001"]
+        assert ("heavy_close", None) in publisher.alert_photos

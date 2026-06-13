@@ -231,6 +231,38 @@ class DronePayload(BaseModel):
         )
 
 
+class PhotoPayload(BaseModel):
+    """An aircraft photo (Planespotters, Phase 2c) for injection into alert
+    payloads. ``link`` + ``photographer`` are the attribution Planespotters asks
+    consumers to display alongside the image."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    thumbnail_url: str
+    link: str | None = None
+    photographer: str | None = None
+
+
+class AlertPayload(AircraftPayload):
+    """The payload published to ``adsb/alert/<rule>/<track_id>``: the full
+    aircraft contract plus an optional photo.
+
+    Photos ride alert payloads only — never the high-cardinality wildcard
+    ``adsb/aircraft/<hex>`` topic — so the photo field lives here, not on
+    ``AircraftPayload``. Inherits ``schema_version`` and every aircraft field.
+    """
+
+    photo: PhotoPayload | None = None
+
+    @classmethod
+    def build(cls, state: AircraftState, photo: PhotoPayload | None = None) -> Self:
+        """Project an ``AircraftState`` (+ optional photo) into the alert
+        payload. Reuses ``AircraftPayload.from_state`` for the aircraft fields so
+        the two payloads can never drift."""
+        base = AircraftPayload.from_state(state)
+        return cls(**base.model_dump(), photo=photo)
+
+
 class ReceiverStatsPayload(BaseModel):
     """Per-receiver stats published to ``adsb/receiver/<name>/stats``.
 
@@ -294,7 +326,9 @@ class ReceiverLocationPayload(BaseModel):
 __all__ = [
     "PAYLOAD_SCHEMA_VERSION",
     "AircraftPayload",
+    "AlertPayload",
     "DronePayload",
+    "PhotoPayload",
     "ReceiverLocationPayload",
     "ReceiverStatsPayload",
 ]

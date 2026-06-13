@@ -26,6 +26,7 @@ from ha_airspace.config import (
     ConfigError,
     MatchBlock,
     MqttConfig,
+    PhotosConfig,
     ReceiverConfig,
     ReceiverLocationConfig,
     ServiceConfig,
@@ -615,3 +616,39 @@ class TestJournalConfig:
         base["journal"] = {"path": "/x", "typo": True}
         with pytest.raises(ValidationError, match="Extra inputs"):
             Config.model_validate(base)
+
+
+# ---------------------------------------------------------------------------
+# PhotosConfig (Phase 2c)
+# ---------------------------------------------------------------------------
+
+
+class TestPhotosConfig:
+    def test_defaults_off(self) -> None:
+        photos = PhotosConfig()
+        assert photos.enabled is False
+        assert photos.cache_ttl_days == 30.0
+        assert photos.inject_into == ["alerts"]
+
+    def test_absent_from_config_defaults_disabled(self) -> None:
+        cfg = Config.model_validate(_minimal_config_dict())
+        assert cfg.photos.enabled is False
+
+    def test_enabled_with_overrides(self) -> None:
+        d = _minimal_config_dict()
+        d["photos"] = {"enabled": True, "cache_ttl_days": 7}
+        cfg = Config.model_validate(d)
+        assert cfg.photos.enabled is True
+        assert cfg.photos.cache_ttl_days == 7
+
+    def test_rejects_unknown_inject_target(self) -> None:
+        with pytest.raises(ValidationError):
+            PhotosConfig.model_validate({"inject_into": ["wildcard"]})
+
+    def test_rejects_non_positive_ttl(self) -> None:
+        with pytest.raises(ValidationError):
+            PhotosConfig.model_validate({"cache_ttl_days": 0})
+
+    def test_strict_rejects_unknown_field(self) -> None:
+        with pytest.raises(ValidationError):
+            PhotosConfig.model_validate({"enabled": True, "typo": 1})
