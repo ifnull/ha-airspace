@@ -17,7 +17,12 @@ import math
 
 import pytest
 
-from ha_airspace.geo import EARTH_RADIUS_NM, bearing, haversine
+from ha_airspace.geo import (
+    EARTH_RADIUS_NM,
+    bearing,
+    closest_point_of_approach,
+    haversine,
+)
 
 # Canonical airport reference points (DD precision matches FAA database).
 LAX = (33.9425, -118.4081)
@@ -139,3 +144,40 @@ class TestEarthRadius:
         # This is a regression check: don't change the constant casually.
         # (Plain abs() compare instead of pytest.approx to dodge SIM300.)
         assert abs(EARTH_RADIUS_NM - 3440.065) < 0.001
+
+
+# ---------------------------------------------------------------------------
+# closest_point_of_approach (Phase 5 predictive)
+# ---------------------------------------------------------------------------
+
+_HOME = (30.0, -97.0)  # lat, lon
+
+
+class TestClosestPointOfApproach:
+    def test_head_on_passes_through_home(self) -> None:
+        # Aircraft due south of home, tracking north (000) -> flies straight to it.
+        ac_lat, ac_lon = 29.0, -97.0  # 60 nm south
+        cpa, eta = closest_point_of_approach(*_HOME, ac_lat, ac_lon, 0.0, 360.0)
+        assert cpa == pytest.approx(0.0, abs=1e-6)  # passes through home
+        assert eta == pytest.approx(600.0, rel=0.01)  # 60 nm at 360 kt = 600 s
+
+    def test_tangential_cpa_is_perpendicular_offset(self) -> None:
+        # Aircraft 60 nm south + 10 nm east of home, tracking due north (000):
+        # it stays 10 nm east, so CPA = 10 nm when it's abeam.
+        ac_lat = 29.0
+        ac_lon = -97.0 + 10.0 / (60.0 * math.cos(math.radians(30.0)))
+        cpa, eta = closest_point_of_approach(*_HOME, ac_lat, ac_lon, 0.0, 360.0)
+        assert cpa == pytest.approx(10.0, abs=0.05)
+        assert eta is not None
+        assert eta > 0
+
+    def test_departing_has_no_eta(self) -> None:
+        # 60 nm south of home but tracking south (180) -> moving away.
+        cpa, eta = closest_point_of_approach(*_HOME, 29.0, -97.0, 180.0, 360.0)
+        assert eta is None
+        assert cpa == pytest.approx(60.0, rel=0.01)  # current distance
+
+    def test_stationary_has_no_eta(self) -> None:
+        cpa, eta = closest_point_of_approach(*_HOME, 29.0, -97.0, 0.0, 0.0)
+        assert eta is None
+        assert cpa == pytest.approx(60.0, rel=0.01)

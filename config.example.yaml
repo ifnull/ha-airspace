@@ -171,6 +171,13 @@ receivers:
 #           flags: ["military"]
 #           unseen_for_days: 30            # only if not seen in the last 30 days
 #                                          # (history-aware — needs `journal`)
+#       - name: inbound_low
+#         match:
+#           max_closest_approach_nm: 5     # projected to pass within 5 nm of home
+#           within_eta_s: 600              # ...within 10 min (optional)
+#           max_alt_agl_ft: 10000          # ...and low (compose to cut cruise traffic)
+#           # predictive: relative to the primary watchpoint; only fires while the
+#           # track is approaching. Near an airport, tighten alt/distance to taste.
 
 # --------------------------------------------------------------------------
 # journal — SQLite history (Phase 2b). Optional; OMIT to disable persistence,

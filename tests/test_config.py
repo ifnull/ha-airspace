@@ -723,3 +723,28 @@ class TestOrbitConfig:
     def test_strict_rejects_unknown_field(self) -> None:
         with pytest.raises(ValidationError):
             OrbitConfig.model_validate({"enabled": True, "typo": 1})
+
+
+# ---------------------------------------------------------------------------
+# Predictive inbound criteria (Phase 5)
+# ---------------------------------------------------------------------------
+
+
+class TestInboundMatch:
+    def test_max_closest_approach_alone_is_valid(self) -> None:
+        MatchBlock.model_validate({"max_closest_approach_nm": 5})
+
+    def test_within_eta_requires_max_closest_approach(self) -> None:
+        with pytest.raises(ValidationError, match="within_eta_s"):
+            MatchBlock.model_validate({"within_eta_s": 600})
+
+    def test_within_eta_with_max_closest_approach_ok(self) -> None:
+        m = MatchBlock.model_validate({"max_closest_approach_nm": 5, "within_eta_s": 600})
+        assert m.max_closest_approach_nm == 5
+        assert m.within_eta_s == 600
+
+    def test_bounds_must_be_positive(self) -> None:
+        with pytest.raises(ValidationError):
+            MatchBlock.model_validate({"max_closest_approach_nm": 0})
+        with pytest.raises(ValidationError):
+            MatchBlock.model_validate({"max_closest_approach_nm": 5, "within_eta_s": 0})

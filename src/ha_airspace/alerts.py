@@ -111,7 +111,22 @@ def rule_matches(
             if (reference - prior) < timedelta(days=match.unseen_for_days):
                 return False
 
-    return True
+    # Inbound is the last criterion; fold it into the final return to stay within
+    # the return-count lint. Short-circuits so _passes_inbound only runs when set.
+    return match.max_closest_approach_nm is None or _passes_inbound(state, match)
+
+
+def _passes_inbound(state: AircraftState, match: MatchBlock) -> bool:
+    """Predicted closest approach within the bound, the track *approaching*
+    (eta present), and within the optional eta bound. A departing track (eta
+    None) never qualifies, even if it's currently close."""
+    cpa = state.predicted_closest_approach_nm
+    eta = state.predicted_eta_to_home_s
+    if cpa is None or eta is None:
+        return False
+    if cpa > match.max_closest_approach_nm:  # type: ignore[operator]  # guarded by caller
+        return False
+    return not (match.within_eta_s is not None and eta > match.within_eta_s)
 
 
 class AlertEvaluator:

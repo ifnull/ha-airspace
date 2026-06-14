@@ -111,3 +111,57 @@ a racetrack holding pattern still nets ~360 per circuit. Flag when
   zig-zag cancels → not; window prunes old samples; on_ground/no-heading skip;
   `forget` drops history. Config defaults + validation. Tracker: flag added
   post-enrich; purge forgets.
+
+---
+
+## Slice 3 — Predictive inbound
+
+**Goal:** populate the reserved `predicted_closest_approach_nm` /
+`predicted_eta_to_home_s` fields and add composable "inbound" alert criteria —
+without the airport-exclusion machinery DESIGN floated. The geometry is pure and
+risk-free; false-positive control is the operator's, via AND-ing the existing
+altitude/distance criteria (explicit over clever).
+
+**Geometry (closest point of approach):** in `geo.closest_point_of_approach`,
+project the aircraft into local equirectangular nm relative to a watchpoint, take
+the velocity vector from `track_deg` + `ground_speed_kt`, and solve
+`t_cpa = -(r·v)/(v·v)`:
+- approaching (`t_cpa > 0`) -> CPA distance at `t_cpa`; eta = `t_cpa` seconds
+- departing / stationary (`t_cpa <= 0` or speed 0) -> CPA = current distance, eta = `None`
+
+**Relative to the primary watchpoint** (the fields are `*_to_home`; "home" is the
+primary). Computed in the tracker alongside geometry; set to `None` unless the
+canonical obs has position + `track_deg` + `ground_speed_kt >= MIN_SPEED_KT` and
+is airborne (so parked/taxiing/hovering don't emit garbage).
+
+**Alert criteria (MatchBlock):**
+- `max_closest_approach_nm` — matches when the track is *approaching* (eta not
+  None) and its predicted CPA <= this. (A departing track never matches, even if
+  currently close.)
+- `within_eta_s` — optional; additionally require eta <= this. Only valid with
+  `max_closest_approach_nm` (validated).
+
+Compose with the existing keys, e.g. `max_closest_approach_nm: 5` +
+`max_alt_agl_ft: 10000` + `max_distance_nm: 40` = "heading to within 5 nm of
+home, below 10k ft, currently within 40 nm."
+
+### Changes
+- `geo.py` — `closest_point_of_approach(wp_lat, wp_lon, ac_lat, ac_lon,
+  track_deg, ground_speed_kt) -> (cpa_nm, eta_s | None)`.
+- `tracker.py` — compute the two predicted fields for the primary watchpoint in
+  the geometry pass; clear to `None` when prediction isn't possible.
+- `config.py` — `MatchBlock.max_closest_approach_nm` / `within_eta_s` (gt 0);
+  add to the "at least one condition" set; validator: `within_eta_s` needs
+  `max_closest_approach_nm`.
+- `alerts.py` — `rule_matches` inbound branch (approaching + CPA <= bound +
+  optional eta bound).
+- payloads already carry the fields (read-through) — now populated.
+- `config.example.yaml` — document an inbound rule.
+
+### Testing
+- geo: head-on (cpa~0, eta>0); tangential (cpa = perpendicular distance);
+  departing (eta None, cpa = current); stationary.
+- tracker: fields set for an approaching track; None when no track/speed/on_ground.
+- config: within_eta_s requires max_closest_approach_nm; both gt 0.
+- alerts: approaching within bound matches; departing doesn't; beyond eta
+  doesn't; ANDs with flags/altitude.
