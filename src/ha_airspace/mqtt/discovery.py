@@ -72,7 +72,7 @@ def build_discovery_payloads(
             component="sensor",
             object_id="count",
             body={
-                "name": "ADS-B Aircraft Count",
+                "name": "Aircraft Count",
                 "unique_id": "airspace_count",
                 "state_topic": f"{base}/summary/count",
                 "icon": "mdi:airplane",
@@ -90,7 +90,7 @@ def build_discovery_payloads(
             component="sensor",
             object_id="nearest",
             body={
-                "name": "ADS-B Nearest Aircraft",
+                "name": "Nearest Aircraft",
                 "unique_id": "airspace_nearest",
                 "state_topic": f"{base}/summary/nearest",
                 "value_template": ("{{ value_json.distance_to.home if value_json else None }}"),
@@ -127,7 +127,7 @@ def build_discovery_payloads(
                 component="binary_sensor",
                 object_id=f"alert_{rule.name}",
                 body={
-                    "name": f"ADS-B Alert {rule.name}",
+                    "name": f"Alert {rule.name}",
                     "unique_id": f"airspace_alert_{rule.name}",
                     "state_topic": f"{base}/alert/{rule.name}/active",
                     "payload_on": "on",
@@ -221,7 +221,7 @@ def _build_receiver_entities(
 ) -> list[tuple[str, dict[str, Any]]]:
     """Three entities per receiver: status, count, message rate."""
     rx_topic_base = f"{base}/receiver/{receiver.name}"
-    name_prefix = f"ADS-B Receiver {receiver.name}"
+    name_prefix = f"Receiver {receiver.name}"
 
     return [
         _entity_config(
@@ -288,7 +288,14 @@ def _entity_config(
 
     HA discovery topic format:
     ``<discovery_prefix>/<component>/<node_id>/<object_id>/config``
+
+    Pins the *entity_id* to the ``unique_id`` via the payload ``object_id`` key,
+    so HA generates ``<component>.<unique_id>`` (e.g. ``sensor.airspace_count``)
+    regardless of the device/friendly-name slug. Without it, HA derives the
+    entity_id from ``device.name`` + entity ``name``, which drifts whenever those
+    display strings change.
     """
+    body.setdefault("object_id", body["unique_id"])
     topic = f"{discovery_prefix}/{component}/{DISCOVERY_NODE_ID}/{object_id}/config"
     return topic, body
 
@@ -298,8 +305,8 @@ def _service_device_block(sw_version: str | None) -> dict[str, Any]:
     entities with the same identifier under one device card."""
     block: dict[str, Any] = {
         "identifiers": ["ha_airspace"],
-        "name": "ADS-B Enrich",
-        "manufacturer": "ifnull/ha-squitter",
+        "name": "Airspace",
+        "manufacturer": "ifnull/ha-airspace",
         "model": "ha-airspace",
     }
     if sw_version is not None:
