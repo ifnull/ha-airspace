@@ -24,6 +24,7 @@ from ha_airspace.config import (
     AuthConfig,
     Config,
     ConfigError,
+    DroneRegistryConfig,
     MatchBlock,
     MqttConfig,
     OrbitConfig,
@@ -748,3 +749,33 @@ class TestInboundMatch:
             MatchBlock.model_validate({"max_closest_approach_nm": 0})
         with pytest.raises(ValidationError):
             MatchBlock.model_validate({"max_closest_approach_nm": 5, "within_eta_s": 0})
+
+
+# ---------------------------------------------------------------------------
+# DroneRegistryConfig (FAA make/model enrichment)
+# ---------------------------------------------------------------------------
+
+
+class TestDroneRegistryConfig:
+    def test_defaults_off(self) -> None:
+        d = DroneRegistryConfig()
+        assert d.enabled is False
+        assert d.cache_ttl_days == 30.0
+
+    def test_absent_defaults_disabled(self) -> None:
+        assert Config.model_validate(_minimal_config_dict()).drone_registry.enabled is False
+
+    def test_enabled_with_override(self) -> None:
+        cfg = Config.model_validate(
+            {**_minimal_config_dict(), "drone_registry": {"enabled": True, "cache_ttl_days": 7}}
+        )
+        assert cfg.drone_registry.enabled is True
+        assert cfg.drone_registry.cache_ttl_days == 7
+
+    def test_ttl_must_be_positive(self) -> None:
+        with pytest.raises(ValidationError):
+            DroneRegistryConfig.model_validate({"cache_ttl_days": 0})
+
+    def test_strict_rejects_unknown_field(self) -> None:
+        with pytest.raises(ValidationError):
+            DroneRegistryConfig.model_validate({"enabled": True, "typo": 1})

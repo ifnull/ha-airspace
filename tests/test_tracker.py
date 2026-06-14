@@ -941,3 +941,80 @@ class TestPrediction:
         s = publisher.published[-1]
         assert s.predicted_closest_approach_nm is None
         assert s.predicted_eta_to_home_s is None
+
+
+# ---------------------------------------------------------------------------
+# Drone FAA registry enrichment (Phase 5+)
+# ---------------------------------------------------------------------------
+
+
+class _StubRegistry:
+    """Records lookups; returns fixed info (or None)."""
+
+    def __init__(self, info: dict[str, Any] | None) -> None:
+        self._info = info
+        self.calls: list[str] = []
+
+    async def lookup(self, serial: str) -> dict[str, Any] | None:
+        self.calls.append(serial)
+        return self._info
+
+
+def _tracker_with_registry(
+    publisher: FakePublisher, clock: Clock, registry: _StubRegistry | None
+) -> AircraftTracker:
+    return AircraftTracker(
+        publisher,  # type: ignore[arg-type]
+        [_HOME],
+        drone_registry=registry,  # type: ignore[arg-type]
+        has_drone_source=True,
+        clock=clock,
+    )
+
+
+class TestDroneRegistry:
+    async def test_serial_drone_gets_db_metadata(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        info = {"make": "DJI", "model": "Mavic 3", "status": "accepted"}
+        reg = _StubRegistry(info)
+        tracker = _tracker_with_registry(publisher, clock, reg)
+        await tracker.process_poll([_drone_obs("1581F5BK0001")])
+        assert reg.calls == ["1581F5BK0001"]  # looked up by the serial track_id
+        assert publisher.drones_published[-1].db_metadata == info
+
+    async def test_non_serial_drone_not_looked_up(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        reg = _StubRegistry({"make": "x"})
+        tracker = _tracker_with_registry(publisher, clock, reg)
+        obs = AircraftObservation(
+            track_id="sess-1",
+            hex=None,
+            non_icao=True,
+            observed_at=_T0,
+            seen_by="dump3411",
+            band="remoteid",
+            lat=30.34,
+            lon=-97.98,
+            drone=DroneInfo(id_type="session"),
+        )
+        await tracker.process_poll([obs])
+        assert reg.calls == []  # session ids aren't resolvable -> never queried
+        assert publisher.drones_published[-1].db_metadata == {}
+
+    async def test_no_registry_leaves_db_metadata_empty(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = _tracker_with_registry(publisher, clock, None)
+        await tracker.process_poll([_drone_obs("1581F5BK0001")])
+        assert publisher.drones_published[-1].db_metadata == {}
+
+    async def test_registry_miss_leaves_db_metadata_empty(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        reg = _StubRegistry(None)  # serial not in the registry
+        tracker = _tracker_with_registry(publisher, clock, reg)
+        await tracker.process_poll([_drone_obs("unknown-serial")])
+        assert reg.calls == ["unknown-serial"]
+        assert publisher.drones_published[-1].db_metadata == {}

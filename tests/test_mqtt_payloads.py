@@ -368,3 +368,21 @@ class TestMapAliases:
         data = json.loads(AircraftPayload.from_state(_make_state()).model_dump_json())
         assert data["latitude"] == 30.33
         assert data["longitude"] == -97.99
+
+
+# ---------------------------------------------------------------------------
+# DronePayload db_metadata (FAA make/model enrichment)
+# ---------------------------------------------------------------------------
+
+
+class TestDronePayloadDbMetadata:
+    def test_empty_by_default(self) -> None:
+        assert DronePayload.from_state(_make_drone_state()).db_metadata == {}
+
+    def test_carries_faa_fields(self) -> None:
+        state = _make_drone_state()
+        state.db_metadata = {"make": "DJI", "model": "Mavic 3", "status": "accepted"}
+        payload = DronePayload.from_state(state)
+        assert payload.db_metadata["make"] == "DJI"
+        data = json.loads(payload.model_dump_json())
+        assert data["db_metadata"]["model"] == "Mavic 3"

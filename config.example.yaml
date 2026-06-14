@@ -217,3 +217,16 @@ receivers:
 #   enabled: true
 #   window_s: 120                   # look back this far for accumulated turn
 #   min_turn_deg: 360               # 360 = a full circle; lower = looser loiter
+
+# --------------------------------------------------------------------------
+# drone_registry — FAA UAS make/model enrichment for drones (off by default).
+# When enabled, a drone's broadcast serial (id_type: serial) is looked up
+# against the FAA UAS Declaration-of-Compliance registry to add make / model /
+# status to the drone payload (db_metadata). Live per-serial lookup (no key),
+# cached in memory; fails soft. Only serial ids resolve — session/uuid/caa_reg
+# don't. This is compliance data, NOT operator identity (operator *location*
+# still comes from the Remote ID broadcast).
+# --------------------------------------------------------------------------
+# drone_registry:
+#   enabled: true
+#   cache_ttl_days: 30              # how long a serial lookup (hit or miss) is cached

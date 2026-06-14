@@ -36,6 +36,7 @@ from ha_airspace import __version__
 from ha_airspace.alerts import AlertEvaluator
 from ha_airspace.config import Config
 from ha_airspace.databases import DatabaseLoader, DatabaseStore
+from ha_airspace.drone_registry import DroneRegistry
 from ha_airspace.enrichment import Enricher
 from ha_airspace.journal import Journal
 from ha_airspace.merger import Merger
@@ -83,6 +84,7 @@ class App:
         db_loader: DatabaseLoader | None = None,
         journal: Journal | None = None,
         photo_client: httpx.AsyncClient | None = None,
+        drone_client: httpx.AsyncClient | None = None,
         metrics: MetricsRegistry | None = None,
     ) -> None:
         self._config = config
@@ -92,9 +94,10 @@ class App:
         self._tracker = tracker
         self._db_loader = db_loader
         self._journal = journal
-        # Long-lived client for photo lookups; closed on shutdown. None unless
-        # photo enrichment is enabled.
+        # Long-lived enrichment HTTP clients; closed on shutdown. None unless the
+        # respective feature (photos / drone registry) is enabled.
         self._photo_client = photo_client
+        self._drone_client = drone_client
         self._metrics = metrics
 
         # Receiver name -> cached self-reported location (fetched once at
@@ -164,9 +167,10 @@ class App:
             await self._close_receivers()
             if self._journal is not None:
                 await self._journal.close()  # final flush
-            if self._photo_client is not None:
-                with contextlib.suppress(Exception):
-                    await self._photo_client.aclose()
+            for enrich_client in (self._photo_client, self._drone_client):
+                if enrich_client is not None:
+                    with contextlib.suppress(Exception):
+                        await enrich_client.aclose()
             log.info("service_stopped")
 
     # ------------------------------------------------------------------
@@ -362,18 +366,32 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
     # Photo enrichment: only when enabled. A dedicated long-lived client with a
     # descriptive User-Agent (Planespotters asks for one) and a short timeout so
     # a slow lookup never holds up an alert. App closes the client on shutdown.
+    user_agent = f"ha-airspace/{__version__} (+https://github.com/ifnull/ha-airspace)"
+
     photo_client: httpx.AsyncClient | None = None
     photos: PhotoEnricher | None = None
     if config.photos.enabled:
         photo_client = httpx.AsyncClient(
             timeout=config.service.http_timeout_s,
-            headers={
-                "User-Agent": f"ha-airspace/{__version__} (+https://github.com/ifnull/ha-airspace)"
-            },
+            headers={"User-Agent": user_agent},
         )
         photos = PhotoEnricher(
             photo_client,
             cache_ttl_s=config.photos.cache_ttl_days * 86400.0,
+        )
+
+    # FAA UAS make/model lookup for drones — its own long-lived client, same
+    # pattern as photos. Closed on shutdown.
+    drone_client: httpx.AsyncClient | None = None
+    drone_registry: DroneRegistry | None = None
+    if config.drone_registry.enabled:
+        drone_client = httpx.AsyncClient(
+            timeout=config.service.http_timeout_s,
+            headers={"User-Agent": user_agent},
+        )
+        drone_registry = DroneRegistry(
+            drone_client,
+            cache_ttl_s=config.drone_registry.cache_ttl_days * 86400.0,
         )
 
     orbit = OrbitDetector(config.orbit) if config.orbit.enabled else None
@@ -387,6 +405,7 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
         journal=journal,
         photos=photos,
         orbit=orbit,
+        drone_registry=drone_registry,
         has_drone_source=any(rc.enabled for rc in config.remoteid),
         metrics=metrics,
     )
@@ -399,6 +418,7 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
         db_loader=db_loader,
         journal=journal,
         photo_client=photo_client,
+        drone_client=drone_client,
         metrics=metrics,
     )
 

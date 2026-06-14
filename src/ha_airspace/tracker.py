@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from ha_airspace.alerts import AlertEvaluator, AlertTransition
+from ha_airspace.drone_registry import DroneRegistry
 from ha_airspace.enrichment import Enricher
 from ha_airspace.geo import bearing, closest_point_of_approach, haversine
 from ha_airspace.journal import Journal
@@ -104,6 +105,7 @@ class AircraftTracker:
         journal: Journal | None = None,
         photos: PhotoEnricher | None = None,
         orbit: OrbitDetector | None = None,
+        drone_registry: DroneRegistry | None = None,
         has_drone_source: bool = False,
         metrics: MetricsRegistry | None = None,
         clock: Callable[[], datetime] = _default_clock,
@@ -120,6 +122,7 @@ class AircraftTracker:
         self._journal = journal
         self._photos = photos
         self._orbit = orbit
+        self._drone_registry = drone_registry
         # Only publish the drone summary when a Remote ID source is configured,
         # so ADS-B-only installs don't get spurious empty drone topics.
         self._has_drone_source = has_drone_source
@@ -289,6 +292,7 @@ class AircraftTracker:
                 log.debug("track_purged", track_id=track_id)
                 continue
             if is_drone:
+                await self._enrich_drone(state)
                 await self._publisher.publish_drone(state)
             else:
                 await self._publisher.publish_aircraft(state)
@@ -331,6 +335,20 @@ class AircraftTracker:
         if self._photos is None or state.hex is None:
             return None
         return await self._photos.photo_for(state.hex)
+
+    async def _enrich_drone(self, state: AircraftState) -> None:
+        """Populate ``state.db_metadata`` with FAA make/model for a serial-typed
+        drone, when the registry is configured. Only ``id_type == "serial"`` is
+        resolvable (the broadcast serial is the track_id); session/uuid/caa_reg
+        ids have nothing to look up. Cached + fails-soft in the registry."""
+        if self._drone_registry is None:
+            return
+        drone = state.canonical.drone
+        if drone is None or drone.id_type != "serial":
+            return
+        info = await self._drone_registry.lookup(state.track_id)
+        if info is not None:
+            state.db_metadata = info
 
     async def _publish_summary(self) -> None:
         # Aircraft and drones are counted + "nearest"-ranked separately: the
