@@ -346,3 +346,25 @@ class TestAlertPayload:
         assert "photo" not in AircraftPayload.model_fields
         data = json.loads(AircraftPayload.from_state(_make_state()).model_dump_json())
         assert "photo" not in data
+
+
+# ---------------------------------------------------------------------------
+# HA-map aliases: latitude/longitude mirror lat/lon (dashboard polish)
+# ---------------------------------------------------------------------------
+
+
+class TestMapAliases:
+    def test_aircraft_latitude_longitude_mirror_lat_lon(self) -> None:
+        payload = AircraftPayload.from_state(_make_state())
+        assert payload.latitude == payload.lat == 30.33
+        assert payload.longitude == payload.lon == -97.99
+
+    def test_drone_latitude_longitude_mirror_lat_lon(self) -> None:
+        payload = DronePayload.from_state(_make_drone_state())
+        assert payload.latitude == payload.lat == 30.34
+        assert payload.longitude == payload.lon == -97.98
+
+    def test_aliases_in_json_for_map_card(self) -> None:
+        data = json.loads(AircraftPayload.from_state(_make_state()).model_dump_json())
+        assert data["latitude"] == 30.33
+        assert data["longitude"] == -97.99

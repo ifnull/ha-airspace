@@ -135,6 +135,10 @@ def build_discovery_payloads(
                     "state_topic": f"{base}/alert/{rule.name}/active",
                     "payload_on": "on",
                     "payload_off": "off",
+                    # Triggering track's summary (flight, distance, entity_picture
+                    # from the Planespotters photo) -> entity attributes, for a
+                    # picture/glance alert card.
+                    "json_attributes_topic": f"{base}/alert/{rule.name}/info",
                     "device_class": "safety",
                     "availability_topic": availability_topic,
                     "payload_available": "online",
