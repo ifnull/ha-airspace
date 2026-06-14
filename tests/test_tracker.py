@@ -40,7 +40,7 @@ from ha_airspace.metrics import MetricsRegistry
 from ha_airspace.models import AircraftObservation, AircraftState, DroneInfo, Watchpoint
 from ha_airspace.mqtt.payloads import PhotoPayload
 from ha_airspace.orbit import OrbitDetector
-from ha_airspace.tracker import AircraftTracker
+from ha_airspace.tracker import _FLAG_FEED_MAX, AircraftTracker
 
 # ---------------------------------------------------------------------------
 # Fakes
@@ -79,8 +79,16 @@ class FakePublisher:
         count: int,
         nearest: AircraftState | None,
         count_by_flag: dict[str, int] | None = None,
+        flag_feeds: dict[str, Any] | None = None,
     ) -> bool:
-        self.summaries.append({"count": count, "nearest": nearest, "count_by_flag": count_by_flag})
+        self.summaries.append(
+            {
+                "count": count,
+                "nearest": nearest,
+                "count_by_flag": count_by_flag,
+                "flag_feeds": flag_feeds,
+            }
+        )
         return True
 
     async def publish_alert(self, rule: str, state: AircraftState, *, photo: Any = None) -> None:
@@ -351,6 +359,7 @@ class TestNearest:
             "count": 0,
             "nearest": None,
             "count_by_flag": {},
+            "flag_feeds": {},
         }
 
 
@@ -455,6 +464,80 @@ class TestSummary:
         clock.advance(1.0)
         await tracker.process_poll([_obs("ae0001", at=clock.now, squawk=None)])
         assert publisher.summaries[-1]["count_by_flag"] == {}
+
+
+class TestFlagFeeds:
+    def _tracker(
+        self, publisher: FakePublisher, clock: Clock, *, feed_flags: list[str]
+    ) -> AircraftTracker:
+        enricher = Enricher(
+            EnrichmentConfig(
+                flags={
+                    "heavy": FlagConfig(categories=["A3"]),
+                    "emergency": FlagConfig(squawks=["7700"]),
+                }
+            )
+        )
+        return AircraftTracker(
+            publisher,  # type: ignore[arg-type]
+            [_HOME],
+            enricher=enricher,
+            feed_flags=feed_flags,
+            clock=clock,
+        )
+
+    async def test_no_feed_flags_publishes_no_feeds(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = self._tracker(publisher, clock, feed_flags=[])
+        await tracker.process_poll([_obs("ae0001", category="A3")])
+        assert publisher.summaries[-1]["flag_feeds"] == {}
+
+    async def test_configured_flag_always_present_even_when_empty(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = self._tracker(publisher, clock, feed_flags=["heavy", "emergency"])
+        await tracker.process_poll([_obs("ae0001", category="A1")])  # matches neither
+        feeds = publisher.summaries[-1]["flag_feeds"]
+        assert set(feeds) == {"heavy", "emergency"}
+        assert feeds["heavy"].count == 0
+        assert feeds["heavy"].aircraft == []
+
+    async def test_feed_lists_matching_aircraft_with_detail(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = self._tracker(publisher, clock, feed_flags=["heavy"])
+        await tracker.process_poll([_obs("ae0001", category="A3", squawk="1200")])
+        feed = publisher.summaries[-1]["flag_feeds"]["heavy"]
+        assert feed.count == 1
+        (row,) = feed.aircraft
+        assert row.hex == "ae0001"
+        assert row.aircraft_type is None  # no DB; type unset
+        assert row.alt_baro_ft == 35000
+        assert row.squawk == "1200"
+        assert "heavy" in row.flags
+        assert row.distance_nm is not None
+        assert row.distance_nm > 0
+        assert feed.watchpoint == "home"
+
+    async def test_feed_sorted_nearest_first(self, publisher: FakePublisher, clock: Clock) -> None:
+        tracker = self._tracker(publisher, clock, feed_flags=["heavy"])
+        # Two heavies: ae0002 is closer to home than ae0001.
+        far = _obs("ae0001", category="A3", lat=31.50, lon=-97.99)
+        near = _obs("ae0002", category="A3", lat=30.40, lon=-97.99)
+        await tracker.process_poll([far, near])
+        rows = publisher.summaries[-1]["flag_feeds"]["heavy"].aircraft
+        assert [r.hex for r in rows] == ["ae0002", "ae0001"]
+
+    async def test_feed_caps_list_but_counts_all(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = self._tracker(publisher, clock, feed_flags=["heavy"])
+        obs = [_obs(f"ae{i:04x}", category="A3") for i in range(_FLAG_FEED_MAX + 5)]
+        await tracker.process_poll(obs)
+        feed = publisher.summaries[-1]["flag_feeds"]["heavy"]
+        assert feed.count == _FLAG_FEED_MAX + 5
+        assert len(feed.aircraft) == _FLAG_FEED_MAX
 
 
 # ---------------------------------------------------------------------------

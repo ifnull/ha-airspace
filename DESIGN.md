@@ -420,7 +420,12 @@ airspace/
     ├── nearest                            # JSON: closest aircraft (any)
     ├── nearest_interesting                # JSON: closest matching any flag
     ├── count                              # int: total aircraft in coverage
-    └── count_by_flag                      # JSON: {military: 0, interesting: 2, ...}
+    ├── count_by_flag                      # JSON: {military: 0, interesting: 2, ...}
+    └── by_flag/
+        └── <flag>                         # JSON: {flag, count, watchpoint,
+                                           #   aircraft: [capped, nearest-first
+                                           #   rows w/ alt/dist/brg/type/squawk]}
+                                           # one per configured flag (+ orbiting)
 ```
 
 **Publication strategy:**
@@ -434,7 +439,7 @@ airspace/
 explicit anti-goal):
 
 - Per-receiver: `binary_sensor` for status, `sensor` for message rate, `sensor` for aircraft count.
-- Service-wide: `sensor` for nearest aircraft (state = distance, attributes = full aircraft), `sensor` for total count, `sensor` per flag for count-by-flag.
+- Service-wide: `sensor` for nearest aircraft (state = distance, attributes = full aircraft), `sensor` for total count, `sensor` per configured flag (state = count, attributes = a capped, distance-sorted list of the matching aircraft — backs the per-flag "watched aircraft" cards without per-aircraft entities).
 - Per-alert-rule: `binary_sensor` that's `on` when the rule matches anything.
 
 This gives users a working HA experience with zero template writing while

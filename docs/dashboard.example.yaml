@@ -1,4 +1,4 @@
-# Example Home Assistant dashboard for ha-airspace (v0.2.7+).
+# Example Home Assistant dashboard for ha-airspace (v0.2.11+).
 #
 # Built entirely from the entities the service publishes via MQTT discovery — no
 # custom card. Two ways to use it:
@@ -10,7 +10,13 @@
 # the Map card works with NO template sensors. (Only the optional drone-OPERATOR
 # marker still needs one tiny template — see the note at the bottom.)
 #
+# As of v0.2.11 each configured flag gets a sensor.airspace_flag_<flag> whose
+# state is the count and whose `aircraft` attribute is a distance-sorted list
+# (alt / distance / type / squawk / flags). The "Watched aircraft" cards below
+# render those as tables — replace the flag names with YOURS from enrichment.flags.
+#
 # Replace ids to match YOURS:
+#   - sensor.airspace_flag_<flag>           -> your enrichment.flags names
 #   - binary_sensor.airspace_alert_<rule>   -> your alert rule names
 #   - *_receiver_<name>_*                    -> your receiver names
 #     (HA slugifies "home-1090" -> "home_1090")
@@ -30,7 +36,8 @@ views:
           - entity: sensor.airspace_nearest_drone
           - entity: zone.home
 
-      # At-a-glance counts.
+      # At-a-glance counts. The flag sensors (state = count) sit alongside the
+      # totals; tap one to open the matching aircraft list in its attributes.
       - type: glance
         title: Overview
         entities:
@@ -40,9 +47,17 @@ views:
             name: Drones
           - entity: sensor.airspace_nearest_aircraft
             name: Nearest (nm)
+          - entity: sensor.airspace_flag_military
+            name: Military
+          - entity: sensor.airspace_flag_interesting
+            name: Interesting
+          - entity: sensor.airspace_flag_ladd
+            name: LADD
 
       # Nearest aircraft detail, templated from the sensor's attributes
       # (the full payload rides as attributes via json_attributes_topic).
+      # Shows the same fields the map popup can't: altitude, distance, bearing,
+      # type, squawk, flags, and the predictive closest-approach.
       - type: markdown
         title: Nearest aircraft
         content: >
@@ -51,16 +66,70 @@ views:
           {% set db = state_attr(s, 'db_metadata') or {} %}
           {% set brg = (state_attr(s, 'bearing_to') or {}).get('home') %}
           {% set cpa = state_attr(s, 'predicted_closest_approach_nm') %}
+          {% set sq = state_attr(s, 'squawk') %}
           **{{ state_attr(s, 'flight') or state_attr(s, 'hex') }}**
           {{ db.get('model') or state_attr(s, 'aircraft_type') or '' }}
           {{ ' · ' ~ db.get('ownop') if db.get('ownop') else '' }}
 
           {{ states(s) }} nm{{ ', brg ' ~ brg | round(0) ~ '°' if brg is not none else '' }}
           · {{ state_attr(s, 'alt_baro_ft') or '?' }} ft
+          {% if sq %} · squawk {{ sq }}{% endif %}
           {% if cpa is not none %} · CPA {{ cpa | round(1) }} nm{% endif %}
           {% if state_attr(s, 'flags') %} · **{{ state_attr(s, 'flags') | join(', ') }}**{% endif %}
           {% else %}
           No aircraft in range.
+          {% endif %}
+
+      # Watched aircraft — one table per flag. The state is the count; the
+      # `aircraft` attribute is a distance-sorted list of matching aircraft, each
+      # with the fields you asked to see everywhere: flight, type, alt, distance,
+      # bearing, squawk. Duplicate this card per flag and change `flag` + title.
+      # (drone make/model rides db_metadata, not shown here — see the drone card.)
+      - type: markdown
+        title: Military aircraft
+        content: >
+          {% set s = 'sensor.airspace_flag_military' %}
+          {% set rows = state_attr(s, 'aircraft') or [] %}
+          {% if rows %}
+          | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk |
+          |---|---|--:|--:|--:|--:|
+          {% for a in rows -%}
+          | {{ a.flight or a.hex }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} |
+          {% endfor %}
+          {% else %}
+          None right now.
+          {% endif %}
+
+      # Same card for the `interesting` flag — change the entity + title only.
+      - type: markdown
+        title: Interesting aircraft
+        content: >
+          {% set s = 'sensor.airspace_flag_interesting' %}
+          {% set rows = state_attr(s, 'aircraft') or [] %}
+          {% if rows %}
+          | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk |
+          |---|---|--:|--:|--:|--:|
+          {% for a in rows -%}
+          | {{ a.flight or a.hex }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} |
+          {% endfor %}
+          {% else %}
+          None right now.
+          {% endif %}
+
+      # ...and the `ladd` (privacy/LADD) flag.
+      - type: markdown
+        title: LADD aircraft
+        content: >
+          {% set s = 'sensor.airspace_flag_ladd' %}
+          {% set rows = state_attr(s, 'aircraft') or [] %}
+          {% if rows %}
+          | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk |
+          |---|---|--:|--:|--:|--:|
+          {% for a in rows -%}
+          | {{ a.flight or a.hex }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} |
+          {% endfor %}
+          {% else %}
+          None right now.
           {% endif %}
 
       # Alert card with the Planespotters photo. Shows only while the rule is

@@ -30,6 +30,7 @@ from ha_airspace.mqtt.payloads import (
     AircraftPayload,
     AlertPayload,
     DronePayload,
+    FlagFeedPayload,
     PhotoPayload,
     ReceiverLocationPayload,
     ReceiverStatsPayload,
@@ -290,8 +291,10 @@ class Publisher:
         count: int,
         nearest: AircraftState | None,
         count_by_flag: dict[str, int] | None = None,
+        flag_feeds: dict[str, FlagFeedPayload] | None = None,
     ) -> bool:
-        """Publish ``airspace/summary/{count, nearest, count_by_flag}``.
+        """Publish ``airspace/summary/{count, nearest, count_by_flag}`` plus a
+        ``summary/by_flag/<flag>`` topic for each entry in ``flag_feeds``.
 
         Globally throttled (one summary publish per ``mqtt.publish_summary_min_interval_s``).
         Returns True if published, False if throttled.
@@ -299,6 +302,11 @@ class Publisher:
         ``nearest=None`` publishes empty-retained on the nearest topic
         so HA's Nearest Aircraft sensor goes unavailable rather than
         showing stale data when the airspace empties.
+
+        ``flag_feeds`` is published retained per flag (a bounded, distance-sorted
+        list of matching aircraft) backing the per-flag ``sensor.airspace_flag_*``
+        entities. Empty feeds are still published (count 0, empty list) so the
+        sensor reads 0 rather than going unavailable when nothing matches.
         """
         now = self._clock()
         if (now - self._last_summary_publish) < self._summary_min_interval:
@@ -331,6 +339,14 @@ class Publisher:
             retain=True,
             topic_class="summary",
         )
+
+        for flag, feed in (flag_feeds or {}).items():
+            await self._client.publish(
+                f"{self._base}/summary/by_flag/{flag}",
+                feed.model_dump_json(),
+                retain=True,
+                topic_class="summary",
+            )
         return True
 
     # ------------------------------------------------------------------
