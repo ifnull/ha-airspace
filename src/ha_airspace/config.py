@@ -306,6 +306,14 @@ class MatchBlock(BaseModel):
     """History-aware (Phase 5): matches only when the track has NOT been seen in
     the last this-many days — i.e. it is new (never recorded) or returning after
     an absence. Requires ``journal`` to be configured (validated at load)."""
+    max_closest_approach_nm: float | None = Field(default=None, gt=0)
+    """Predictive (Phase 5): matches when the track is *approaching* the primary
+    watchpoint and its projected closest approach is at or within this distance.
+    A departing track never matches. Compose with ``max_alt_agl_ft`` /
+    ``max_distance_nm`` to exclude cruise / out-of-range traffic."""
+    within_eta_s: float | None = Field(default=None, gt=0)
+    """Optional bound on the predicted time-to-closest-approach (seconds). Only
+    valid together with ``max_closest_approach_nm``."""
 
     @model_validator(mode="after")
     def _at_least_one_condition(self) -> Self:
@@ -317,16 +325,20 @@ class MatchBlock(BaseModel):
                 self.max_distance_nm,
                 self.max_alt_agl_ft,
                 self.unseen_for_days,
+                self.max_closest_approach_nm,
             )
         ):
             raise ValueError(
-                "alert match must set at least one of "
-                "flags / category / max_distance_nm / max_alt_agl_ft / unseen_for_days"
+                "alert match must set at least one of flags / category / "
+                "max_distance_nm / max_alt_agl_ft / unseen_for_days / "
+                "max_closest_approach_nm"
             )
         for name in ("flags", "category"):
             val = getattr(self, name)
             if val is not None and not val:
                 raise ValueError(f"alert match '{name}' must be a non-empty list")
+        if self.within_eta_s is not None and self.max_closest_approach_nm is None:
+            raise ValueError("alert match 'within_eta_s' requires 'max_closest_approach_nm'")
         return self
 
 

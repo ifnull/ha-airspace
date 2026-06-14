@@ -281,3 +281,46 @@ class TestUnseenForDays:
             elevation_m_for=_no_elevation,
             now=_T0,
         )
+
+
+# ---------------------------------------------------------------------------
+# Predictive inbound (Phase 5)
+# ---------------------------------------------------------------------------
+
+
+def _inbound_state(cpa: float | None, eta: float | None, **kw: object) -> AircraftState:
+    s = _state(**kw)  # type: ignore[arg-type]
+    s.predicted_closest_approach_nm = cpa
+    s.predicted_eta_to_home_s = eta
+    return s
+
+
+class TestInbound:
+    def test_approaching_within_bound_matches(self) -> None:
+        match = MatchBlock(max_closest_approach_nm=5)
+        assert rule_matches(_inbound_state(3.0, 300.0), match, elevation_m_for=_no_elevation)
+
+    def test_beyond_bound_does_not_match(self) -> None:
+        match = MatchBlock(max_closest_approach_nm=5)
+        assert not rule_matches(_inbound_state(8.0, 300.0), match, elevation_m_for=_no_elevation)
+
+    def test_departing_never_matches(self) -> None:
+        # eta None = departing, even if currently close.
+        match = MatchBlock(max_closest_approach_nm=5)
+        assert not rule_matches(_inbound_state(2.0, None), match, elevation_m_for=_no_elevation)
+
+    def test_no_prediction_does_not_match(self) -> None:
+        match = MatchBlock(max_closest_approach_nm=5)
+        assert not rule_matches(_inbound_state(None, None), match, elevation_m_for=_no_elevation)
+
+    def test_within_eta_bound(self) -> None:
+        match = MatchBlock(max_closest_approach_nm=5, within_eta_s=600)
+        assert rule_matches(_inbound_state(3.0, 300.0), match, elevation_m_for=_no_elevation)
+        assert not rule_matches(_inbound_state(3.0, 900.0), match, elevation_m_for=_no_elevation)
+
+    def test_ands_with_flags(self) -> None:
+        match = MatchBlock(flags=["military"], max_closest_approach_nm=5)
+        approaching_mil = _inbound_state(3.0, 300.0, flags={"military"})
+        approaching_civ = _inbound_state(3.0, 300.0, flags={"civilian"})
+        assert rule_matches(approaching_mil, match, elevation_m_for=_no_elevation)
+        assert not rule_matches(approaching_civ, match, elevation_m_for=_no_elevation)

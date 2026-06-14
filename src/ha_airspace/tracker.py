@@ -30,7 +30,7 @@ import structlog
 
 from ha_airspace.alerts import AlertEvaluator, AlertTransition
 from ha_airspace.enrichment import Enricher
-from ha_airspace.geo import bearing, haversine
+from ha_airspace.geo import bearing, closest_point_of_approach, haversine
 from ha_airspace.journal import Journal
 from ha_airspace.merger import Merger
 from ha_airspace.metrics import MetricsRegistry
@@ -47,6 +47,10 @@ log = structlog.get_logger(__name__)
 _KNOWN_BANDS: tuple[str, ...] = ("1090", "978")
 """Bands the active-aircraft gauge always reports, so a band emptying out
 sets its gauge to 0 rather than leaving a stale value in Grafana."""
+
+_MIN_PREDICT_SPEED_KT: float = 40.0
+"""Below this ground speed the track is too slow for a meaningful closest-
+approach projection (taxiing, hovering, jitter), so prediction is skipped."""
 
 
 def _default_clock() -> datetime:
@@ -213,19 +217,46 @@ class AircraftTracker:
         return watchpoints[0]
 
     def _recompute_geometry(self, state: AircraftState) -> None:
-        """Fill ``distance_to`` / ``bearing_to`` for every watchpoint from
-        the canonical position. Clears them when the canonical observation
-        has no position (e.g. an aircraft broadcasting ident but not yet a
-        fix) so a stale distance never lingers."""
+        """Fill ``distance_to`` / ``bearing_to`` for every watchpoint, and the
+        predictive ``predicted_closest_approach_nm`` / ``predicted_eta_to_home_s``
+        for the primary watchpoint, from the canonical position. Clears them all
+        when the canonical observation has no position (e.g. an aircraft
+        broadcasting ident but not yet a fix) so a stale value never lingers."""
         canonical = state.canonical
         if canonical.lat is None or canonical.lon is None:
             state.distance_to.clear()
             state.bearing_to.clear()
+            state.predicted_closest_approach_nm = None
+            state.predicted_eta_to_home_s = None
             return
         for wp in self._watchpoints:
             state.distance_to[wp.name] = haversine(wp.lat, wp.lon, canonical.lat, canonical.lon)
             # Bearing from the watchpoint toward the aircraft: "look that way".
             state.bearing_to[wp.name] = bearing(wp.lat, wp.lon, canonical.lat, canonical.lon)
+        self._recompute_prediction(state)
+
+    def _recompute_prediction(self, state: AircraftState) -> None:
+        """Predicted closest approach + ETA to the primary watchpoint. Needs a
+        usable velocity: track + ground speed, airborne, and above a floor speed
+        (a parked/taxiing/hovering track has noisy heading and no meaningful
+        projection). Sets both to ``None`` otherwise."""
+        c = state.canonical
+        if (
+            c.lat is None
+            or c.lon is None
+            or c.track_deg is None
+            or c.ground_speed_kt is None
+            or c.ground_speed_kt < _MIN_PREDICT_SPEED_KT
+            or c.on_ground
+        ):
+            state.predicted_closest_approach_nm = None
+            state.predicted_eta_to_home_s = None
+            return
+        cpa_nm, eta_s = closest_point_of_approach(
+            self._primary.lat, self._primary.lon, c.lat, c.lon, c.track_deg, c.ground_speed_kt
+        )
+        state.predicted_closest_approach_nm = cpa_nm
+        state.predicted_eta_to_home_s = eta_s
 
     async def _run_lifecycle(self, now: datetime) -> list[str]:
         """Classify every tracked state. PURGED -> clear retained topic and

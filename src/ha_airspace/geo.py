@@ -68,3 +68,52 @@ def bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     x = math.cos(phi1) * math.sin(phi2) - math.sin(phi1) * math.cos(phi2) * math.cos(delta_lambda)
     theta = math.atan2(y, x)
     return (math.degrees(theta) + 360) % 360
+
+
+NM_PER_DEG_LAT: float = 60.0
+"""1 degree of latitude ~= 60 NM (exact by the nautical-mile definition)."""
+
+
+def closest_point_of_approach(
+    wp_lat: float,
+    wp_lon: float,
+    ac_lat: float,
+    ac_lon: float,
+    track_deg: float,
+    ground_speed_kt: float,
+) -> tuple[float, float | None]:
+    """Closest point of approach of a track to a watchpoint (Phase 5).
+
+    Projects the aircraft into a local equirectangular plane centered on the
+    watchpoint (east/north NM), takes the velocity vector from ``track_deg``
+    (0=N, 90=E) and ``ground_speed_kt``, and solves for the time that minimizes
+    distance to the watchpoint.
+
+    Returns ``(cpa_nm, eta_s)``:
+
+    * **approaching** (the track is closing) -> ``cpa_nm`` is the future minimum
+      distance and ``eta_s`` is seconds until it.
+    * **departing or stationary** -> ``cpa_nm`` is the *current* distance (the
+      closest point is now/past) and ``eta_s`` is ``None``.
+
+    Flat-plane approximation: fine for the tens-of-NM ranges this is used at; the
+    equirectangular error is well under the noise in broadcast speed/track.
+    """
+    # Aircraft position relative to the watchpoint, in NM (east, north).
+    rx = (ac_lon - wp_lon) * math.cos(math.radians(wp_lat)) * NM_PER_DEG_LAT
+    ry = (ac_lat - wp_lat) * NM_PER_DEG_LAT
+    # Velocity vector, NM per second.
+    speed_nm_s = ground_speed_kt / 3600.0
+    vx = speed_nm_s * math.sin(math.radians(track_deg))
+    vy = speed_nm_s * math.cos(math.radians(track_deg))
+
+    vv = vx * vx + vy * vy
+    if vv == 0.0:
+        return math.hypot(rx, ry), None
+    t_cpa = -(rx * vx + ry * vy) / vv
+    if t_cpa <= 0.0:
+        # Closest approach is now or in the past -> the track is departing.
+        return math.hypot(rx, ry), None
+    cx = rx + vx * t_cpa
+    cy = ry + vy * t_cpa
+    return math.hypot(cx, cy), t_cpa

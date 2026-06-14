@@ -834,3 +834,110 @@ class TestOrbitIntegration:
         tracker = _make_tracker(publisher, clock)  # no orbit detector
         await self._fly(tracker, clock, [0, 90, 180, 270])
         assert "orbiting" not in publisher.published[-1].flags
+
+
+# ---------------------------------------------------------------------------
+# Predictive fields (Phase 5) — computed in the geometry pass
+# ---------------------------------------------------------------------------
+
+
+def _obs_kinematic(
+    *,
+    lat: float,
+    lon: float,
+    track_deg: float | None,
+    ground_speed_kt: float | None,
+    on_ground: bool = False,
+    at: datetime = _T0,
+) -> AircraftObservation:
+    return AircraftObservation(
+        hex="ae0001",
+        observed_at=at,
+        seen_by="rx-home",
+        band="1090",
+        lat=lat,
+        lon=lon,
+        alt_baro_ft=8000,
+        track_deg=track_deg,
+        ground_speed_kt=ground_speed_kt,
+        on_ground=on_ground,
+    )
+
+
+class TestPrediction:
+    async def test_approaching_sets_cpa_and_eta(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = _make_tracker(publisher, clock)  # primary watchpoint = _HOME
+        # South of home, tracking north toward it.
+        await tracker.process_poll(
+            [_obs_kinematic(lat=29.83, lon=-97.99, track_deg=0.0, ground_speed_kt=300.0)]
+        )
+        s = publisher.published[-1]
+        assert s.predicted_closest_approach_nm is not None
+        assert s.predicted_closest_approach_nm < 1.0  # heading right at home
+        assert s.predicted_eta_to_home_s is not None
+        assert s.predicted_eta_to_home_s > 0
+
+    async def test_departing_has_no_eta(self, publisher: FakePublisher, clock: Clock) -> None:
+        tracker = _make_tracker(publisher, clock)
+        await tracker.process_poll(
+            [_obs_kinematic(lat=29.83, lon=-97.99, track_deg=180.0, ground_speed_kt=300.0)]
+        )
+        s = publisher.published[-1]
+        assert s.predicted_eta_to_home_s is None
+        assert s.predicted_closest_approach_nm is not None  # current distance
+
+    async def test_no_track_no_prediction(self, publisher: FakePublisher, clock: Clock) -> None:
+        tracker = _make_tracker(publisher, clock)
+        await tracker.process_poll(
+            [_obs_kinematic(lat=29.83, lon=-97.99, track_deg=None, ground_speed_kt=300.0)]
+        )
+        s = publisher.published[-1]
+        assert s.predicted_closest_approach_nm is None
+        assert s.predicted_eta_to_home_s is None
+
+    async def test_too_slow_no_prediction(self, publisher: FakePublisher, clock: Clock) -> None:
+        tracker = _make_tracker(publisher, clock)
+        await tracker.process_poll(
+            [_obs_kinematic(lat=29.83, lon=-97.99, track_deg=0.0, ground_speed_kt=20.0)]
+        )
+        assert publisher.published[-1].predicted_closest_approach_nm is None
+
+    async def test_on_ground_no_prediction(self, publisher: FakePublisher, clock: Clock) -> None:
+        tracker = _make_tracker(publisher, clock)
+        await tracker.process_poll(
+            [
+                _obs_kinematic(
+                    lat=29.83, lon=-97.99, track_deg=0.0, ground_speed_kt=300.0, on_ground=True
+                )
+            ]
+        )
+        assert publisher.published[-1].predicted_closest_approach_nm is None
+
+    async def test_no_position_clears_prediction(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = _make_tracker(publisher, clock)
+        await tracker.process_poll(
+            [_obs_kinematic(lat=29.83, lon=-97.99, track_deg=0.0, ground_speed_kt=300.0)]
+        )
+        clock.advance(1.0)
+        # Same track, now no position -> prediction must clear.
+        await tracker.process_poll(
+            [
+                AircraftObservation(
+                    hex="ae0001",
+                    observed_at=clock.now,
+                    seen_by="rx-home",
+                    band="1090",
+                    lat=None,
+                    lon=None,
+                    track_deg=0.0,
+                    ground_speed_kt=300.0,
+                )
+            ]
+        )
+        s = publisher.published[-1]
+        assert s.predicted_closest_approach_nm is None
+        assert s.predicted_eta_to_home_s is None
