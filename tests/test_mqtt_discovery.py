@@ -296,6 +296,28 @@ class TestDeviceBlock:
         ids = {tuple(body["device"]["identifiers"]) for _, body in payloads}
         assert ids == {("ha_airspace",)}
 
+    def test_device_branding_is_airspace(self) -> None:
+        # Device name drives the HA device card; manufacturer must not regress to
+        # the old ha-squitter / ADS-B Enrich branding.
+        device = build_discovery_payloads(_make_config())[0][1]["device"]
+        assert device["name"] == "Airspace"
+        assert device["manufacturer"] == "ifnull/ha-airspace"
+
+
+class TestEntityIds:
+    def test_object_id_pins_entity_id_to_unique_id(self) -> None:
+        # entity_id is generated from the payload object_id, so it stays
+        # airspace_* regardless of the friendly-name/device slug. Guards against
+        # the device/name drift that produced sensor.ads_b_enrich_* ids.
+        for _, body in build_discovery_payloads(_make_config()):
+            assert body["object_id"] == body["unique_id"]
+            assert body["object_id"].startswith("airspace_")
+
+    def test_no_legacy_adsb_branding_in_names(self) -> None:
+        for _, body in build_discovery_payloads(_make_config()):
+            assert "ADS-B" not in body["name"]
+            assert "Enrich" not in body["name"]
+
     def test_sw_version_included_when_provided(self) -> None:
         payloads = build_discovery_payloads(_make_config(), sw_version="0.1.2.3")
         for _, body in payloads:
