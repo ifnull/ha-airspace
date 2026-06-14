@@ -8,12 +8,13 @@ package — it is add-on glue, not part of the service — but it produces a con
 the real ``load_config`` validates, so ``tests/test_addon_render.py`` exercises
 ``build_config`` against the actual pydantic schema.
 
-Translation posture: structured options cover the essentials every user must set
-(receivers, watchpoints, MQTT). The complex rule grammar (flags, alerts,
-databases) is not re-modeled in HA's schema language — power users supply it via
-the ``extra_config`` raw-YAML escape hatch, which is deep-merged over the
-structured base. MQTT connection details fall back to the HA Mosquitto service
-when left blank.
+Translation posture: structured options cover the essentials (receivers,
+watchpoints, MQTT) plus batteries-included *toggles* that expand into the common
+enrichment (databases, curated flags + alerts, orbit, photos) — so normal use
+needs no hand-written YAML. The open-ended rule grammar isn't re-modeled in HA's
+schema language; ``extra_config`` is the raw-YAML override for *custom* rules or
+to tweak a generated value, deep-merged last over everything above. MQTT
+connection details fall back to the HA Mosquitto service when left blank.
 
 Usage: ``render_config.py <options.json> <out.yaml>``.
 """
@@ -30,6 +31,23 @@ import yaml
 
 SUPERVISOR_MQTT_URL = "http://supervisor/services/mqtt"
 JOURNAL_PATH = "/data/journal.db"
+
+# Batteries-included defaults the flat toggles expand to. These live here (the
+# add-on layer), not the core config, so Docker/pip users stay unopinionated
+# while the add-on works out of the box without hand-written YAML. extra_config
+# still deep-merges last, so any of this can be overridden.
+_MICTRONICS_URL = "https://github.com/wiedehopf/tar1090-db/raw/csv/aircraft.csv.gz"
+_ADSBEXCHANGE_URL = "https://downloads.adsbexchange.com/downloads/basic-ac-db.json.gz"
+
+# toggle option -> the flag rule it produces. The DB-backed ones (sources:)
+# only match when enable_databases is on; emergency is squawk-based and needs no DB.
+_CURATED_FLAGS: dict[str, dict[str, Any]] = {
+    "emergency": {"squawks": ["7500", "7600", "7700"]},
+    "military": {"sources": ["adsbexchange:mil"]},
+    "interesting": {"sources": ["adsbexchange:pia", "adsbexchange:ladd"]},
+}
+_DEFAULT_ALERT_DISTANCE_NM = 30.0
+_DEFAULT_ORBIT_MIN_TURN_DEG = 360.0
 
 
 def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -84,6 +102,78 @@ def _receivers(options: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def _enabled_flag_names(options: dict[str, Any]) -> list[str]:
+    """Curated flags the toggles turn on, in a stable order."""
+    return [name for name in _CURATED_FLAGS if options.get(f"enable_{name}")]
+
+
+def _alert_rules(options: dict[str, Any], flag_names: list[str], default_wp: str) -> list[dict]:
+    """One alert rule per enabled flag (+ orbiting). Emergency alerts anywhere;
+    the rest fire within ``alert_distance_nm`` of the primary watchpoint."""
+    distance = options.get("alert_distance_nm") or _DEFAULT_ALERT_DISTANCE_NM
+    rules: list[dict[str, Any]] = []
+    for name in flag_names:
+        if name == "emergency":
+            rules.append({"name": "emergency_anywhere", "match": {"flags": ["emergency"]}})
+        else:
+            rules.append(
+                {
+                    "name": f"{name}_nearby",
+                    "match": {
+                        "flags": [name],
+                        "max_distance_nm": distance,
+                        "watchpoint": default_wp,
+                    },
+                }
+            )
+    if options.get("enable_orbit"):
+        rules.append(
+            {
+                "name": "orbiting_nearby",
+                "match": {
+                    "flags": ["orbiting"],
+                    "max_distance_nm": distance,
+                    "watchpoint": default_wp,
+                },
+            }
+        )
+    return rules
+
+
+def _feature_sections(options: dict[str, Any], default_wp: str) -> dict[str, Any]:
+    """Expand the batteries-included toggles into native config sections
+    (databases, enrichment flags/alerts, orbit, photos). extra_config can still
+    override any of these afterwards."""
+    sections: dict[str, Any] = {}
+
+    if options.get("enable_databases"):
+        sections["databases"] = {
+            "sources": [
+                {"name": "mictronics", "url": _MICTRONICS_URL, "enabled": True},
+                {"name": "adsbexchange", "url": _ADSBEXCHANGE_URL, "enabled": True},
+            ]
+        }
+
+    flag_names = _enabled_flag_names(options)
+    enrichment: dict[str, Any] = {}
+    if flag_names:
+        enrichment["flags"] = {name: dict(_CURATED_FLAGS[name]) for name in flag_names}
+    if options.get("enable_alerts") and (rules := _alert_rules(options, flag_names, default_wp)):
+        enrichment["alerts"] = {"rules": rules}
+    if enrichment:
+        sections["enrichment"] = enrichment
+
+    if options.get("enable_orbit"):
+        sections["orbit"] = {
+            "enabled": True,
+            "min_turn_deg": options.get("orbit_min_turn_deg") or _DEFAULT_ORBIT_MIN_TURN_DEG,
+        }
+    if options.get("enable_photos"):
+        sections["photos"] = {"enabled": True}
+
+    return sections
+
+
 def build_config(
     options: dict[str, Any], mqtt_service: dict[str, Any] | None = None
 ) -> dict[str, Any]:
@@ -114,6 +204,12 @@ def build_config(
             "bind": "0.0.0.0",
             "port": int(options.get("metrics_port", 9090)),
         }
+
+    # Batteries-included feature toggles -> native sections. Keyed on the first
+    # watchpoint so the generated alerts resolve even if it isn't named "home".
+    default_wp = watchpoints[0]["name"] if watchpoints else "home"
+    cfg.update(_feature_sections(options, default_wp))
+
     if extra := options.get("extra_config"):
         parsed = yaml.safe_load(extra) or {}
         if not isinstance(parsed, dict):
