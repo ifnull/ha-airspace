@@ -289,13 +289,13 @@ def _entity_config(
     HA discovery topic format:
     ``<discovery_prefix>/<component>/<node_id>/<object_id>/config``
 
-    Pins the *entity_id* to the ``unique_id`` via the payload ``object_id`` key,
-    so HA generates ``<component>.<unique_id>`` (e.g. ``sensor.airspace_count``)
-    regardless of the device/friendly-name slug. Without it, HA derives the
-    entity_id from ``device.name`` + entity ``name``, which drifts whenever those
-    display strings change.
+    Note: HA derives the *entity_id* from ``device.name`` + entity ``name``
+    (slugified) — e.g. device "Airspace" + "Aircraft Count" ->
+    ``sensor.airspace_aircraft_count``. We don't set a payload ``object_id`` to
+    override that: it isn't honored consistently across HA versions, so relying
+    on it would make entity_ids differ between installs. The ``unique_id`` keeps
+    entities stable across renames regardless.
     """
-    body.setdefault("object_id", body["unique_id"])
     topic = f"{discovery_prefix}/{component}/{DISCOVERY_NODE_ID}/{object_id}/config"
     return topic, body
 

@@ -18,7 +18,7 @@
 # 1) configuration.yaml — template sensors for the Map card.
 #
 # The Map card plots entities that expose `latitude` / `longitude` attributes.
-# The published payload uses `lat` / `lon` (on sensor.airspace_nearest's
+# The published payload uses `lat` / `lon` (on sensor.airspace_nearest_aircraft's
 # attributes), so these thin templates bridge the names. (If you'd rather not
 # add these, the service can emit latitude/longitude directly — ask.)
 # ===========================================================================
@@ -28,11 +28,11 @@
 #       - name: Nearest Aircraft
 #         unique_id: airspace_nearest_aircraft_map
 #         state: >
-#           {{ state_attr('sensor.airspace_nearest', 'flight')
-#              or state_attr('sensor.airspace_nearest', 'hex') or 'none' }}
+#           {{ state_attr('sensor.airspace_nearest_aircraft', 'flight')
+#              or state_attr('sensor.airspace_nearest_aircraft', 'hex') or 'none' }}
 #         attributes:
-#           latitude: "{{ state_attr('sensor.airspace_nearest', 'lat') }}"
-#           longitude: "{{ state_attr('sensor.airspace_nearest', 'lon') }}"
+#           latitude: "{{ state_attr('sensor.airspace_nearest_aircraft', 'lat') }}"
+#           longitude: "{{ state_attr('sensor.airspace_nearest_aircraft', 'lon') }}"
 #           icon: mdi:airplane
 #       - name: Nearest Drone
 #         unique_id: airspace_nearest_drone_map
@@ -72,11 +72,11 @@ views:
       - type: glance
         title: Overview
         entities:
-          - entity: sensor.airspace_count
+          - entity: sensor.airspace_aircraft_count
             name: Aircraft
           - entity: sensor.airspace_drone_count
             name: Drones
-          - entity: sensor.airspace_nearest
+          - entity: sensor.airspace_nearest_aircraft
             name: Nearest (nm)
 
       # Nearest aircraft detail, templated from the sensor's attributes
@@ -84,7 +84,7 @@ views:
       - type: markdown
         title: Nearest aircraft
         content: >
-          {% set s = 'sensor.airspace_nearest' %}
+          {% set s = 'sensor.airspace_nearest_aircraft' %}
           {% if states(s) not in ['unknown', 'unavailable'] %}
           {% set db = state_attr(s, 'db_metadata') or {} %}
           {% set brg = (state_attr(s, 'bearing_to') or {}).get('home') %}
@@ -107,7 +107,7 @@ views:
             name: 1090 receiver
           - entity: sensor.airspace_receiver_home_1090_aircraft_count
             name: Aircraft seen
-          - entity: sensor.airspace_receiver_home_1090_messages_per_sec
+          - entity: sensor.airspace_receiver_home_1090_message_rate
             name: Messages/sec
 
       # Alert badge — one conditional card per alert rule. Replace the rule name

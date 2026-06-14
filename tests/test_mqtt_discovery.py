@@ -305,13 +305,16 @@ class TestDeviceBlock:
 
 
 class TestEntityIds:
-    def test_object_id_pins_entity_id_to_unique_id(self) -> None:
-        # entity_id is generated from the payload object_id, so it stays
-        # airspace_* regardless of the friendly-name/device slug. Guards against
-        # the device/name drift that produced sensor.ads_b_enrich_* ids.
+    def test_unique_ids_are_airspace_namespaced(self) -> None:
         for _, body in build_discovery_payloads(_make_config()):
-            assert body["object_id"] == body["unique_id"]
-            assert body["object_id"].startswith("airspace_")
+            assert body["unique_id"].startswith("airspace_")
+
+    def test_no_object_id_override(self) -> None:
+        # We deliberately don't set a payload object_id — HA derives the
+        # entity_id from device.name + name, which is consistent across HA
+        # versions (payload object_id is not). See discovery._entity_config.
+        for _, body in build_discovery_payloads(_make_config()):
+            assert "object_id" not in body
 
     def test_no_legacy_adsb_branding_in_names(self) -> None:
         for _, body in build_discovery_payloads(_make_config()):
