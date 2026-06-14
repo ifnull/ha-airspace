@@ -85,16 +85,27 @@ views:
             {{ '_© ' ~ state_attr(a, 'photographer') ~ '_' if state_attr(a, 'photographer') else '' }}
             {% endif %}
 
-      # Receiver health. Rename to match your receivers (home-1090 -> home_1090).
+      # Receiver health. !!! REPLACE the receiver name in every id below with
+      # YOURS !!! The id is airspace_receiver_<name>_... where <name> is your
+      # receiver's config name, slugified (hyphens -> underscores). Find them in
+      # Settings -> Entities (filter "receiver"). Example shows a 1090 + 978 pair
+      # named "rx-1090" / "rx-978" -> rx_1090 / rx_978; delete the 978 block if
+      # you only run 1090.
       - type: entities
         title: Receivers
         entities:
-          - entity: binary_sensor.airspace_receiver_home_1090_status
+          - entity: binary_sensor.airspace_receiver_rx_1090_status
             name: 1090 receiver
-          - entity: sensor.airspace_receiver_home_1090_aircraft_count
-            name: Aircraft seen
-          - entity: sensor.airspace_receiver_home_1090_message_rate
-            name: Messages/sec
+          - entity: sensor.airspace_receiver_rx_1090_aircraft_count
+            name: 1090 aircraft
+          - entity: sensor.airspace_receiver_rx_1090_message_rate
+            name: 1090 msg/s
+          - entity: binary_sensor.airspace_receiver_rx_978_status
+            name: 978 receiver
+          - entity: sensor.airspace_receiver_rx_978_aircraft_count
+            name: 978 aircraft
+          - entity: sensor.airspace_receiver_rx_978_message_rate
+            name: 978 msg/s
 
 # ---------------------------------------------------------------------------
 # Optional: drone OPERATOR on the map.
