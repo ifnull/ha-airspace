@@ -12,6 +12,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  version-guard:
+    name: version bumped
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need tags to compare against the last release
+
+      # Catches the "forgot to bump" failure before it becomes a failed release:
+      # main must always be ahead of the last tag, and the two version files
+      # must agree (the publish workflow's tag==version guard then can't fail).
+      - name: pyproject + add-on versions match, and are unreleased
+        run: |
+          pj="$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)"
+          ad="$(grep -m1 '^version: ' addon/config.yaml | cut -d'"' -f2)"
+          echo "pyproject=$pj  addon=$ad"
+          if [ "$pj" != "$ad" ]; then
+            echo "::error::version mismatch: pyproject ($pj) != addon/config.yaml ($ad)"
+            exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/v$pj" >/dev/null; then
+            echo "::error::v$pj is already released (tag exists). Bump the version for unreleased changes."
+            exit 1
+          fi
+          echo "version $pj is consistent and not yet released ✓"
+
   gate:
     name: lint · type · test
     runs-on: ubuntu-latest
