@@ -55,15 +55,28 @@ enrichment:
     emergency:
       squawks: ["7500", "7600", "7700"]
     military:
-      sources: ["adsbexchange:mil"]
+      sources: ["adsbexchange:mil"]   # needs the databases section below
   alerts:
     rules:
       - name: emergency_any
         match:
           flags: ["emergency"]
-databases:
-  mictronics:
-    enabled: true
+      - name: new_military           # history-aware (needs enable_journal)
+        match:
+          flags: ["military"]
+          unseen_for_days: 30
+databases:                            # sources is a LIST; each needs name + url
+  sources:
+    - name: mictronics                # name selects the parser
+      url: https://github.com/wiedehopf/tar1090-db/raw/csv/aircraft.csv.gz
+      enabled: true
+    - name: adsbexchange
+      url: https://downloads.adsbexchange.com/downloads/basic-ac-db.json.gz
+      enabled: true
+orbit:                                # Phase 5 — derived "orbiting" flag
+  enabled: true
+photos:                               # Phase 2c — photo URL on alert payloads
+  enabled: true
 ```
 
 See the project README and `config.example.yaml` for the full schema.
