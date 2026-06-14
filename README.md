@@ -156,6 +156,10 @@ All carry an availability binding to the service's `airspace/status` topic, so t
 go *unavailable* when the service stops or crashes rather than showing stale
 values.
 
+A ready-to-adapt Lovelace dashboard (map of nearest traffic, overview glance,
+nearest-aircraft detail, receiver health, alert badges) built from these
+entities with stock cards is in [`docs/dashboard.example.yaml`](docs/dashboard.example.yaml).
+
 ---
 
 ## MQTT topics
