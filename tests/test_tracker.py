@@ -32,12 +32,14 @@ from ha_airspace.config import (
     FlagConfig,
     JournalConfig,
     MatchBlock,
+    OrbitConfig,
 )
 from ha_airspace.enrichment import Enricher
 from ha_airspace.journal import Journal
 from ha_airspace.metrics import MetricsRegistry
 from ha_airspace.models import AircraftObservation, AircraftState, DroneInfo, Watchpoint
 from ha_airspace.mqtt.payloads import PhotoPayload
+from ha_airspace.orbit import OrbitDetector
 from ha_airspace.tracker import AircraftTracker
 
 # ---------------------------------------------------------------------------
@@ -779,3 +781,56 @@ class TestAlertPhotos:
         await tracker.process_poll([_obs("ae0001", category="A3")])
         assert stub.calls == ["ae0001"]
         assert ("heavy_close", None) in publisher.alert_photos
+
+
+# ---------------------------------------------------------------------------
+# Orbit detection (Phase 5) — derived "orbiting" flag, end to end
+# ---------------------------------------------------------------------------
+
+
+def _obs_heading(heading: float, at: datetime) -> AircraftObservation:
+    return AircraftObservation(
+        hex="ae0001",
+        observed_at=at,
+        seen_by="rx-home",
+        band="1090",
+        lat=30.40,
+        lon=-97.90,
+        alt_baro_ft=3000,
+        track_deg=heading,
+    )
+
+
+class TestOrbitIntegration:
+    def _tracker(self, publisher: FakePublisher, clock: Clock) -> AircraftTracker:
+        return AircraftTracker(
+            publisher,  # type: ignore[arg-type]
+            [_HOME],
+            orbit=OrbitDetector(OrbitConfig(enabled=True, window_s=120, min_turn_deg=180)),
+            clock=clock,
+        )
+
+    async def _fly(self, tracker: AircraftTracker, clock: Clock, headings: list[float]) -> None:
+        for i, h in enumerate(headings):
+            t = _T0 + timedelta(seconds=i * 5)
+            clock.now = t
+            await tracker.process_poll([_obs_heading(h, t)])
+
+    async def test_sustained_turn_flags_orbiting(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = self._tracker(publisher, clock)
+        await self._fly(tracker, clock, [0, 90, 180])  # +180 cumulative >= threshold
+        assert "orbiting" in publisher.published[-1].flags
+
+    async def test_straight_flight_not_orbiting(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = self._tracker(publisher, clock)
+        await self._fly(tracker, clock, [90, 90, 90, 90])
+        assert "orbiting" not in publisher.published[-1].flags
+
+    async def test_no_detector_no_orbiting(self, publisher: FakePublisher, clock: Clock) -> None:
+        tracker = _make_tracker(publisher, clock)  # no orbit detector
+        await self._fly(tracker, clock, [0, 90, 180, 270])
+        assert "orbiting" not in publisher.published[-1].flags

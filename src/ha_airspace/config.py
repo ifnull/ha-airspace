@@ -423,6 +423,22 @@ class JournalConfig(BaseModel):
     """Flush early once this many records are buffered."""
 
 
+class OrbitConfig(BaseModel):
+    """Orbit / loiter detection (Phase 5). Off by default. When enabled, a track
+    that sustains a turn (signed cumulative heading change >= ``min_turn_deg``
+    within the last ``window_s``) gets a derived ``orbiting`` flag — usable in
+    alert rules like any other flag. In-memory only (no disk writes)."""
+
+    model_config = _STRICT
+
+    enabled: bool = False
+    window_s: float = Field(default=120.0, gt=0)
+    """Sliding window over which heading change accumulates."""
+    min_turn_deg: float = Field(default=360.0, gt=0)
+    """Cumulative signed turn (degrees) within the window to flag as orbiting.
+    360 = a full circle; lower catches partial/loose loiters."""
+
+
 def _default_inject_into() -> list[Literal["alerts"]]:
     return ["alerts"]
 
@@ -473,6 +489,8 @@ class Config(BaseModel):
     restart). See ``JournalConfig``."""
     photos: PhotosConfig = Field(default_factory=PhotosConfig)
     """Planespotters photo enrichment for alert payloads. Off by default."""
+    orbit: OrbitConfig = Field(default_factory=OrbitConfig)
+    """Orbit / loiter detection -> the derived ``orbiting`` flag. Off by default."""
 
     @model_validator(mode="after")
     def _watchpoint_names_unique(self) -> Self:
@@ -603,6 +621,7 @@ __all__ = [
     "JournalConfig",
     "MatchBlock",
     "MqttConfig",
+    "OrbitConfig",
     "PhotosConfig",
     "PrometheusConfig",
     "ReceiverConfig",

@@ -26,6 +26,7 @@ from ha_airspace.config import (
     ConfigError,
     MatchBlock,
     MqttConfig,
+    OrbitConfig,
     PhotosConfig,
     ReceiverConfig,
     ReceiverLocationConfig,
@@ -688,3 +689,37 @@ class TestHistoryAwareAlerts:
     def test_unseen_for_days_must_be_positive(self) -> None:
         with pytest.raises(ValidationError):
             MatchBlock.model_validate({"unseen_for_days": 0})
+
+
+# ---------------------------------------------------------------------------
+# OrbitConfig (Phase 5)
+# ---------------------------------------------------------------------------
+
+
+class TestOrbitConfig:
+    def test_defaults_off(self) -> None:
+        o = OrbitConfig()
+        assert o.enabled is False
+        assert o.window_s == 120.0
+        assert o.min_turn_deg == 360.0
+
+    def test_absent_defaults_disabled(self) -> None:
+        assert Config.model_validate(_minimal_config_dict()).orbit.enabled is False
+
+    def test_enabled_with_overrides(self) -> None:
+        d = _minimal_config_dict()
+        d["orbit"] = {"enabled": True, "window_s": 60, "min_turn_deg": 270}
+        cfg = Config.model_validate(d)
+        assert cfg.orbit.enabled is True
+        assert cfg.orbit.window_s == 60
+        assert cfg.orbit.min_turn_deg == 270
+
+    def test_window_and_turn_must_be_positive(self) -> None:
+        with pytest.raises(ValidationError):
+            OrbitConfig.model_validate({"window_s": 0})
+        with pytest.raises(ValidationError):
+            OrbitConfig.model_validate({"min_turn_deg": 0})
+
+    def test_strict_rejects_unknown_field(self) -> None:
+        with pytest.raises(ValidationError):
+            OrbitConfig.model_validate({"enabled": True, "typo": 1})
