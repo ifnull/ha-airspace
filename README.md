@@ -23,15 +23,20 @@ roadmap, and how it's positioned against the alternatives.
 > multi-receiver merger (1090 + 978 + Remote ID), two-database enrichment, and
 > a test suite — built to become infrastructure, not a weekend script.
 
-> **Status:** Phase 2a in progress. Single receiver, MQTT publish, HA discovery,
-> reference-DB enrichment (Mictronics + ADSBexchange), and declarative flag
-> rules all work today — verified end to end against live receivers and a real
-> MQTT broker. The multi-receiver merger and stateful alert rules land in
-> later phases.
-
-> **Note:** the project was renamed from `ha-airspace`; the Python package /
-> console script still use the old name until the rename lands. Commands below
-> reflect the current package name.
+> **Status:** Beta — released (HA add-on + multi-arch Docker image on GHCR),
+> running against live receivers + a real broker. All planned phases are
+> shipped: multi-receiver **1090 + 978** merge, **drone Remote ID** as a
+> first-class source, reference-DB enrichment (Mictronics + ADSBexchange),
+> declarative **flags** + stateful **alerts** (including history-aware
+> "first-time/returning", **orbit/loiter** detection, and **predictive inbound**
+> closest-approach), HA MQTT-discovery entities, an optional SQLite **journal**
+> for durable history, Planespotters **photos** on alerts, and optional
+> Prometheus metrics.
+>
+> **Deferred / not yet built** (none required): drone make/model FAA lookup,
+> true AGL via DEM, a custom Lovelace "radar" card, a web status UI, and PyPI /
+> armv7 / Docker-Hub distribution. See [`DESIGN.md`](DESIGN.md) for the full
+> roadmap and rationale.
 
 **Keywords:** Home Assistant, ADS-B, dump1090, dump978, readsb, tar1090,
 PiAware, FlightAware, Remote ID, ASTM F3411, drone detection, dump3411, MQTT,
@@ -175,7 +180,7 @@ Published under `base_topic` (default `airspace`):
 airspace/status                          online | offline (LWT + graceful shutdown)
 airspace/summary/count                   total aircraft
 airspace/summary/nearest                 JSON: closest aircraft (full state)
-airspace/summary/count_by_flag           JSON: counts per flag ({} until Phase 2 rules land)
+airspace/summary/count_by_flag           JSON: counts per flag ({} when no flag rules configured)
 airspace/aircraft/<hex>                  JSON: per-aircraft state (wildcard; not an HA entity)
 airspace/receiver/<name>/status          online | unhealthy | offline
 airspace/receiver/<name>/stats           JSON: count, message rate, health
