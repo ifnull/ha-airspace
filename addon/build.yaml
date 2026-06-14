@@ -1,7 +1,7 @@
-# Per-architecture base image for the add-on build (HA add-on builder).
-# Each maps to the published multi-arch service image; the add-on Dockerfile
-# layers only the renderer + run shim on top. Published by the release workflow
-# (Phase 4 slice 3) — until then, build locally against a locally-tagged image.
+# Per-architecture base image for LOCAL add-on builds (dev / HA local-build).
+# Releases ship prebuilt images via config.yaml `image:`, so the Supervisor
+# pulls rather than uses this. Each maps to the published service image; the
+# add-on Dockerfile layers only the renderer + run shim on top.
 build_from:
   aarch64: ghcr.io/ifnull/ha-airspace:latest
   amd64: ghcr.io/ifnull/ha-airspace:latest
