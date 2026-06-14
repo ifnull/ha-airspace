@@ -146,15 +146,20 @@ overwhelm HA's registry; power users subscribe to the wildcard topic instead):
 
 | Entity | Source |
 |---|---|
-| `sensor.airspace_count` | total aircraft currently tracked |
-| `sensor.airspace_nearest` | distance to the closest aircraft; full details in its attributes |
+| `sensor.airspace_aircraft_count` | total aircraft currently tracked |
+| `sensor.airspace_nearest_aircraft` | distance to the closest aircraft; full details in its attributes |
+| `sensor.airspace_drone_count` | drones currently tracked (with a Remote ID feed) |
+| `sensor.airspace_nearest_drone` | nearest drone; operator location in its attributes |
+| `binary_sensor.airspace_alert_<rule>` | on while any aircraft matches that alert rule |
 | `binary_sensor.airspace_receiver_<name>_status` | per-receiver connectivity |
 | `sensor.airspace_receiver_<name>_aircraft_count` | per-receiver aircraft count |
-| `sensor.airspace_receiver_<name>_messages_per_sec` | per-receiver message rate |
+| `sensor.airspace_receiver_<name>_message_rate` | per-receiver message rate |
 
-All carry an availability binding to the service's `airspace/status` topic, so they
-go *unavailable* when the service stops or crashes rather than showing stale
-values.
+HA derives these entity_ids from the device name ("Airspace") + the entity name,
+so they're `sensor.airspace_<thing>`. (A receiver named `home-1090` slugifies to
+`home_1090`.) All carry an availability binding to the service's `airspace/status`
+topic, so they go *unavailable* when the service stops or crashes rather than
+showing stale values.
 
 A ready-to-adapt Lovelace dashboard (map of nearest traffic, overview glance,
 nearest-aircraft detail, receiver health, alert badges) built from these
