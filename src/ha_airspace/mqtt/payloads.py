@@ -210,6 +210,9 @@ class DronePayload(BaseModel):
 
     # --- Enrichment ----------------------------------------------------
     flags: list[str]
+    db_metadata: dict[str, Any]
+    """FAA UAS registry fields (make/model/status) when drone_registry is on;
+    empty otherwise. Compliance/product data, not operator identity."""
 
     @classmethod
     def from_state(cls, state: AircraftState) -> Self:
@@ -241,6 +244,7 @@ class DronePayload(BaseModel):
             distance_to=dict(state.distance_to),
             bearing_to=dict(state.bearing_to),
             flags=sorted(state.flags),
+            db_metadata=dict(state.db_metadata),
         )
 
 

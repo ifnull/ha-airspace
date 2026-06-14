@@ -472,6 +472,25 @@ class PhotosConfig(BaseModel):
     shape is forward-looking. Unknown targets are rejected at load."""
 
 
+class DroneRegistryConfig(BaseModel):
+    """FAA UAS make/model enrichment for drones (Phase 5+). Off by default. When
+    enabled, a drone's broadcast serial is looked up against the FAA UAS
+    Declaration-of-Compliance registry to add make / model / status to the drone
+    payload. Looked up live per serial (no key) and cached in memory — drones are
+    infrequent, so volume is tiny. Fails soft; no disk writes.
+
+    Note: this is compliance/product data, NOT operator identity (the FAA does
+    not expose owner/registrant). Operator *location* still comes from the Remote
+    ID broadcast itself."""
+
+    model_config = _STRICT
+
+    enabled: bool = False
+    cache_ttl_days: float = Field(default=30.0, gt=0)
+    """How long a serial lookup (hit or confirmed miss) is cached. Many serials
+    won't be in the registry; caching the miss avoids re-querying. In memory."""
+
+
 # ---------------------------------------------------------------------------
 # Top-level Config
 # ---------------------------------------------------------------------------
@@ -503,6 +522,8 @@ class Config(BaseModel):
     """Planespotters photo enrichment for alert payloads. Off by default."""
     orbit: OrbitConfig = Field(default_factory=OrbitConfig)
     """Orbit / loiter detection -> the derived ``orbiting`` flag. Off by default."""
+    drone_registry: DroneRegistryConfig = Field(default_factory=DroneRegistryConfig)
+    """FAA UAS make/model enrichment for drones. Off by default."""
 
     @model_validator(mode="after")
     def _watchpoint_names_unique(self) -> Self:
@@ -628,6 +649,7 @@ __all__ = [
     "ConfigError",
     "DatabaseSourceConfig",
     "DatabasesConfig",
+    "DroneRegistryConfig",
     "EnrichmentConfig",
     "FlagConfig",
     "JournalConfig",
