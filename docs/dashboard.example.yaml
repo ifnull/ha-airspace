@@ -1,0 +1,130 @@
+# Example Home Assistant dashboard for ha-airspace (v0.2.0+).
+#
+# Built entirely from the entities the service publishes via MQTT discovery —
+# no custom card. ha-airspace is a backend; this is how you surface it with
+# stock Lovelace cards.
+#
+# Two parts:
+#   1. configuration.yaml template sensors (a one-time prerequisite for the Map
+#      card — see the note below).
+#   2. the Lovelace view (paste into a dashboard in YAML mode, or adapt).
+#
+# Replace the example entity ids with YOURS:
+#   - binary_sensor.airspace_alert_<rule>   -> your alert rule names
+#   - *_receiver_<name>_*                    -> your receiver names
+#     (HA slugifies the name: "home-1090" -> "home_1090")
+
+# ===========================================================================
+# 1) configuration.yaml — template sensors for the Map card.
+#
+# The Map card plots entities that expose `latitude` / `longitude` attributes.
+# The published payload uses `lat` / `lon` (on sensor.airspace_nearest's
+# attributes), so these thin templates bridge the names. (If you'd rather not
+# add these, the service can emit latitude/longitude directly — ask.)
+# ===========================================================================
+#
+# template:
+#   - sensor:
+#       - name: Nearest Aircraft
+#         unique_id: airspace_nearest_aircraft_map
+#         state: >
+#           {{ state_attr('sensor.airspace_nearest', 'flight')
+#              or state_attr('sensor.airspace_nearest', 'hex') or 'none' }}
+#         attributes:
+#           latitude: "{{ state_attr('sensor.airspace_nearest', 'lat') }}"
+#           longitude: "{{ state_attr('sensor.airspace_nearest', 'lon') }}"
+#           icon: mdi:airplane
+#       - name: Nearest Drone
+#         unique_id: airspace_nearest_drone_map
+#         state: "{{ state_attr('sensor.airspace_nearest_drone', 'track_id') or 'none' }}"
+#         attributes:
+#           latitude: "{{ state_attr('sensor.airspace_nearest_drone', 'lat') }}"
+#           longitude: "{{ state_attr('sensor.airspace_nearest_drone', 'lon') }}"
+#           icon: mdi:quadcopter
+#       - name: Nearest Drone Operator
+#         unique_id: airspace_nearest_drone_operator_map
+#         state: "{{ state_attr('sensor.airspace_nearest_drone', 'operator_id') or 'operator' }}"
+#         attributes:
+#           latitude: "{{ state_attr('sensor.airspace_nearest_drone', 'operator_lat') }}"
+#           longitude: "{{ state_attr('sensor.airspace_nearest_drone', 'operator_lon') }}"
+#           icon: mdi:account-alert
+
+# ===========================================================================
+# 2) Lovelace view
+# ===========================================================================
+title: Airspace
+views:
+  - title: Airspace
+    path: airspace
+    cards:
+      # Map: nearest aircraft + nearest drone + its operator, around home.
+      # (Uses the template sensors from part 1.)
+      - type: map
+        title: Nearest traffic
+        default_zoom: 9
+        entities:
+          - entity: sensor.nearest_aircraft
+          - entity: sensor.nearest_drone
+          - entity: sensor.nearest_drone_operator
+          - entity: zone.home
+
+      # At-a-glance counts.
+      - type: glance
+        title: Overview
+        entities:
+          - entity: sensor.airspace_count
+            name: Aircraft
+          - entity: sensor.airspace_drone_count
+            name: Drones
+          - entity: sensor.airspace_nearest
+            name: Nearest (nm)
+
+      # Nearest aircraft detail, templated from the sensor's attributes
+      # (the full payload rides as attributes via json_attributes_topic).
+      - type: markdown
+        title: Nearest aircraft
+        content: >
+          {% set s = 'sensor.airspace_nearest' %}
+          {% if states(s) not in ['unknown', 'unavailable'] %}
+          {% set db = state_attr(s, 'db_metadata') or {} %}
+          {% set brg = (state_attr(s, 'bearing_to') or {}).get('home') %}
+          **{{ state_attr(s, 'flight') or state_attr(s, 'hex') }}**
+          {{ db.get('model') or state_attr(s, 'aircraft_type') or '' }}
+          {{ ' · ' ~ db.get('ownop') if db.get('ownop') else '' }}
+
+          {{ states(s) }} nm{{ ', brg ' ~ brg | round(0) ~ '°' if brg is not none else '' }}
+          · {{ state_attr(s, 'alt_baro_ft') or '?' }} ft
+          {% if state_attr(s, 'flags') %} · **{{ state_attr(s, 'flags') | join(', ') }}**{% endif %}
+          {% else %}
+          No aircraft in range.
+          {% endif %}
+
+      # Receiver health. Rename to match your receivers (home-1090 -> home_1090).
+      - type: entities
+        title: Receivers
+        entities:
+          - entity: binary_sensor.airspace_receiver_home_1090_status
+            name: 1090 receiver
+          - entity: sensor.airspace_receiver_home_1090_aircraft_count
+            name: Aircraft seen
+          - entity: sensor.airspace_receiver_home_1090_messages_per_sec
+            name: Messages/sec
+
+      # Alert badge — one conditional card per alert rule. Replace the rule name
+      # (and add more) to match your `enrichment.alerts.rules`.
+      - type: conditional
+        conditions:
+          - entity: binary_sensor.airspace_alert_military_close
+            state: "on"
+        card:
+          type: markdown
+          content: "🚨 **Military aircraft nearby** — rule `military_close`"
+
+# Notes:
+# - `flags` includes the Phase-5 `orbiting` flag when orbit detection is on, so
+#   it shows up in the nearest-aircraft card and is alertable.
+# - Aircraft PHOTOS ride alert payloads only, not the nearest sensor — to show a
+#   thumbnail in a card, the alert binary_sensor needs its attributes exposed
+#   (a small service-side change; ask if you want a picture-style alert card).
+# - The `airspace/aircraft/<hex>` wildcard is intentionally NOT HA entities; a
+#   full radar of all traffic belongs in a separate custom card (see DESIGN).
