@@ -248,6 +248,71 @@ class DronePayload(BaseModel):
         )
 
 
+class FlagAircraft(BaseModel):
+    """One compact, display-oriented row in a flag feed (``FlagFeedPayload``).
+
+    A flattened subset of ``AircraftPayload`` — just the fields a glance/table
+    card shows for a flagged aircraft (altitude, distance, type, squawk, flags).
+    ``distance_nm`` / ``bearing_deg`` are relative to the feed's watchpoint, so
+    the card needs no nested-dict templating to render a row.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    track_id: str
+    hex: str | None = None
+    flight: str | None = None
+    registration: str | None = None
+    aircraft_type: str | None = None
+    alt_baro_ft: int | None = None
+    squawk: str | None = None
+    distance_nm: float | None = None
+    """Great-circle distance to the feed's watchpoint, nm. None if unpositioned."""
+    bearing_deg: float | None = None
+    """Bearing from the feed's watchpoint toward the aircraft, degrees."""
+    flags: list[str]
+
+    @classmethod
+    def from_state(cls, state: AircraftState, *, watchpoint: str) -> Self:
+        """Project a state into a feed row, with distance/bearing taken from the
+        given watchpoint (the feed's primary)."""
+        c = state.canonical
+        return cls(
+            track_id=state.track_id,
+            hex=state.hex,
+            flight=c.flight,
+            registration=c.registration,
+            aircraft_type=c.aircraft_type,
+            alt_baro_ft=c.alt_baro_ft,
+            squawk=c.squawk,
+            distance_nm=state.distance_to.get(watchpoint),
+            bearing_deg=state.bearing_to.get(watchpoint),
+            flags=sorted(state.flags),
+        )
+
+
+class FlagFeedPayload(BaseModel):
+    """The ``airspace/summary/by_flag/<flag>`` payload: a bounded, distance-sorted
+    list of the aircraft currently carrying one flag.
+
+    Backs one discovered ``sensor.airspace_flag_<flag>`` per configured flag
+    (state = ``count``, attributes = this payload), so a card can list e.g. the
+    military / interesting / ladd aircraft with detail — without per-aircraft
+    entities. ``aircraft`` is capped (nearest first); ``count`` is the true
+    total so the card can show "showing N of M".
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: int = PAYLOAD_SCHEMA_VERSION
+    flag: str
+    count: int
+    """Total aircraft carrying the flag (may exceed ``len(aircraft)`` when capped)."""
+    watchpoint: str
+    """Watchpoint the rows' distance/bearing are relative to."""
+    aircraft: list[FlagAircraft]
+
+
 class PhotoPayload(BaseModel):
     """An aircraft photo (Planespotters, Phase 2c) for injection into alert
     payloads. ``link`` + ``photographer`` are the attribution Planespotters asks
@@ -345,6 +410,8 @@ __all__ = [
     "AircraftPayload",
     "AlertPayload",
     "DronePayload",
+    "FlagAircraft",
+    "FlagFeedPayload",
     "PhotoPayload",
     "ReceiverLocationPayload",
     "ReceiverStatsPayload",

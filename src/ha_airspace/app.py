@@ -43,7 +43,7 @@ from ha_airspace.merger import Merger
 from ha_airspace.metrics import MetricsRegistry
 from ha_airspace.mqtt.client import MqttClient
 from ha_airspace.mqtt.publisher import Publisher
-from ha_airspace.orbit import OrbitDetector
+from ha_airspace.orbit import ORBIT_FLAG, OrbitDetector
 from ha_airspace.photos import PhotoEnricher
 from ha_airspace.receivers import (
     HttpJsonReceiver,
@@ -396,6 +396,13 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
 
     orbit = OrbitDetector(config.orbit) if config.orbit.enabled else None
 
+    # Flags that get a per-flag feed sensor: every configured flag, plus the
+    # derived 'orbiting' flag when orbit detection is on. Kept in sync with the
+    # discovery side (build_discovery_payloads enumerates the same set).
+    feed_flags = list(config.enrichment.flags)
+    if config.orbit.enabled:
+        feed_flags.append(ORBIT_FLAG)
+
     tracker = AircraftTracker(
         publisher,
         config.watchpoints_runtime(),
@@ -407,6 +414,7 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
         orbit=orbit,
         drone_registry=drone_registry,
         has_drone_source=any(rc.enabled for rc in config.remoteid),
+        feed_flags=feed_flags,
         metrics=metrics,
     )
     return App(

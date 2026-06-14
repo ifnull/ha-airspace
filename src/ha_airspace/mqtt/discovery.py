@@ -31,6 +31,7 @@ from __future__ import annotations
 from typing import Any
 
 from ha_airspace.config import Config, ReceiverConfig
+from ha_airspace.orbit import ORBIT_FLAG
 
 DISCOVERY_NODE_ID: str = "airspace"
 """Namespace under the discovery prefix; lets multiple ADS-B services
@@ -140,6 +141,37 @@ def build_discovery_payloads(
                     # picture/glance alert card.
                     "json_attributes_topic": f"{base}/alert/{rule.name}/info",
                     "device_class": "safety",
+                    "availability_topic": availability_topic,
+                    "payload_available": "online",
+                    "payload_not_available": "offline",
+                    "device": device_block,
+                },
+            )
+        )
+
+    # --- Per-flag feed sensors -----------------------------------------
+    # One sensor per configured flag (+ derived 'orbiting' when orbit is on):
+    # state = count carrying the flag, attributes = a capped, distance-sorted
+    # list of those aircraft (alt / distance / type / squawk / flags). Lets a
+    # card list "the military / interesting / ladd aircraft right now" without
+    # per-aircraft entities. Kept in sync with the tracker's feed_flags set.
+    feed_flags = list(config.enrichment.flags)
+    if config.orbit.enabled:
+        feed_flags.append(ORBIT_FLAG)
+    for flag in feed_flags:
+        payloads.append(
+            _entity_config(
+                discovery_prefix=discovery_prefix,
+                component="sensor",
+                object_id=f"flag_{flag}",
+                body={
+                    "name": f"Flag {flag}",
+                    "unique_id": f"airspace_flag_{flag}",
+                    "state_topic": f"{base}/summary/by_flag/{flag}",
+                    "value_template": "{{ value_json.count if value_json else 0 }}",
+                    "json_attributes_topic": f"{base}/summary/by_flag/{flag}",
+                    "state_class": "measurement",
+                    "icon": "mdi:airplane-alert",
                     "availability_topic": availability_topic,
                     "payload_available": "online",
                     "payload_not_available": "offline",

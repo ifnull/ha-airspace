@@ -425,6 +425,56 @@ class TestAlertEntities:
 
 
 # ---------------------------------------------------------------------------
+# Per-flag feed sensors
+# ---------------------------------------------------------------------------
+
+
+class TestFlagEntities:
+    def _config_with_flags(self, *, orbit: bool = False) -> Config:
+        base: dict[str, Any] = {
+            "watchpoints": [{"name": "home", "lat": 30.33, "lon": -97.99}],
+            "mqtt": {"broker": "broker.local"},
+            "receivers": [
+                {"name": "rx-home", "url": "http://piaware/aircraft.json", "band": "1090"}
+            ],
+            "enrichment": {
+                "flags": {
+                    "military": {"sources": ["mictronics:mil"]},
+                    "emergency": {"squawks": ["7700"]},
+                }
+            },
+        }
+        if orbit:
+            base["orbit"] = {"enabled": True}
+        return Config.model_validate(base)
+
+    def test_sensor_per_configured_flag(self) -> None:
+        bodies = _bodies_by_unique_id(build_discovery_payloads(self._config_with_flags()))
+        assert "airspace_flag_military" in bodies
+        assert "airspace_flag_emergency" in bodies
+
+    def test_flag_sensor_shape(self) -> None:
+        bodies = _bodies_by_unique_id(build_discovery_payloads(self._config_with_flags()))
+        body = bodies["airspace_flag_military"]
+        assert body["state_topic"] == "airspace/summary/by_flag/military"
+        assert body["json_attributes_topic"] == "airspace/summary/by_flag/military"
+        assert body["value_template"] == "{{ value_json.count if value_json else 0 }}"
+        assert body["state_class"] == "measurement"
+
+    def test_orbiting_flag_only_when_orbit_enabled(self) -> None:
+        without = _bodies_by_unique_id(build_discovery_payloads(self._config_with_flags()))
+        assert "airspace_flag_orbiting" not in without
+        with_orbit = _bodies_by_unique_id(
+            build_discovery_payloads(self._config_with_flags(orbit=True))
+        )
+        assert "airspace_flag_orbiting" in with_orbit
+
+    def test_no_flag_entities_without_flags(self) -> None:
+        payloads = build_discovery_payloads(_make_config())
+        assert not any("by_flag" in t for t in _topics(payloads))
+
+
+# ---------------------------------------------------------------------------
 # Drone entities (Phase 3 — Remote ID)
 # ---------------------------------------------------------------------------
 

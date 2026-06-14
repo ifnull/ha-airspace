@@ -32,7 +32,7 @@ from ha_airspace.models import (
     DroneInfo,
     ReceiverLocation,
 )
-from ha_airspace.mqtt.payloads import PhotoPayload
+from ha_airspace.mqtt.payloads import FlagFeedPayload, PhotoPayload
 from ha_airspace.mqtt.publisher import Publisher
 
 # ---------------------------------------------------------------------------
@@ -405,6 +405,29 @@ class TestPublishSummary:
         )
         body = json.loads(flag_call["payload"])
         assert body == {"military": 1, "interesting": 0}
+
+    async def test_flag_feeds_published_per_flag(self, fake_client: FakeMqttClient) -> None:
+        pub = _make_publisher(fake_client)
+        feeds = {
+            "military": FlagFeedPayload(flag="military", count=1, watchpoint="home", aircraft=[]),
+            "emergency": FlagFeedPayload(flag="emergency", count=0, watchpoint="home", aircraft=[]),
+        }
+        await pub.publish_summary(count=1, nearest=None, flag_feeds=feeds)
+        topics = [c["topic"] for c in fake_client.publishes]
+        assert "airspace/summary/by_flag/military" in topics
+        assert "airspace/summary/by_flag/emergency" in topics
+        mil = next(
+            c for c in fake_client.publishes if c["topic"] == "airspace/summary/by_flag/military"
+        )
+        assert json.loads(mil["payload"])["count"] == 1
+        assert mil["retain"] is True
+
+    async def test_no_flag_feeds_publishes_no_by_flag_topics(
+        self, fake_client: FakeMqttClient
+    ) -> None:
+        pub = _make_publisher(fake_client)
+        await pub.publish_summary(count=0, nearest=None)
+        assert not any("summary/by_flag/" in c["topic"] for c in fake_client.publishes)
 
     async def test_summary_throttle_suppresses_within_interval(
         self, fake_client: FakeMqttClient, clock: FakeClock

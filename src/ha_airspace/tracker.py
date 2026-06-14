@@ -36,6 +36,7 @@ from ha_airspace.journal import Journal
 from ha_airspace.merger import Merger
 from ha_airspace.metrics import MetricsRegistry
 from ha_airspace.models import AircraftObservation, AircraftState, Lifecycle, Watchpoint
+from ha_airspace.mqtt.payloads import FlagAircraft, FlagFeedPayload
 from ha_airspace.mqtt.publisher import Publisher
 from ha_airspace.orbit import OrbitDetector
 from ha_airspace.photos import PhotoEnricher
@@ -52,6 +53,12 @@ sets its gauge to 0 rather than leaving a stale value in Grafana."""
 _MIN_PREDICT_SPEED_KT: float = 40.0
 """Below this ground speed the track is too slow for a meaningful closest-
 approach projection (taxiing, hovering, jitter), so prediction is skipped."""
+
+_FLAG_FEED_MAX: int = 10
+"""Cap on aircraft listed in a per-flag feed. The feed's ``count`` is the true
+total; the list is the nearest N so a card stays readable and the retained
+payload stays small. Tune if a dense flag (e.g. a broad 'interesting') routinely
+overflows it."""
 
 
 def _default_clock() -> datetime:
@@ -107,6 +114,7 @@ class AircraftTracker:
         orbit: OrbitDetector | None = None,
         drone_registry: DroneRegistry | None = None,
         has_drone_source: bool = False,
+        feed_flags: Iterable[str] = (),
         metrics: MetricsRegistry | None = None,
         clock: Callable[[], datetime] = _default_clock,
         stale_after_s: float = 5.0,
@@ -126,6 +134,10 @@ class AircraftTracker:
         # Only publish the drone summary when a Remote ID source is configured,
         # so ADS-B-only installs don't get spurious empty drone topics.
         self._has_drone_source = has_drone_source
+        # Flags that get a per-flag feed topic + sensor (configured flag names,
+        # plus any derived flag like 'orbiting'). Empty feeds still publish so the
+        # sensor reads 0 — so this is the full discovered set, not just live flags.
+        self._feed_flags: tuple[str, ...] = tuple(feed_flags)
         self._primary = self._pick_primary(self._watchpoints)
         self._metrics = metrics
         self._clock = clock
@@ -359,6 +371,7 @@ class AircraftTracker:
             count=len(aircraft),
             nearest=self._nearest(aircraft),
             count_by_flag=self._count_by_flag(aircraft),
+            flag_feeds=self._build_flag_feeds(aircraft),
         )
         if self._has_drone_source:
             await self._publisher.publish_drone_summary(
@@ -375,6 +388,26 @@ class AircraftTracker:
             for flag in state.flags:
                 counts[flag] = counts.get(flag, 0) + 1
         return counts
+
+    def _build_flag_feeds(self, states: list[AircraftState]) -> dict[str, FlagFeedPayload]:
+        """One ``FlagFeedPayload`` per configured feed flag: the aircraft carrying
+        that flag, nearest-to-primary first, capped at ``_FLAG_FEED_MAX``. Every
+        feed flag is emitted even when nothing matches (count 0, empty list) so
+        the discovered sensor reads 0 instead of going unavailable. Returns ``{}``
+        when no feed flags are configured (no by_flag topics published)."""
+        if not self._feed_flags:
+            return {}
+        key = self._primary.name
+        feeds: dict[str, FlagFeedPayload] = {}
+        for flag in self._feed_flags:
+            matching = [s for s in states if flag in s.flags]
+            # Nearest first; unpositioned tracks (no distance to primary) sort last.
+            matching.sort(key=lambda s: s.distance_to.get(key, float("inf")))
+            rows = [FlagAircraft.from_state(s, watchpoint=key) for s in matching[:_FLAG_FEED_MAX]]
+            feeds[flag] = FlagFeedPayload(
+                flag=flag, count=len(matching), watchpoint=key, aircraft=rows
+            )
+        return feeds
 
     def _nearest(self, states: list[AircraftState]) -> AircraftState | None:
         """The track in ``states`` closest to the primary watchpoint. Tracks

@@ -1,0 +1,122 @@
+# Example Home Assistant automations for ha-airspace alerts (v0.2.11+).
+#
+# The service does the detection: each `enrichment.alerts.rules` entry becomes a
+# binary_sensor.airspace_alert_<rule> that turns `on` while any aircraft matches
+# (ENTER) and `off` when none do (EXIT). It also exposes the triggering aircraft
+# on that entity's attributes (json_attributes_topic = airspace/alert/<rule>/info):
+#
+#   flight, hex, registration, aircraft_type, squawk, alt_baro_ft,
+#   distance_to{<watchpoint>}, bearing_to{<watchpoint>}, flags, db_metadata,
+#   and (when photos are enabled) entity_picture + photographer.
+#
+# So "setting up the actual alerts" on the HA side is just: trigger on the
+# binary_sensor going on, then notify. No templates required for a basic push;
+# the richer examples below pull detail from the attributes.
+#
+# Paste into Settings -> Automations -> (⋮) Edit in YAML, or add under
+# `automation:` in configuration.yaml. Replace:
+#   - binary_sensor.airspace_alert_<rule>  -> your rule names
+#   - notify.mobile_app_<device>           -> your HA mobile-app notify service
+#   - the watchpoint key ("home")          -> your primary watchpoint name
+
+# ---------------------------------------------------------------------------
+# 1. Minimal — push the moment a rule fires. No templating.
+# ---------------------------------------------------------------------------
+- alias: "Airspace · military close · notify"
+  description: "Push when the military_close rule turns on."
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.airspace_alert_military_close
+      to: "on"
+  action:
+    - service: notify.mobile_app_phone
+      data:
+        title: "🛩️ Military aircraft nearby"
+        message: >-
+          {{ state_attr('binary_sensor.airspace_alert_military_close', 'flight')
+             or state_attr('binary_sensor.airspace_alert_military_close', 'hex') }}
+
+# ---------------------------------------------------------------------------
+# 2. Rich — flight, type, distance + altitude in the body; Planespotters photo
+#    as the notification image (needs `photos.enabled: true`). Tapping the
+#    notification opens the Airspace dashboard view.
+# ---------------------------------------------------------------------------
+- alias: "Airspace · military close · rich notify"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.airspace_alert_military_close
+      to: "on"
+  variables:
+    a: binary_sensor.airspace_alert_military_close
+    wp: home
+  action:
+    - service: notify.mobile_app_phone
+      data:
+        title: >-
+          🚨 {{ state_attr(a, 'flight') or state_attr(a, 'hex') }}
+          {{ '· ' ~ state_attr(a, 'aircraft_type') if state_attr(a, 'aircraft_type') }}
+        message: >-
+          {% set d = (state_attr(a, 'distance_to') or {}).get(wp) %}
+          {% set b = (state_attr(a, 'bearing_to') or {}).get(wp) %}
+          {{ '%.1f nm'|format(d) if d is not none else '? nm' }}
+          {{ 'brg %d°'|format(b|round(0)|int) if b is not none else '' }}
+          · {{ state_attr(a, 'alt_baro_ft') or '?' }} ft
+          {% if state_attr(a, 'squawk') %}· squawk {{ state_attr(a, 'squawk') }}{% endif %}
+        data:
+          # entity_picture is a relative URL; prefix your HA base_url for mobile.
+          image: "{{ state_attr(a, 'entity_picture') }}"
+          # Tap-to-open (Android: clickAction / iOS: url). Point at your view.
+          clickAction: "/lovelace/airspace"
+          url: "/lovelace/airspace"
+          push:
+            interruption-level: time-sensitive  # iOS: bypass focus modes
+
+# ---------------------------------------------------------------------------
+# 3. Persistent notification (no mobile app) — stays in the HA sidebar until
+#    dismissed. Handy for a wall tablet.
+# ---------------------------------------------------------------------------
+- alias: "Airspace · emergency squawk · persistent"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.airspace_alert_emergency
+      to: "on"
+  action:
+    - service: persistent_notification.create
+      data:
+        notification_id: airspace_emergency
+        title: "🚨 Emergency squawk"
+        message: >-
+          {% set a = 'binary_sensor.airspace_alert_emergency' %}
+          {{ state_attr(a, 'flight') or state_attr(a, 'hex') }}
+          squawking {{ state_attr(a, 'squawk') }}
+  # Optional companion: clear it on EXIT.
+- alias: "Airspace · emergency squawk · clear"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.airspace_alert_emergency
+      to: "off"
+  action:
+    - service: persistent_notification.dismiss
+      data:
+        notification_id: airspace_emergency
+
+# ---------------------------------------------------------------------------
+# 4. Drone in the area — Remote ID, with operator location. The nearest-drone
+#    sensor carries operator_lat/operator_lon and (with drone_registry on)
+#    make/model in db_metadata. Trigger on the count rising above zero.
+# ---------------------------------------------------------------------------
+- alias: "Airspace · drone detected · notify"
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.airspace_drone_count
+      above: 0
+  action:
+    - service: notify.mobile_app_phone
+      data:
+        title: "🛸 Drone detected"
+        message: >-
+          {% set s = 'sensor.airspace_nearest_drone' %}
+          {% set db = state_attr(s, 'db_metadata') or {} %}
+          {{ db.get('make') ~ ' ' ~ db.get('model') if db.get('make') else 'Unknown drone' }}
+          · {{ states(s) }} nm
+          {% if state_attr(s, 'operator_lat') %}· operator located{% endif %}

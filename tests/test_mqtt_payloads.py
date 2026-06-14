@@ -30,6 +30,8 @@ from ha_airspace.mqtt.payloads import (
     AircraftPayload,
     AlertPayload,
     DronePayload,
+    FlagAircraft,
+    FlagFeedPayload,
     PhotoPayload,
     ReceiverLocationPayload,
     ReceiverStatsPayload,
@@ -386,3 +388,45 @@ class TestDronePayloadDbMetadata:
         assert payload.db_metadata["make"] == "DJI"
         data = json.loads(payload.model_dump_json())
         assert data["db_metadata"]["model"] == "Mavic 3"
+
+
+# ---------------------------------------------------------------------------
+# FlagAircraft / FlagFeedPayload (per-flag feed sensors)
+# ---------------------------------------------------------------------------
+
+
+class TestFlagFeedPayload:
+    def test_row_projects_compact_fields(self) -> None:
+        state = _make_state()
+        state.flags = {"military", "heavy"}
+        state.distance_to = {"home": 12.5, "office": 28.4}
+        state.bearing_to = {"home": 270.0, "office": 90.0}
+        row = FlagAircraft.from_state(state, watchpoint="home")
+        assert row.hex == "ae0001"
+        assert row.flight == "RCH171"
+        assert row.alt_baro_ft == 35000
+        assert row.distance_nm == 12.5  # home, not office
+        assert row.bearing_deg == 270.0
+        assert row.flags == ["heavy", "military"]  # sorted
+
+    def test_row_distance_none_when_watchpoint_absent(self) -> None:
+        state = _make_state()
+        state.distance_to = {}
+        state.bearing_to = {}
+        row = FlagAircraft.from_state(state, watchpoint="home")
+        assert row.distance_nm is None
+        assert row.bearing_deg is None
+
+    def test_feed_carries_count_and_version(self) -> None:
+        state = _make_state()
+        feed = FlagFeedPayload(
+            flag="military",
+            count=3,
+            watchpoint="home",
+            aircraft=[FlagAircraft.from_state(state, watchpoint="home")],
+        )
+        assert feed.schema_version == PAYLOAD_SCHEMA_VERSION
+        data = json.loads(feed.model_dump_json())
+        assert data["flag"] == "military"
+        assert data["count"] == 3  # true total, may exceed len(aircraft)
+        assert len(data["aircraft"]) == 1

@@ -155,6 +155,7 @@ overwhelm HA's registry; power users subscribe to the wildcard topic instead):
 | `sensor.airspace_nearest_aircraft` | distance to the closest aircraft; full details in its attributes |
 | `sensor.airspace_drone_count` | drones currently tracked (with a Remote ID feed) |
 | `sensor.airspace_nearest_drone` | nearest drone; operator location in its attributes |
+| `sensor.airspace_flag_<flag>` | count of aircraft carrying that flag; a distance-sorted list (alt/dist/type/squawk) in its attributes — one per configured flag |
 | `binary_sensor.airspace_alert_<rule>` | on while any aircraft matches that alert rule |
 | `binary_sensor.airspace_receiver_<name>_status` | per-receiver connectivity |
 | `sensor.airspace_receiver_<name>_aircraft_count` | per-receiver aircraft count |
@@ -167,8 +168,12 @@ topic, so they go *unavailable* when the service stops or crashes rather than
 showing stale values.
 
 A ready-to-adapt Lovelace dashboard (map of nearest traffic, overview glance,
-nearest-aircraft detail, receiver health, alert badges) built from these
-entities with stock cards is in [`docs/dashboard.example.yaml`](docs/dashboard.example.yaml).
+nearest-aircraft detail, per-flag "watched aircraft" tables, receiver health,
+alert badges) built from these entities with stock cards is in
+[`docs/dashboard.example.yaml`](docs/dashboard.example.yaml). Example HA
+**automations** that turn the alert binary sensors into mobile/persistent
+notifications (with photo + flight detail) are in
+[`docs/automations.example.yaml`](docs/automations.example.yaml).
 
 ---
 
@@ -181,6 +186,7 @@ airspace/status                          online | offline (LWT + graceful shutdo
 airspace/summary/count                   total aircraft
 airspace/summary/nearest                 JSON: closest aircraft (full state)
 airspace/summary/count_by_flag           JSON: counts per flag ({} when no flag rules configured)
+airspace/summary/by_flag/<flag>          JSON: capped, distance-sorted list of aircraft with that flag
 airspace/aircraft/<hex>                  JSON: per-aircraft state (wildcard; not an HA entity)
 airspace/receiver/<name>/status          online | unhealthy | offline
 airspace/receiver/<name>/stats           JSON: count, message rate, health
