@@ -321,6 +321,15 @@ class TestEntityIds:
             assert "ADS-B" not in body["name"]
             assert "Enrich" not in body["name"]
 
+
+class TestDisplayPrecision:
+    def test_nm_sensors_round_to_one_decimal(self) -> None:
+        # Distance sensors carry a long float; HA should display 1 decimal.
+        for _, body in build_discovery_payloads(_make_config()):
+            if body.get("unit_of_measurement") == "nm":
+                assert body["suggested_display_precision"] == 1
+                assert body["state_class"] == "measurement"
+
     def test_sw_version_included_when_provided(self) -> None:
         payloads = build_discovery_payloads(_make_config(), sw_version="0.1.2.3")
         for _, body in payloads:
