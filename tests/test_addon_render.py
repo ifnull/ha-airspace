@@ -163,3 +163,92 @@ class TestDeepMerge:
         base = {"receivers": [{"name": "a"}]}
         override = {"receivers": [{"name": "b"}]}
         assert render.deep_merge(base, override) == {"receivers": [{"name": "b"}]}
+
+
+# ---------------------------------------------------------------------------
+# Batteries-included toggles -> native config (no extra_config needed)
+# ---------------------------------------------------------------------------
+
+
+class TestFeatureToggles:
+    def test_all_toggles_produce_valid_config(self, tmp_path: Path) -> None:
+        opts = _base_options(
+            enable_databases=True,
+            enable_emergency=True,
+            enable_military=True,
+            enable_interesting=True,
+            enable_alerts=True,
+            alert_distance_nm=25,
+            enable_orbit=True,
+            orbit_min_turn_deg=270,
+            enable_photos=True,
+            enable_journal=True,
+        )
+        config = _render_and_load(opts, tmp_path)  # load_config must accept it
+        assert config.orbit.enabled is True
+        assert config.photos.enabled is True
+
+    def test_databases_expand_with_urls(self, tmp_path: Path) -> None:
+        config = _render_and_load(_base_options(enable_databases=True), tmp_path)
+        names = {s.name: s.url for s in config.databases.sources}
+        assert names.get("mictronics", "").endswith(".csv.gz")
+        assert names.get("adsbexchange", "").endswith(".json.gz")
+
+    def test_military_flag_and_nearby_alert(self, tmp_path: Path) -> None:
+        opts = _base_options(enable_military=True, enable_databases=True, enable_alerts=True)
+        config = _render_and_load(opts, tmp_path)
+        assert "military" in config.enrichment.flags
+        rules = {r.name: r for r in config.enrichment.alerts.rules}
+        assert "military_nearby" in rules
+        assert rules["military_nearby"].match.max_distance_nm == 30.0
+        assert rules["military_nearby"].match.watchpoint == "home"
+
+    def test_emergency_alerts_anywhere(self, tmp_path: Path) -> None:
+        config = _render_and_load(
+            _base_options(enable_emergency=True, enable_alerts=True), tmp_path
+        )
+        rule = {r.name: r for r in config.enrichment.alerts.rules}["emergency_anywhere"]
+        assert rule.match.flags == ["emergency"]
+        assert rule.match.max_distance_nm is None  # fires regardless of distance
+
+    def test_alert_uses_first_watchpoint_name(self, tmp_path: Path) -> None:
+        # Generated distance alerts must resolve even when the watchpoint isn't "home".
+        opts = _base_options(
+            watchpoints=[{"name": "base", "lat": 30.0, "lon": -97.0}],
+            enable_military=True,
+            enable_alerts=True,
+        )
+        config = _render_and_load(opts, tmp_path)
+        assert config.enrichment.alerts.rules[0].match.watchpoint == "base"
+
+    def test_orbit_toggle_adds_section_and_alert(self, tmp_path: Path) -> None:
+        opts = _base_options(enable_orbit=True, orbit_min_turn_deg=300, enable_alerts=True)
+        config = _render_and_load(opts, tmp_path)
+        assert config.orbit.min_turn_deg == 300
+        assert "orbiting_nearby" in {r.name for r in config.enrichment.alerts.rules}
+
+    def test_flags_without_alerts(self, tmp_path: Path) -> None:
+        # Tagging on, alerting off -> flag present, no alert rules.
+        opts = _base_options(enable_military=True, enable_alerts=False)
+        config = _render_and_load(opts, tmp_path)
+        assert "military" in config.enrichment.flags
+        assert config.enrichment.alerts.rules == []
+
+    def test_toggles_off_leave_defaults(self, tmp_path: Path) -> None:
+        # Plain base options (no feature toggles) -> unopinionated config.
+        config = _render_and_load(_base_options(), tmp_path)
+        assert config.enrichment.flags == {}
+        assert config.enrichment.alerts.rules == []
+        assert config.databases.sources == []
+        assert config.orbit.enabled is False
+        assert config.photos.enabled is False
+
+    def test_extra_config_overrides_generated_toggle(self, tmp_path: Path) -> None:
+        # extra_config deep-merges last, so it wins over a generated section.
+        opts = _base_options(
+            enable_orbit=True,
+            orbit_min_turn_deg=360,
+            extra_config="orbit:\n  min_turn_deg: 90",
+        )
+        config = _render_and_load(opts, tmp_path)
+        assert config.orbit.min_turn_deg == 90  # extra_config overrode the toggle

@@ -45,6 +45,16 @@ options:
       band: "1090"
   remoteid: []
   enable_journal: true
+  # Enrichment / detection — batteries included, no YAML needed.
+  enable_databases: true
+  enable_emergency: true
+  enable_military: true
+  enable_interesting: false
+  enable_alerts: true
+  alert_distance_nm: 30
+  enable_orbit: false
+  orbit_min_turn_deg: 360
+  enable_photos: false
   enable_metrics: false
   metrics_port: 9090
   extra_config: ""
@@ -70,6 +80,15 @@ schema:
     - name: str
       url: str
   enable_journal: bool?
+  enable_databases: bool?
+  enable_emergency: bool?
+  enable_military: bool?
+  enable_interesting: bool?
+  enable_alerts: bool?
+  alert_distance_nm: float?
+  enable_orbit: bool?
+  orbit_min_turn_deg: float?
+  enable_photos: bool?
   enable_metrics: bool?
   metrics_port: port?
   extra_config: str?
