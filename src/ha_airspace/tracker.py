@@ -36,6 +36,7 @@ from ha_airspace.merger import Merger
 from ha_airspace.metrics import MetricsRegistry
 from ha_airspace.models import AircraftObservation, AircraftState, Lifecycle, Watchpoint
 from ha_airspace.mqtt.publisher import Publisher
+from ha_airspace.orbit import OrbitDetector
 from ha_airspace.photos import PhotoEnricher
 
 if TYPE_CHECKING:
@@ -98,6 +99,7 @@ class AircraftTracker:
         alerts: AlertEvaluator | None = None,
         journal: Journal | None = None,
         photos: PhotoEnricher | None = None,
+        orbit: OrbitDetector | None = None,
         has_drone_source: bool = False,
         metrics: MetricsRegistry | None = None,
         clock: Callable[[], datetime] = _default_clock,
@@ -113,6 +115,7 @@ class AircraftTracker:
         self._alerts = alerts
         self._journal = journal
         self._photos = photos
+        self._orbit = orbit
         # Only publish the drone summary when a Remote ID source is configured,
         # so ADS-B-only installs don't get spurious empty drone topics.
         self._has_drone_source = has_drone_source
@@ -154,6 +157,10 @@ class AircraftTracker:
             # Flags / DB join depend on the freshly merged canonical +
             # geometry, so enrich after both.
             self._enricher.enrich(state)
+        if self._orbit is not None:
+            # After enrich (which reassigns flags) so the derived orbiting flag
+            # survives; before transition journaling so it's recorded + alertable.
+            self._orbit.update(state)
         self._record_flag_transitions(state)
 
     def _record_flag_transitions(self, state: AircraftState) -> None:
@@ -246,6 +253,8 @@ class AircraftTracker:
                 if self._journal is not None:
                     for flag in stale_flags:
                         self._journal.record_event(track_id, "flag_exit", flag, now)
+                if self._orbit is not None:
+                    self._orbit.forget(track_id)
                 log.debug("track_purged", track_id=track_id)
                 continue
             if is_drone:

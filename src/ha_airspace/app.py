@@ -42,6 +42,7 @@ from ha_airspace.merger import Merger
 from ha_airspace.metrics import MetricsRegistry
 from ha_airspace.mqtt.client import MqttClient
 from ha_airspace.mqtt.publisher import Publisher
+from ha_airspace.orbit import OrbitDetector
 from ha_airspace.photos import PhotoEnricher
 from ha_airspace.receivers import (
     HttpJsonReceiver,
@@ -375,6 +376,8 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
             cache_ttl_s=config.photos.cache_ttl_days * 86400.0,
         )
 
+    orbit = OrbitDetector(config.orbit) if config.orbit.enabled else None
+
     tracker = AircraftTracker(
         publisher,
         config.watchpoints_runtime(),
@@ -383,6 +386,7 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
         alerts=alerts,
         journal=journal,
         photos=photos,
+        orbit=orbit,
         has_drone_source=any(rc.enabled for rc in config.remoteid),
         metrics=metrics,
     )

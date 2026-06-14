@@ -197,3 +197,16 @@ receivers:
 #   enabled: true
 #   cache_ttl_days: 30              # how long a hit (or a confirmed miss) is cached
 #   inject_into: ["alerts"]         # only "alerts" is valid today
+
+# --------------------------------------------------------------------------
+# orbit — orbit / loiter detection (Phase 5). Off by default. When enabled, a
+# track that sustains a turn (cumulative heading change >= min_turn_deg within
+# window_s) gets a derived `orbiting` flag — a circling police/surveillance
+# helicopter, a loitering drone, a holding pattern. `orbiting` is then usable in
+# alert rules like any flag, e.g.  match: { flags: ["orbiting"] }.
+# In-memory only (no disk writes).
+# --------------------------------------------------------------------------
+# orbit:
+#   enabled: true
+#   window_s: 120                   # look back this far for accumulated turn
+#   min_turn_deg: 360               # 360 = a full circle; lower = looser loiter
