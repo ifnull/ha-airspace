@@ -68,6 +68,11 @@ class AircraftPayload(BaseModel):
     # --- Position ------------------------------------------------------
     lat: float | None = None
     lon: float | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    """HA-map aliases of ``lat``/``lon``: the Map card plots any entity exposing
+    ``latitude``/``longitude`` attributes, so the ``nearest`` sensor lands on the
+    map natively. Same values as ``lat``/``lon`` (kept for existing consumers)."""
     alt_baro_ft: int | None = None
     alt_geom_ft: int | None = None
 
@@ -124,6 +129,8 @@ class AircraftPayload(BaseModel):
             squawk=canonical.squawk,
             lat=canonical.lat,
             lon=canonical.lon,
+            latitude=canonical.lat,
+            longitude=canonical.lon,
             alt_baro_ft=canonical.alt_baro_ft,
             alt_geom_ft=canonical.alt_geom_ft,
             ground_speed_kt=canonical.ground_speed_kt,
@@ -174,6 +181,10 @@ class DronePayload(BaseModel):
     # --- Position / movement ------------------------------------------
     lat: float | None = None
     lon: float | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    """HA-map aliases of ``lat``/``lon`` (the drone's own position), so the
+    nearest-drone sensor plots on the Map card natively."""
     alt_geom_ft: int | None = None
     agl_ft: float | None = None
     """Height above takeoff/ground, broadcast natively by Remote ID."""
@@ -212,6 +223,8 @@ class DronePayload(BaseModel):
             ua_type=drone.ua_type if drone else None,
             lat=canonical.lat,
             lon=canonical.lon,
+            latitude=canonical.lat,
+            longitude=canonical.lon,
             alt_geom_ft=canonical.alt_geom_ft,
             agl_ft=drone.agl_ft if drone else None,
             ground_speed_kt=canonical.ground_speed_kt,

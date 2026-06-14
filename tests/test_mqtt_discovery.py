@@ -322,6 +322,26 @@ class TestEntityIds:
             assert "Enrich" not in body["name"]
 
 
+class TestAlertAttributes:
+    def test_alert_binary_sensor_exposes_info_attributes(self) -> None:
+        # The alert binary_sensor pulls attributes (incl. entity_picture) from
+        # the per-rule info topic, for a picture/glance alert card.
+        cfg = Config.model_validate(
+            {
+                "watchpoints": [{"name": "home", "lat": 30.33, "lon": -97.99}],
+                "mqtt": {"broker": "broker.local"},
+                "receivers": [{"name": "rx", "url": "http://x/a.json", "band": "1090"}],
+                "enrichment": {
+                    "alerts": {"rules": [{"name": "mil", "match": {"flags": ["military"]}}]}
+                },
+            }
+        )
+        alert = next(
+            b for _, b in build_discovery_payloads(cfg) if b["unique_id"] == "airspace_alert_mil"
+        )
+        assert alert["json_attributes_topic"] == "airspace/alert/mil/info"
+
+
 class TestDisplayPrecision:
     def test_nm_sensors_round_to_one_decimal(self) -> None:
         # Distance sensors carry a long float; HA should display 1 decimal.

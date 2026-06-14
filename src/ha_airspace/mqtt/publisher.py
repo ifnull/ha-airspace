@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable
+from typing import Any
 
 import structlog
 
@@ -168,11 +169,20 @@ class Publisher:
         active alert. Cleared by ``clear_alert`` on EXIT.
 
         ``photo`` (Planespotters, Phase 2c) is injected here only — the alert
-        payload, never the wildcard aircraft topic."""
+        payload, never the wildcard aircraft topic. Also refreshes the per-rule
+        ``info`` topic with this (latest-triggering) track's summary, which the
+        HA ``binary_sensor`` exposes as attributes (incl. ``entity_picture``)
+        for a picture/glance alert card."""
         payload = AlertPayload.build(state, photo).model_dump_json()
         await self._client.publish(
             f"{self._base}/alert/{rule}/{state.track_id}",
             payload,
+            retain=True,
+            topic_class="alert",
+        )
+        await self._client.publish(
+            f"{self._base}/alert/{rule}/info",
+            json.dumps(_alert_info(state, photo), separators=(",", ":")).encode("utf-8"),
             retain=True,
             topic_class="alert",
         )
@@ -190,13 +200,23 @@ class Publisher:
     async def publish_alert_active(self, rule: str, *, active: bool) -> None:
         """Publish ``airspace/alert/<rule>/active`` = ``on`` | ``off`` retained.
         The per-rule HA ``binary_sensor`` reads this directly (payload_on=on),
-        turning on while any aircraft matches the rule and off when none do."""
+        turning on while any aircraft matches the rule and off when none do.
+
+        When the rule goes inactive, clear the ``info`` attribute topic too, so
+        the picture/glance card doesn't keep showing a departed aircraft."""
         await self._client.publish(
             f"{self._base}/alert/{rule}/active",
             b"on" if active else b"off",
             retain=True,
             topic_class="alert",
         )
+        if not active:
+            await self._client.publish(
+                f"{self._base}/alert/{rule}/info",
+                b"",
+                retain=True,
+                topic_class="alert",
+            )
 
     # ------------------------------------------------------------------
     # Drone topics — Remote ID tracks, separate from aircraft
@@ -366,6 +386,28 @@ class Publisher:
             retain=True,
             topic_class="status",
         )
+
+
+def _alert_info(state: AircraftState, photo: PhotoPayload | None) -> dict[str, Any]:
+    """Compact summary of an alert's triggering track, for the per-rule
+    ``info`` topic that the HA binary_sensor exposes as attributes. ``photo``
+    maps to ``entity_picture`` so a picture/glance card renders the thumbnail."""
+    canonical = state.canonical
+    info: dict[str, Any] = {
+        "flight": canonical.flight,
+        "hex": state.hex,
+        "track_id": state.track_id,
+        "registration": canonical.registration,
+        "aircraft_type": canonical.aircraft_type,
+        "distance_to": dict(state.distance_to),
+        "predicted_closest_approach_nm": state.predicted_closest_approach_nm,
+        "flags": sorted(state.flags),
+    }
+    if photo is not None:
+        info["entity_picture"] = photo.thumbnail_url
+        info["photographer"] = photo.photographer
+        info["photo_link"] = photo.link
+    return info
 
 
 __all__ = ["Publisher"]

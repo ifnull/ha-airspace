@@ -32,6 +32,7 @@ from ha_airspace.models import (
     DroneInfo,
     ReceiverLocation,
 )
+from ha_airspace.mqtt.payloads import PhotoPayload
 from ha_airspace.mqtt.publisher import Publisher
 
 # ---------------------------------------------------------------------------
@@ -622,3 +623,51 @@ class TestReceiverStatusOnChange:
         await pub.on_connect()  # reconnect
         await pub.publish_receiver_status("rx-home", online=True)  # same value
         assert len(_status_publishes(fake_client)) == 2  # republished after reconnect
+
+
+# ---------------------------------------------------------------------------
+# Alert info topic — attributes (incl. entity_picture) for a picture card
+# ---------------------------------------------------------------------------
+
+
+def _info_publishes(client: FakeMqttClient, rule: str = "mil") -> list[dict[str, Any]]:
+    return [p for p in client.publishes if p["topic"] == f"airspace/alert/{rule}/info"]
+
+
+class TestAlertInfo:
+    async def test_publish_alert_emits_info_with_photo(self, fake_client: FakeMqttClient) -> None:
+        pub = _make_publisher(fake_client)
+        photo = PhotoPayload(
+            thumbnail_url="https://t/x.jpg", photographer="Jane", link="https://p/1"
+        )
+        await pub.publish_alert("mil", _make_state(), photo=photo)
+        infos = _info_publishes(fake_client)
+        assert len(infos) == 1
+        assert infos[0]["retain"] is True
+        data = json.loads(infos[0]["payload"])
+        assert data["entity_picture"] == "https://t/x.jpg"
+        assert data["photographer"] == "Jane"
+        assert data["flight"] == "RCH171"
+        assert data["hex"] == "ae0001"
+
+    async def test_info_without_photo_has_no_entity_picture(
+        self, fake_client: FakeMqttClient
+    ) -> None:
+        pub = _make_publisher(fake_client)
+        await pub.publish_alert("mil", _make_state())
+        data = json.loads(_info_publishes(fake_client)[0]["payload"])
+        assert "entity_picture" not in data
+        assert data["flight"] == "RCH171"
+
+    async def test_inactive_clears_info(self, fake_client: FakeMqttClient) -> None:
+        pub = _make_publisher(fake_client)
+        await pub.publish_alert_active("mil", active=False)
+        cleared = _info_publishes(fake_client)
+        assert cleared  # info topic was published
+        assert cleared[-1]["payload"] == b""  # empty-retained = cleared
+        assert cleared[-1]["retain"] is True
+
+    async def test_active_does_not_clear_info(self, fake_client: FakeMqttClient) -> None:
+        pub = _make_publisher(fake_client)
+        await pub.publish_alert_active("mil", active=True)
+        assert _info_publishes(fake_client) == []  # active on -> info left intact
