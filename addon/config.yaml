@@ -1,11 +1,15 @@
 # Home Assistant add-on manifest for ha-airspace.
 # Schema reference: https://developers.home-assistant.io/docs/add-ons/configuration/
 name: ha-airspace
-version: "0.2.7"
+version: "0.2.8"
 slug: ha_airspace
 description: >-
   Multi-source ADS-B + drone Remote ID enrichment to MQTT for Home Assistant.
 url: https://github.com/ifnull/ha-airspace
+# Prebuilt per-arch images (published by the release workflow). With image set,
+# the Supervisor *pulls* the add-on instead of building it on the device — fast,
+# reliable updates. {arch} -> aarch64 | amd64. build.yaml remains for local dev.
+image: "ghcr.io/ifnull/{arch}-addon-ha-airspace"
 # 64-bit only for now (aarch64 covers all 64-bit HAOS Pis; amd64 for NUC/VM).
 # armv7 is omitted until a clean pydantic-core build path is proven.
 arch:
