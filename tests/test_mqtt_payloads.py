@@ -439,3 +439,15 @@ class TestFlagFeedPayload:
         assert data["flag"] == "military"
         assert data["count"] == 3  # true total, may exceed len(aircraft)
         assert len(data["aircraft"]) == 1
+        assert data["photo"] is None  # defaults None (nearest-match photo, opt-in)
+
+    def test_feed_carries_nearest_match_photo(self) -> None:
+        feed = FlagFeedPayload(
+            flag="military",
+            count=1,
+            watchpoint="home",
+            aircraft=[FlagAircraft.from_state(_make_state(), watchpoint="home")],
+            photo=PhotoPayload(thumbnail_url="https://x/p.jpg", photographer="Jane"),
+        )
+        data = json.loads(feed.model_dump_json())
+        assert data["photo"]["thumbnail_url"] == "https://x/p.jpg"
