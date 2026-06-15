@@ -31,6 +31,7 @@ from typing import Any, Self
 
 from pydantic import BaseModel, ConfigDict
 
+from ha_airspace.icao_country import country_for, flag_for
 from ha_airspace.models import AircraftState, ReceiverLocation
 
 PAYLOAD_SCHEMA_VERSION = 1
@@ -105,6 +106,10 @@ class AircraftPayload(BaseModel):
     category: str | None = None
     aircraft_type: str | None = None
     is_tisb: bool = False
+    country: str | None = None
+    """ISO 3166-1 alpha-2 country of registration, derived from the ICAO hex."""
+    country_flag: str | None = None
+    """Flag emoji for ``country`` (ready to print), or ``None`` for non-ICAO/unallocated."""
 
     # --- Timing --------------------------------------------------------
     first_seen: datetime
@@ -165,6 +170,8 @@ class AircraftPayload(BaseModel):
             category=canonical.category,
             aircraft_type=canonical.aircraft_type,
             is_tisb=canonical.is_tisb,
+            country=country_for(state.hex),
+            country_flag=flag_for(state.hex),
             first_seen=state.first_seen,
             last_seen=state.last_seen,
             distance_to=dict(state.distance_to),
@@ -290,6 +297,8 @@ class FlagAircraft(BaseModel):
     aircraft_type: str | None = None
     alt_baro_ft: int | None = None
     squawk: str | None = None
+    country_flag: str | None = None
+    """Flag emoji for the country of registration (from the ICAO hex), or None."""
     distance_nm: float | None = None
     """Great-circle distance to the feed's watchpoint, nm. None if unpositioned."""
     bearing_deg: float | None = None
@@ -313,6 +322,7 @@ class FlagAircraft(BaseModel):
             aircraft_type=c.aircraft_type,
             alt_baro_ft=c.alt_baro_ft,
             squawk=c.squawk,
+            country_flag=flag_for(state.hex),
             distance_nm=state.distance_to.get(watchpoint),
             bearing_deg=state.bearing_to.get(watchpoint),
             flags=sorted(state.flags),

@@ -358,6 +358,12 @@ class TestAlertPayload:
         assert payload.photo is not None
         assert payload.photo.thumbnail_url == "https://x/p.jpg"
 
+    def test_from_state_sets_country_and_flag(self) -> None:
+        # _make_state uses hex ae0001 -> US (A-block).
+        payload = AircraftPayload.from_state(_make_state())
+        assert payload.country == "us"
+        assert payload.country_flag == "🇺🇸"
+
 
 # ---------------------------------------------------------------------------
 # HA-map aliases: latitude/longitude mirror lat/lon (dashboard polish)
@@ -417,6 +423,10 @@ class TestFlagFeedPayload:
         assert row.distance_nm == 12.5  # home, not office
         assert row.bearing_deg == 270.0
         assert row.flags == ["heavy", "military"]  # sorted
+
+    def test_row_carries_country_flag(self) -> None:
+        row = FlagAircraft.from_state(_make_state(), watchpoint="home")
+        assert row.country_flag == "🇺🇸"  # hex ae0001 -> US
 
     def test_row_carries_db_metadata_for_why(self) -> None:
         # db_metadata rides each row so a flag table can show *why* (PIA/LADD/mil).

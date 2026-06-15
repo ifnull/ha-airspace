@@ -18,7 +18,8 @@
 # render those as tables — replace the flag names with YOURS from enrichment.flags.
 #
 # Flight/hex are rendered as links to globe.adsbexchange.com/?icao=<hex> (HA opens
-# external markdown links in a new tab) — tap a callsign to see it on the map.
+# external markdown links in a new tab) — tap a callsign to see it on the map —
+# and prefixed with the country-of-origin flag emoji derived from the ICAO hex.
 #
 # Replace ids to match YOURS:
 #   - sensor.airspace_flag_<flag>           -> your enrichment.flags names
@@ -72,7 +73,7 @@ views:
                       {% set brg = (state_attr(s,'bearing_to') or {}).get('home') -%}
                       {% set cpa = state_attr(s,'predicted_closest_approach_nm') -%}
                       {% set gs = state_attr(s,'ground_speed_kt') -%}
-                      ## {{ '[' ~ (state_attr(s,'flight') or state_attr(s,'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(s,'hex') ~ ')' if state_attr(s,'hex') else (state_attr(s,'flight') or '?') }}
+                      ## {{ (state_attr(s,'country_flag') ~ ' ') if state_attr(s,'country_flag') else '' }}{{ '[' ~ (state_attr(s,'flight') or state_attr(s,'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(s,'hex') ~ ')' if state_attr(s,'hex') else (state_attr(s,'flight') or '?') }}
                       **{{ db.get('model') or state_attr(s,'aircraft_type') or 'unknown type' }}**{{ ' · ' ~ db.get('ownop') if db.get('ownop') }}
 
                       - **Distance:** {{ states(s) }} nm{{ ' · brg ' ~ brg|round(0)|int ~ '°' if brg is not none }}
@@ -142,7 +143,7 @@ views:
                       | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk | Notes |
                       |---|---|--:|--:|--:|--:|:--|
                       {% for a in rows -%}
-                      | {{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
+                      | {{ (a.country_flag ~ ' ') if a.country_flag else '' }}{{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
                       {% endfor -%}
                       {% else -%}
                       None right now.
@@ -170,7 +171,7 @@ views:
                       | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk | Notes |
                       |---|---|--:|--:|--:|--:|:--|
                       {% for a in rows -%}
-                      | {{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
+                      | {{ (a.country_flag ~ ' ') if a.country_flag else '' }}{{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
                       {% endfor -%}
                       {% else -%}
                       None right now.
@@ -198,7 +199,7 @@ views:
                       | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk | Notes |
                       |---|---|--:|--:|--:|--:|:--|
                       {% for a in rows -%}
-                      | {{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
+                      | {{ (a.country_flag ~ ' ') if a.country_flag else '' }}{{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
                       {% endfor -%}
                       {% else -%}
                       None right now.
@@ -241,7 +242,7 @@ views:
           {% set brg = (state_attr(s, 'bearing_to') or {}).get('home') -%}
           {% set cpa = state_attr(s, 'predicted_closest_approach_nm') -%}
           {% set p = state_attr(s, 'photo') -%}
-          **{{ '[' ~ (state_attr(s,'flight') or state_attr(s,'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(s,'hex') ~ ')' if state_attr(s,'hex') else (state_attr(s,'flight') or '?') }}**
+          **{{ (state_attr(s,'country_flag') ~ ' ') if state_attr(s,'country_flag') else '' }}{{ '[' ~ (state_attr(s,'flight') or state_attr(s,'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(s,'hex') ~ ')' if state_attr(s,'hex') else (state_attr(s,'flight') or '?') }}**
           {{ db.get('model') or state_attr(s,'aircraft_type') or '' }}{{ ' · ' ~ db.get('ownop') if db.get('ownop') }}
 
           {{ states(s) }} nm{{ ', brg ' ~ brg|round(0)|int ~ '°' if brg is not none }} · {{ state_attr(s,'alt_baro_ft') or '?' }} ft{% if state_attr(s,'squawk') %} · squawk {{ state_attr(s,'squawk') }}{% endif %}{% if cpa is not none %} · CPA {{ cpa|round(1) }} nm{% endif %}{% if state_attr(s,'flags') %} · **{{ state_attr(s,'flags')|join(', ') }}**{% endif %}
@@ -270,7 +271,7 @@ views:
           | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk | Notes |
           |---|---|--:|--:|--:|--:|:--|
           {% for a in rows -%}
-          | {{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
+          | {{ (a.country_flag ~ ' ') if a.country_flag else '' }}{{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
           {% endfor -%}
           {% else -%}
           None right now.
@@ -286,7 +287,7 @@ views:
           | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk | Notes |
           |---|---|--:|--:|--:|--:|:--|
           {% for a in rows -%}
-          | {{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
+          | {{ (a.country_flag ~ ' ') if a.country_flag else '' }}{{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
           {% endfor -%}
           {% else -%}
           None right now.
@@ -302,7 +303,7 @@ views:
           | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk | Notes |
           |---|---|--:|--:|--:|--:|:--|
           {% for a in rows -%}
-          | {{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
+          | {{ (a.country_flag ~ ' ') if a.country_flag else '' }}{{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
           {% endfor -%}
           {% else -%}
           None right now.
@@ -319,7 +320,7 @@ views:
           type: markdown
           content: >
             {% set a = 'binary_sensor.airspace_alert_military_close' %}
-            🚨 **{{ '[' ~ (state_attr(a, 'flight') or state_attr(a, 'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(a, 'hex') ~ ')' if state_attr(a, 'hex') else (state_attr(a, 'flight') or '?') }}**
+            🚨 **{{ (state_attr(a, 'country_flag') ~ ' ') if state_attr(a, 'country_flag') else '' }}{{ '[' ~ (state_attr(a, 'flight') or state_attr(a, 'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(a, 'hex') ~ ')' if state_attr(a, 'hex') else (state_attr(a, 'flight') or '?') }}**
             {% set d = (state_attr(a, 'distance_to') or {}).get('home') %}
             {{ '· ' ~ d | round(1) ~ ' nm' if d is not none else '' }}
             {% set p = state_attr(a, 'entity_picture') %}
