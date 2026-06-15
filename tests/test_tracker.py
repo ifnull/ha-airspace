@@ -80,6 +80,7 @@ class FakePublisher:
         nearest: AircraftState | None,
         count_by_flag: dict[str, int] | None = None,
         flag_feeds: dict[str, Any] | None = None,
+        nearest_photo: Any = None,
     ) -> bool:
         self.summaries.append(
             {
@@ -87,6 +88,7 @@ class FakePublisher:
                 "nearest": nearest,
                 "count_by_flag": count_by_flag,
                 "flag_feeds": flag_feeds,
+                "nearest_photo": nearest_photo,
             }
         )
         return True
@@ -360,6 +362,7 @@ class TestNearest:
             "nearest": None,
             "count_by_flag": {},
             "flag_feeds": {},
+            "nearest_photo": None,
         }
 
 
@@ -844,7 +847,9 @@ class TestAlertPhotos:
         stub = _StubPhotos(photo)
         tracker = self._tracker(publisher, clock, stub)
         await tracker.process_poll([_obs("ae0001", category="A3")])
-        assert stub.calls == ["ae0001"]  # looked up by hex
+        # Looked up by hex (for the alert; the nearest-summary path also looks up
+        # the same hex — the real enricher caches, so it's one network call).
+        assert "ae0001" in stub.calls
         assert ("heavy_close", photo) in publisher.alert_photos
 
     async def test_no_enricher_means_photo_none(
@@ -862,8 +867,46 @@ class TestAlertPhotos:
         stub = _StubPhotos(None)  # no photo for this hex
         tracker = self._tracker(publisher, clock, stub)
         await tracker.process_poll([_obs("ae0001", category="A3")])
-        assert stub.calls == ["ae0001"]
+        assert "ae0001" in stub.calls
         assert ("heavy_close", None) in publisher.alert_photos
+
+
+class TestNearestPhoto:
+    async def test_nearest_photo_passed_to_summary(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        photo = PhotoPayload(thumbnail_url="https://t/img.jpg", photographer="Jane")
+        stub = _StubPhotos(photo)
+        tracker = AircraftTracker(
+            publisher,  # type: ignore[arg-type]
+            [_HOME],
+            photos=stub,  # type: ignore[arg-type]
+            clock=clock,
+        )
+        await tracker.process_poll([_obs("ae0001")])
+        assert "ae0001" in stub.calls  # nearest looked up by hex
+        assert publisher.summaries[-1]["nearest_photo"] == photo
+
+    async def test_no_photos_enricher_means_none(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = _make_tracker(publisher, clock)  # no photos
+        await tracker.process_poll([_obs("ae0001")])
+        assert publisher.summaries[-1]["nearest_photo"] is None
+
+    async def test_empty_airspace_no_photo_lookup(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        stub = _StubPhotos(PhotoPayload(thumbnail_url="https://t/img.jpg"))
+        tracker = AircraftTracker(
+            publisher,  # type: ignore[arg-type]
+            [_HOME],
+            photos=stub,  # type: ignore[arg-type]
+            clock=clock,
+        )
+        await tracker.process_poll([])  # nothing tracked
+        assert stub.calls == []  # no nearest -> no lookup
+        assert publisher.summaries[-1]["nearest_photo"] is None
 
 
 # ---------------------------------------------------------------------------

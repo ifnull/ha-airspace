@@ -292,6 +292,7 @@ class Publisher:
         nearest: AircraftState | None,
         count_by_flag: dict[str, int] | None = None,
         flag_feeds: dict[str, FlagFeedPayload] | None = None,
+        nearest_photo: PhotoPayload | None = None,
     ) -> bool:
         """Publish ``airspace/summary/{count, nearest, count_by_flag}`` plus a
         ``summary/by_flag/<flag>`` topic for each entry in ``flag_feeds``.
@@ -307,6 +308,10 @@ class Publisher:
         list of matching aircraft) backing the per-flag ``sensor.airspace_flag_*``
         entities. Empty feeds are still published (count 0, empty list) so the
         sensor reads 0 rather than going unavailable when nothing matches.
+
+        ``nearest_photo`` (when supplied) is attached to the nearest payload only
+        — a single, throttled entity, so the lookup cost is bounded, unlike the
+        per-hex wildcard which never carries a photo.
         """
         now = self._clock()
         if (now - self._last_summary_publish) < self._summary_min_interval:
@@ -322,7 +327,7 @@ class Publisher:
 
         nearest_payload: bytes | str
         if nearest is not None:
-            nearest_payload = AircraftPayload.from_state(nearest).model_dump_json()
+            nearest_payload = AircraftPayload.from_state(nearest, nearest_photo).model_dump_json()
         else:
             nearest_payload = b""
         await self._client.publish(

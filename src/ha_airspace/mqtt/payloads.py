@@ -40,6 +40,19 @@ set (removed/renamed/retyped field); additive optional fields do not require a
 bump. Emitted as ``schema_version`` on every consumer-facing entity payload."""
 
 
+class PhotoPayload(BaseModel):
+    """An aircraft photo (Planespotters, Phase 2c). ``link`` + ``photographer``
+    are the attribution Planespotters asks consumers to display alongside the
+    image. Populated on alert payloads and the nearest-aircraft summary; never
+    the high-cardinality ``airspace/aircraft/<hex>`` wildcard (no lookup there)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    thumbnail_url: str
+    link: str | None = None
+    photographer: str | None = None
+
+
 class AircraftPayload(BaseModel):
     """Serialized form of an ``AircraftState`` for the
     ``airspace/aircraft/<hex>`` topic.
@@ -113,12 +126,22 @@ class AircraftPayload(BaseModel):
     db_metadata: dict[str, Any]
     """Mictronics + ADSBex merged fields. Empty dict in Phase 1."""
 
+    # --- Photo (Phase 2c) ---------------------------------------------
+    photo: PhotoPayload | None = None
+    """Planespotters photo. Populated on alert payloads and the nearest-aircraft
+    summary (when photos are enabled and a photo exists); ``None`` on the
+    high-cardinality ``airspace/aircraft/<hex>`` wildcard — no lookup is done
+    there, preserving the per-hex cost guarantee."""
+
     @classmethod
-    def from_state(cls, state: AircraftState) -> Self:
+    def from_state(cls, state: AircraftState, photo: PhotoPayload | None = None) -> Self:
         """Project an internal ``AircraftState`` into the published
         payload shape. Sets are sorted for deterministic JSON output
         (some MQTT consumers cache by message hash; non-deterministic
         ordering causes false cache misses).
+
+        ``photo`` is attached for the nearest-aircraft summary and alert payloads;
+        callers for the wildcard pass nothing, leaving it ``None``.
         """
         canonical = state.canonical
         return cls(
@@ -150,6 +173,7 @@ class AircraftPayload(BaseModel):
             predicted_closest_approach_nm=state.predicted_closest_approach_nm,
             flags=sorted(state.flags),
             db_metadata=dict(state.db_metadata),
+            photo=photo,
         )
 
 
@@ -313,36 +337,19 @@ class FlagFeedPayload(BaseModel):
     aircraft: list[FlagAircraft]
 
 
-class PhotoPayload(BaseModel):
-    """An aircraft photo (Planespotters, Phase 2c) for injection into alert
-    payloads. ``link`` + ``photographer`` are the attribution Planespotters asks
-    consumers to display alongside the image."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    thumbnail_url: str
-    link: str | None = None
-    photographer: str | None = None
-
-
 class AlertPayload(AircraftPayload):
-    """The payload published to ``airspace/alert/<rule>/<track_id>``: the full
-    aircraft contract plus an optional photo.
+    """The payload published to ``airspace/alert/<rule>/<track_id>``.
 
-    Photos ride alert payloads only — never the high-cardinality wildcard
-    ``airspace/aircraft/<hex>`` topic — so the photo field lives here, not on
-    ``AircraftPayload``. Inherits ``schema_version`` and every aircraft field.
+    Identical to ``AircraftPayload`` (which now carries the optional ``photo``);
+    kept as a distinct type so the alert topic's contract is named separately
+    from the wildcard/nearest one and can diverge later without churn.
     """
-
-    photo: PhotoPayload | None = None
 
     @classmethod
     def build(cls, state: AircraftState, photo: PhotoPayload | None = None) -> Self:
-        """Project an ``AircraftState`` (+ optional photo) into the alert
-        payload. Reuses ``AircraftPayload.from_state`` for the aircraft fields so
-        the two payloads can never drift."""
-        base = AircraftPayload.from_state(state)
-        return cls(**base.model_dump(), photo=photo)
+        """Project an ``AircraftState`` (+ optional photo) into the alert payload.
+        Thin wrapper over ``from_state`` so the two payloads can never drift."""
+        return cls.from_state(state, photo=photo)
 
 
 class ReceiverStatsPayload(BaseModel):

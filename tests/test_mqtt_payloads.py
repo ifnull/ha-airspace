@@ -343,11 +343,20 @@ class TestAlertPayload:
         assert data["photo"]["photographer"] == "Jane"
         assert data["schema_version"] == 1
 
-    def test_aircraft_payload_has_no_photo_field(self) -> None:
-        # Photos ride alert payloads ONLY — the wildcard topic stays clean.
-        assert "photo" not in AircraftPayload.model_fields
-        data = json.loads(AircraftPayload.from_state(_make_state()).model_dump_json())
-        assert "photo" not in data
+    def test_wildcard_payload_photo_is_none(self) -> None:
+        # AircraftPayload now carries an optional photo (shared with alerts +
+        # the nearest summary), but the wildcard never looks one up: from_state
+        # without a photo leaves it None, so the per-hex topic stays photo-free.
+        payload = AircraftPayload.from_state(_make_state())
+        assert payload.photo is None
+        data = json.loads(payload.model_dump_json())
+        assert data["photo"] is None
+
+    def test_from_state_attaches_photo_when_supplied(self) -> None:
+        photo = PhotoPayload(thumbnail_url="https://x/p.jpg", photographer="A. Smith")
+        payload = AircraftPayload.from_state(_make_state(), photo)
+        assert payload.photo is not None
+        assert payload.photo.thumbnail_url == "https://x/p.jpg"
 
 
 # ---------------------------------------------------------------------------

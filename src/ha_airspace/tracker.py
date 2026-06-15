@@ -367,11 +367,19 @@ class AircraftTracker:
         # aircraft summary excludes drones, and drones get their own summary.
         aircraft = [s for s in self._states.values() if "remoteid" not in s.bands]
         drones = [s for s in self._states.values() if "remoteid" in s.bands]
+        nearest_aircraft = self._nearest(aircraft)
+        # Photo for the nearest aircraft only: a single, throttled entity, so the
+        # cached/fails-soft lookup is bounded (unlike the per-hex wildcard, which
+        # never carries a photo). No-op when photos are disabled or it has no hex.
+        nearest_photo = (
+            await self._photo_for(nearest_aircraft) if nearest_aircraft is not None else None
+        )
         await self._publisher.publish_summary(
             count=len(aircraft),
-            nearest=self._nearest(aircraft),
+            nearest=nearest_aircraft,
             count_by_flag=self._count_by_flag(aircraft),
             flag_feeds=self._build_flag_feeds(aircraft),
+            nearest_photo=nearest_photo,
         )
         if self._has_drone_source:
             await self._publisher.publish_drone_summary(

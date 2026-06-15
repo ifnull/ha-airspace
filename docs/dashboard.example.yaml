@@ -79,6 +79,12 @@ views:
                       - **Closest approach:** {{ (cpa|round(1)|string ~ ' nm') if cpa is not none else '—' }}
                       - **Flags:** {{ state_attr(s,'flags')|join(', ') if state_attr(s,'flags') else '—' }}
                       - **Registration:** {{ state_attr(s,'registration') or '—' }}
+                      {% set p = state_attr(s,'photo') -%}
+                      {% if p %}
+                      ![photo]({{ p.thumbnail_url }})
+
+                      {{ ('_© ' ~ p.photographer ~ '_') if p.photographer else '' }}
+                      {% endif -%}
                       {% endif -%}
           - entity: sensor.airspace_nearest_drone
             name: Nearest drone
