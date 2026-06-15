@@ -18,11 +18,16 @@
 #   - binary_sensor.airspace_alert_<rule>  -> your rule names
 #   - notify.mobile_app_<device>           -> your HA mobile-app notify service
 #   - the watchpoint key ("home")          -> your primary watchpoint name
+#
+# Each automation has a unique `id:` — required for HA to manage it from the UI
+# (without it you get "does not have a unique ID"). Keep them unique; never reuse
+# an `id` across automations.
 
 # ---------------------------------------------------------------------------
 # 1. Minimal — push the moment a rule fires. No templating.
 # ---------------------------------------------------------------------------
-- alias: "Airspace · military close · notify"
+- id: airspace_military_close_notify
+  alias: "Airspace · military close · notify"
   description: "Push when the military_close rule turns on."
   trigger:
     - platform: state
@@ -41,7 +46,8 @@
 #    as the notification image (needs `photos.enabled: true`). Tapping the
 #    notification opens the Airspace dashboard view.
 # ---------------------------------------------------------------------------
-- alias: "Airspace · military close · rich notify"
+- id: airspace_military_close_rich_notify
+  alias: "Airspace · military close · rich notify"
   trigger:
     - platform: state
       entity_id: binary_sensor.airspace_alert_military_close
@@ -75,7 +81,8 @@
 # 3. Persistent notification (no mobile app) — stays in the HA sidebar until
 #    dismissed. Handy for a wall tablet.
 # ---------------------------------------------------------------------------
-- alias: "Airspace · emergency squawk · persistent"
+- id: airspace_emergency_squawk_persistent
+  alias: "Airspace · emergency squawk · persistent"
   trigger:
     - platform: state
       entity_id: binary_sensor.airspace_alert_emergency
@@ -90,7 +97,8 @@
           {{ state_attr(a, 'flight') or state_attr(a, 'hex') }}
           squawking {{ state_attr(a, 'squawk') }}
   # Optional companion: clear it on EXIT.
-- alias: "Airspace · emergency squawk · clear"
+- id: airspace_emergency_squawk_clear
+  alias: "Airspace · emergency squawk · clear"
   trigger:
     - platform: state
       entity_id: binary_sensor.airspace_alert_emergency
@@ -105,7 +113,8 @@
 #    sensor carries operator_lat/operator_lon and (with drone_registry on)
 #    make/model in db_metadata. Trigger on the count rising above zero.
 # ---------------------------------------------------------------------------
-- alias: "Airspace · drone detected · notify"
+- id: airspace_drone_detected_notify
+  alias: "Airspace · drone detected · notify"
   trigger:
     - platform: numeric_state
       entity_id: sensor.airspace_drone_count
