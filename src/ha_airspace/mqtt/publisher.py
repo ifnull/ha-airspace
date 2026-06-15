@@ -22,6 +22,7 @@ from typing import Any
 import structlog
 
 from ha_airspace.config import Config
+from ha_airspace.icao_country import country_for, flag_for
 from ha_airspace.metrics import MetricsRegistry
 from ha_airspace.models import AircraftState, ReceiverLocation
 from ha_airspace.mqtt.client import MqttClient
@@ -420,6 +421,8 @@ def _alert_info(state: AircraftState, photo: PhotoPayload | None) -> dict[str, A
         "track_id": state.track_id,
         "registration": canonical.registration,
         "aircraft_type": canonical.aircraft_type,
+        "country": country_for(state.hex),
+        "country_flag": flag_for(state.hex),
         "squawk": canonical.squawk,
         "alt_baro_ft": canonical.alt_baro_ft,
         "distance_to": dict(state.distance_to),
