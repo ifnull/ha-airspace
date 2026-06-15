@@ -697,6 +697,16 @@ class TestAlertInfo:
         assert "entity_picture" not in data
         assert data["flight"] == "RCH171"
 
+    async def test_info_carries_altitude_eta_and_squawk(self, fake_client: FakeMqttClient) -> None:
+        # The drone-conflict / approach notifications need "how low" + "how soon".
+        pub = _make_publisher(fake_client)
+        await pub.publish_alert("mil", _make_state())
+        data = json.loads(_info_publishes(fake_client)[0]["payload"])
+        assert data["alt_baro_ft"] == 35000
+        # Predictive + geometry keys are always present (None until computed).
+        for key in ("predicted_eta_to_home_s", "bearing_to", "squawk"):
+            assert key in data
+
     async def test_inactive_clears_info(self, fake_client: FakeMqttClient) -> None:
         pub = _make_publisher(fake_client)
         await pub.publish_alert_active("mil", active=False)

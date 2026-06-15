@@ -129,3 +129,60 @@
           {{ db.get('make') ~ ' ' ~ db.get('model') if db.get('make') else 'Unknown drone' }}
           · {{ states(s) }} nm
           {% if state_attr(s, 'operator_lat') %}· operator located{% endif %}
+
+# ---------------------------------------------------------------------------
+# 5. Drone conflict — push when a LOW aircraft is projected to pass within your
+#    drone's possible operating area, so you can land before a conflict. This is
+#    the replacement for a hand-rolled dump1090 "low traffic" alert.
+#
+#    TWO parts — the alert rule lives in the ADD-ON config, the push here:
+#
+#    (a) Add this rule to the add-on's extra_config under enrichment.alerts.rules
+#        (that list REPLACES the toggle-generated rules, so keep your others too):
+#
+#          - name: drone_conflict
+#            match:
+#              max_closest_approach_nm: 10.8   # ~20 km: optimistic consumer-drone
+#                                              #   (DJI O4/O3, FCC) range from home
+#              max_alt_agl_ft: 1640            # ~500 m: typical DJI max-altitude ceiling
+#              within_eta_s: 600               # only if arriving within 10 min
+#                                              #   (omit for earlier/broader warning)
+#              watchpoint: home
+#
+#        max_closest_approach_nm only fires for INBOUND tracks (a departing plane
+#        never matches). REQUIRES the home watchpoint to set elevation_m — without
+#        it AGL is computed from MSL and the altitude filter silently misses low
+#        traffic. Set it in the add-on options:
+#          watchpoints:
+#            - name: home
+#              lat: ...
+#              lon: ...
+#              elevation_m: 430        # YOUR ground elevation in metres
+#
+#    (b) This automation fires when the rule turns on. The alert info carries
+#        alt_baro_ft, distance/bearing, predicted closest approach + ETA.
+# ---------------------------------------------------------------------------
+- id: airspace_drone_conflict_notify
+  alias: "Airspace · drone conflict · notify"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.airspace_alert_drone_conflict
+      to: "on"
+  variables:
+    a: binary_sensor.airspace_alert_drone_conflict
+    wp: home
+  action:
+    - service: notify.mobile_app_phone
+      data:
+        title: "⚠️ Low aircraft inbound — land the drone"
+        message: >-
+          {{ state_attr(a,'flight') or state_attr(a,'hex') }}{{ ' · ' ~ state_attr(a,'aircraft_type') if state_attr(a,'aircraft_type') }}
+          · {{ state_attr(a,'alt_baro_ft') or '?' }} ft
+          {% set d = (state_attr(a,'distance_to') or {}).get(wp) -%}
+          {{ '· ' ~ '%.1f'|format(d) ~ ' nm now' if d is not none }}
+          {% set cpa = state_attr(a,'predicted_closest_approach_nm') -%}
+          {% set eta = state_attr(a,'predicted_eta_to_home_s') -%}
+          {% if cpa is not none %}· within {{ '%.1f'|format(cpa) }} nm{% endif %}{% if eta is not none %} in ~{{ (eta/60)|round(0)|int }} min{% endif %}
+        data:
+          push:
+            interruption-level: time-sensitive   # iOS: bypass focus/silent
