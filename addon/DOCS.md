@@ -92,40 +92,50 @@ A bad value fails fast in the add-on log with the offending field path.
 - **Don't re-declare what a toggle already produces.** Turning a toggle on and
   also setting the same section in `extra_config` is redundant and a common
   source of confusion — prefer the toggle, and reserve `extra_config` for what
-  toggles can't express (e.g. `unseen_for_days` rules, `drone_registry` before
-  it had a toggle, custom MQTT TLS). Indentation must be exact: a stray space
-  fails the YAML parse at start-up.
+  toggles can't express (e.g. `unseen_for_days` rules, pattern/type/category
+  flags, custom MQTT TLS).
+- **Indentation must be exact** — a stray space fails the YAML parse at start-up.
+  And **paste over the whole field**: select-all (Ctrl-A) inside the box first,
+  then paste. The editor appends rather than replaces, so pasting on top of
+  existing text silently duplicates your `rules` list (a duplicated rule with a
+  missing `match` is the usual symptom).
 
-#### extra_config example (custom rules + a history-aware alert)
+#### extra_config example (additive flags + a full custom rules list)
+
+This adds only what the toggles can't express — pattern / type / category flags
+(no database needed; they read straight from the broadcast) and a history-aware
+rule — and does **not** re-declare `databases`, `orbit`, or `photos` (those stay
+on via their toggles). Because `alerts.rules` replaces wholesale, it lists every
+rule to keep, including the ones the toggles would have generated.
 
 ```yaml
 enrichment:
   flags:
-    emergency:
-      squawks: ["7500", "7600", "7700"]
-    military:
-      sources: ["adsbexchange:mil"]   # needs the databases section below
+    # Added to the toggle flags (military / interesting / emergency).
+    mil_callsign:
+      patterns: ["RCH", "SAM", "EVAC", "MEDEVAC", "LIFEGUARD"]  # callsign prefix
+    heavy_mil:
+      types: ["B52", "C17", "C5M", "U2", "RC135"]               # ICAO type code
+    rotorcraft:
+      categories: ["A7"]                                        # emitter category
   alerts:
+    # Replaces the toggle rules, so it repeats the ones to keep (incl.
+    # orbiting_nearby when enable_orbit is on) and adds the custom ones.
     rules:
-      - name: emergency_any
-        match:
-          flags: ["emergency"]
+      - name: military_close
+        match: { flags: ["military"], max_distance_nm: 30 }
+      - name: interesting_nearby
+        match: { flags: ["interesting"], max_distance_nm: 30 }
+      - name: emergency_anywhere
+        match: { flags: ["emergency"] }
+      - name: orbiting_nearby
+        match: { flags: ["orbiting"], max_distance_nm: 30 }
       - name: new_military           # history-aware (needs enable_journal)
-        match:
-          flags: ["military"]
-          unseen_for_days: 30
-databases:                            # sources is a LIST; each needs name + url
-  sources:
-    - name: mictronics                # name selects the parser
-      url: https://github.com/wiedehopf/tar1090-db/raw/csv/aircraft.csv.gz
-      enabled: true
-    - name: adsbexchange
-      url: https://downloads.adsbexchange.com/downloads/basic-ac-db.json.gz
-      enabled: true
-orbit:                                # Phase 5 — derived "orbiting" flag
-  enabled: true
-photos:                               # Phase 2c — photo URL on alert payloads
-  enabled: true
+        match: { flags: ["military"], unseen_for_days: 30 }
+      - name: mil_callsign_close
+        match: { flags: ["mil_callsign"], max_distance_nm: 50 }
+      - name: helicopter_low
+        match: { flags: ["rotorcraft"], max_distance_nm: 10 }
 ```
 
 See the project README and `config.example.yaml` for the full schema.
