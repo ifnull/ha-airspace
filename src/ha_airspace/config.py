@@ -457,9 +457,10 @@ def _default_inject_into() -> list[Literal["alerts"]]:
 
 class PhotosConfig(BaseModel):
     """Planespotters aircraft-photo enrichment (Phase 2c). Off by default. When
-    enabled, a photo URL is looked up by hex and injected into alert payloads
-    only — never the high-cardinality wildcard topic. Cached in memory, fails
-    soft: a photo lookup never blocks or breaks an alert."""
+    enabled, a photo URL is looked up by hex and attached to alert payloads and
+    the nearest-aircraft summary (a single, throttled entity) — never the
+    high-cardinality wildcard topic. Cached in memory, fails soft: a photo lookup
+    never blocks or breaks a publish."""
 
     model_config = _STRICT
 

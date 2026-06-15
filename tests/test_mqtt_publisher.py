@@ -406,6 +406,21 @@ class TestPublishSummary:
         body = json.loads(flag_call["payload"])
         assert body == {"military": 1, "interesting": 0}
 
+    async def test_nearest_photo_included_in_payload(self, fake_client: FakeMqttClient) -> None:
+        pub = _make_publisher(fake_client)
+        photo = PhotoPayload(thumbnail_url="https://t/img.jpg", photographer="Jane")
+        await pub.publish_summary(count=1, nearest=_make_state(), nearest_photo=photo)
+        nearest = next(c for c in fake_client.publishes if c["topic"] == "airspace/summary/nearest")
+        body = json.loads(nearest["payload"])
+        assert body["photo"]["thumbnail_url"] == "https://t/img.jpg"
+        assert body["photo"]["photographer"] == "Jane"
+
+    async def test_nearest_photo_absent_is_null(self, fake_client: FakeMqttClient) -> None:
+        pub = _make_publisher(fake_client)
+        await pub.publish_summary(count=1, nearest=_make_state())
+        nearest = next(c for c in fake_client.publishes if c["topic"] == "airspace/summary/nearest")
+        assert json.loads(nearest["payload"])["photo"] is None
+
     async def test_flag_feeds_published_per_flag(self, fake_client: FakeMqttClient) -> None:
         pub = _make_publisher(fake_client)
         feeds = {

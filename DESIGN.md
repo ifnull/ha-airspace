@@ -725,7 +725,7 @@ Each slice ships independently and gathers feedback before the next.
 **Done when:** restarting the service preserves `first_seen` for every previously-observed hex.
 
 **Phase 2c: Delight.**
-- Planespotters photo enrichment (off by default, cached, fails-soft, photo URL injected into alert payloads only)
+- Planespotters photo enrichment (off by default, cached, fails-soft, photo URL attached to alert payloads and the nearest-aircraft summary — a single, throttled entity; never the high-cardinality wildcard)
 - Predictive `predicted_eta_to_home_s` and `predicted_closest_approach_nm` schema fields on `AircraftState` (always None during Phase 2c — implementation deferred to Phase 5 to avoid false-positive alerts on airport approach traffic)
 
 **Done when:** alert payloads carry photo URLs (when configured) and `AircraftState` exposes the predictive fields as `None` placeholders.

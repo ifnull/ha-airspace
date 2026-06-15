@@ -195,10 +195,11 @@ receivers:
 
 # --------------------------------------------------------------------------
 # photos — Planespotters aircraft photo enrichment (Phase 2c). Off by default.
-# When enabled, a photo URL (+ attribution) is looked up by hex and injected
-# into ALERT payloads only — never the high-cardinality airspace/aircraft/<hex>
-# wildcard. Cached in memory (no disk writes) and fails soft: a photo lookup
-# never blocks or breaks an alert. No API key required.
+# When enabled, a photo URL (+ attribution) is looked up by hex and attached to
+# ALERT payloads and the nearest-aircraft summary (a single, throttled entity) —
+# never the high-cardinality airspace/aircraft/<hex> wildcard. Cached in memory
+# (no disk writes) and fails soft: a photo lookup never blocks or breaks a
+# publish. No API key required.
 # --------------------------------------------------------------------------
 # photos:
 #   enabled: true
