@@ -52,25 +52,25 @@
     - platform: state
       entity_id: binary_sensor.airspace_alert_military_close
       to: "on"
-  variables:
-    a: binary_sensor.airspace_alert_military_close
-    wp: home
+  # No automation-level `variables:` — the HA UI editor drops them on save/
+  # round-trip. Each template inlines `{% set a = ... %}` instead (robust).
   action:
     - service: notify.mobile_app_phone
       data:
         title: >-
-          🚨 {{ state_attr(a, 'flight') or state_attr(a, 'hex') }}
-          {{ '· ' ~ state_attr(a, 'aircraft_type') if state_attr(a, 'aircraft_type') }}
+          {% set a = 'binary_sensor.airspace_alert_military_close' -%}
+          🚨 {{ state_attr(a, 'flight') or state_attr(a, 'hex') }}{{ ' · ' ~ state_attr(a, 'aircraft_type') if state_attr(a, 'aircraft_type') }}
         message: >-
-          {% set d = (state_attr(a, 'distance_to') or {}).get(wp) %}
-          {% set b = (state_attr(a, 'bearing_to') or {}).get(wp) %}
+          {% set a = 'binary_sensor.airspace_alert_military_close' -%}
+          {% set d = (state_attr(a, 'distance_to') or {}).get('home') -%}
+          {% set b = (state_attr(a, 'bearing_to') or {}).get('home') -%}
           {{ '%.1f nm'|format(d) if d is not none else '? nm' }}
           {{ 'brg %d°'|format(b|round(0)|int) if b is not none else '' }}
           · {{ state_attr(a, 'alt_baro_ft') or '?' }} ft
           {% if state_attr(a, 'squawk') %}· squawk {{ state_attr(a, 'squawk') }}{% endif %}
         data:
           # entity_picture is a relative URL; prefix your HA base_url for mobile.
-          image: "{{ state_attr(a, 'entity_picture') }}"
+          image: "{{ state_attr('binary_sensor.airspace_alert_military_close', 'entity_picture') }}"
           # Tap-to-open (Android: clickAction / iOS: url). Point at your view.
           clickAction: "/lovelace/airspace"
           url: "/lovelace/airspace"
@@ -168,17 +168,17 @@
     - platform: state
       entity_id: binary_sensor.airspace_alert_drone_conflict
       to: "on"
-  variables:
-    a: binary_sensor.airspace_alert_drone_conflict
-    wp: home
+  # No automation-level `variables:` (the HA UI editor drops them on save) —
+  # the message inlines `{% set a = ... %}` instead.
   action:
     - service: notify.mobile_app_phone
       data:
         title: "⚠️ Low aircraft inbound — land the drone"
         message: >-
+          {% set a = 'binary_sensor.airspace_alert_drone_conflict' -%}
           {{ state_attr(a,'flight') or state_attr(a,'hex') }}{{ ' · ' ~ state_attr(a,'aircraft_type') if state_attr(a,'aircraft_type') }}
           · {{ state_attr(a,'alt_baro_ft') or '?' }} ft
-          {% set d = (state_attr(a,'distance_to') or {}).get(wp) -%}
+          {% set d = (state_attr(a,'distance_to') or {}).get('home') -%}
           {{ '· ' ~ '%.1f'|format(d) ~ ' nm now' if d is not none }}
           {% set cpa = state_attr(a,'predicted_closest_approach_nm') -%}
           {% set eta = state_attr(a,'predicted_eta_to_home_s') -%}
