@@ -228,27 +228,29 @@ views:
       # (the full payload rides as attributes via json_attributes_topic).
       # Shows the same fields the map popup can't: altitude, distance, bearing,
       # type, squawk, flags, and the predictive closest-approach.
+      # Literal block (content: |), not folded (>), so the photo image lands on
+      # its own line. Photo needs photos enabled + a Planespotters hit.
       - type: markdown
         title: Nearest aircraft
-        content: >
-          {% set s = 'sensor.airspace_nearest_aircraft' %}
-          {% if states(s) not in ['unknown', 'unavailable'] %}
-          {% set db = state_attr(s, 'db_metadata') or {} %}
-          {% set brg = (state_attr(s, 'bearing_to') or {}).get('home') %}
-          {% set cpa = state_attr(s, 'predicted_closest_approach_nm') %}
-          {% set sq = state_attr(s, 'squawk') %}
-          **{{ '[' ~ (state_attr(s, 'flight') or state_attr(s, 'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(s, 'hex') ~ ')' if state_attr(s, 'hex') else (state_attr(s, 'flight') or '?') }}**
-          {{ db.get('model') or state_attr(s, 'aircraft_type') or '' }}
-          {{ ' · ' ~ db.get('ownop') if db.get('ownop') else '' }}
-
-          {{ states(s) }} nm{{ ', brg ' ~ brg | round(0) ~ '°' if brg is not none else '' }}
-          · {{ state_attr(s, 'alt_baro_ft') or '?' }} ft
-          {% if sq %} · squawk {{ sq }}{% endif %}
-          {% if cpa is not none %} · CPA {{ cpa | round(1) }} nm{% endif %}
-          {% if state_attr(s, 'flags') %} · **{{ state_attr(s, 'flags') | join(', ') }}**{% endif %}
-          {% else %}
+        content: |
+          {% set s = 'sensor.airspace_nearest_aircraft' -%}
+          {% if states(s) in ['unknown', 'unavailable'] -%}
           No aircraft in range.
-          {% endif %}
+          {% else -%}
+          {% set db = state_attr(s, 'db_metadata') or {} -%}
+          {% set brg = (state_attr(s, 'bearing_to') or {}).get('home') -%}
+          {% set cpa = state_attr(s, 'predicted_closest_approach_nm') -%}
+          {% set p = state_attr(s, 'photo') -%}
+          **{{ '[' ~ (state_attr(s,'flight') or state_attr(s,'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(s,'hex') ~ ')' if state_attr(s,'hex') else (state_attr(s,'flight') or '?') }}**
+          {{ db.get('model') or state_attr(s,'aircraft_type') or '' }}{{ ' · ' ~ db.get('ownop') if db.get('ownop') }}
+
+          {{ states(s) }} nm{{ ', brg ' ~ brg|round(0)|int ~ '°' if brg is not none }} · {{ state_attr(s,'alt_baro_ft') or '?' }} ft{% if state_attr(s,'squawk') %} · squawk {{ state_attr(s,'squawk') }}{% endif %}{% if cpa is not none %} · CPA {{ cpa|round(1) }} nm{% endif %}{% if state_attr(s,'flags') %} · **{{ state_attr(s,'flags')|join(', ') }}**{% endif %}
+          {% if p %}
+          ![photo]({{ p.thumbnail_url }})
+
+          {{ ('_© ' ~ p.photographer ~ '_') if p.photographer else '' }}
+          {% endif -%}
+          {% endif -%}
 
       # Watched aircraft — one table per flag. The state is the count; the
       # `aircraft` attribute is a distance-sorted list of matching aircraft, each
