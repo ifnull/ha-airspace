@@ -47,12 +47,14 @@ views:
             name: Drones
           - entity: sensor.airspace_nearest_aircraft
             name: Nearest (nm)
+          # These must match flags you actually configured (enrichment.flags).
+          # The add-on toggles produce: military, interesting, emergency.
           - entity: sensor.airspace_flag_military
             name: Military
           - entity: sensor.airspace_flag_interesting
             name: Interesting
-          - entity: sensor.airspace_flag_ladd
-            name: LADD
+          - entity: sensor.airspace_flag_emergency
+            name: Emergency
 
       # Nearest aircraft detail, templated from the sensor's attributes
       # (the full payload rides as attributes via json_attributes_topic).
@@ -83,54 +85,58 @@ views:
       # Watched aircraft — one table per flag. The state is the count; the
       # `aircraft` attribute is a distance-sorted list of matching aircraft, each
       # with the fields you asked to see everywhere: flight, type, alt, distance,
-      # bearing, squawk. Duplicate this card per flag and change `flag` + title.
-      # (drone make/model rides db_metadata, not shown here — see the drone card.)
+      # bearing, squawk. Duplicate this card per flag and change the entity + title.
+      #
+      # NOTE: the content uses a LITERAL block scalar (`content: |`), not folded
+      # (`>`). A folded scalar collapses every table row onto one line, so the
+      # markdown table renders as a single mushed row. Keep the `|` and the `-%}`
+      # whitespace trims, and don't reindent the Jinja lines.
       - type: markdown
         title: Military aircraft
-        content: >
-          {% set s = 'sensor.airspace_flag_military' %}
-          {% set rows = state_attr(s, 'aircraft') or [] %}
-          {% if rows %}
+        content: |
+          {% set s = 'sensor.airspace_flag_military' -%}
+          {% set rows = state_attr(s, 'aircraft') or [] -%}
+          {% if rows -%}
           | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk |
           |---|---|--:|--:|--:|--:|
           {% for a in rows -%}
           | {{ a.flight or a.hex }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} |
-          {% endfor %}
-          {% else %}
+          {% endfor -%}
+          {% else -%}
           None right now.
-          {% endif %}
+          {% endif -%}
 
       # Same card for the `interesting` flag — change the entity + title only.
       - type: markdown
         title: Interesting aircraft
-        content: >
-          {% set s = 'sensor.airspace_flag_interesting' %}
-          {% set rows = state_attr(s, 'aircraft') or [] %}
-          {% if rows %}
+        content: |
+          {% set s = 'sensor.airspace_flag_interesting' -%}
+          {% set rows = state_attr(s, 'aircraft') or [] -%}
+          {% if rows -%}
           | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk |
           |---|---|--:|--:|--:|--:|
           {% for a in rows -%}
           | {{ a.flight or a.hex }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} |
-          {% endfor %}
-          {% else %}
+          {% endfor -%}
+          {% else -%}
           None right now.
-          {% endif %}
+          {% endif -%}
 
-      # ...and the `ladd` (privacy/LADD) flag.
+      # ...and the `emergency` flag (squawk 7500/7600/7700).
       - type: markdown
-        title: LADD aircraft
-        content: >
-          {% set s = 'sensor.airspace_flag_ladd' %}
-          {% set rows = state_attr(s, 'aircraft') or [] %}
-          {% if rows %}
+        title: Emergency aircraft
+        content: |
+          {% set s = 'sensor.airspace_flag_emergency' -%}
+          {% set rows = state_attr(s, 'aircraft') or [] -%}
+          {% if rows -%}
           | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk |
           |---|---|--:|--:|--:|--:|
           {% for a in rows -%}
           | {{ a.flight or a.hex }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} |
-          {% endfor %}
-          {% else %}
+          {% endfor -%}
+          {% else -%}
           None right now.
-          {% endif %}
+          {% endif -%}
 
       # Alert card with the Planespotters photo. Shows only while the rule is
       # active; entity_picture + flight come from the alert's info attributes.
