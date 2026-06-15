@@ -418,6 +418,14 @@ class TestFlagFeedPayload:
         assert row.bearing_deg == 270.0
         assert row.flags == ["heavy", "military"]  # sorted
 
+    def test_row_carries_db_metadata_for_why(self) -> None:
+        # db_metadata rides each row so a flag table can show *why* (PIA/LADD/mil).
+        state = _make_state()
+        state.db_metadata = {"ladd": True, "ownop": "ACME"}
+        row = FlagAircraft.from_state(state, watchpoint="home")
+        assert row.db_metadata == {"ladd": True, "ownop": "ACME"}
+        assert json.loads(row.model_dump_json())["db_metadata"]["ladd"] is True
+
     def test_row_distance_none_when_watchpoint_absent(self) -> None:
         state = _make_state()
         state.distance_to = {}

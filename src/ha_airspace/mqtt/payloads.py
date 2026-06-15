@@ -295,6 +295,10 @@ class FlagAircraft(BaseModel):
     bearing_deg: float | None = None
     """Bearing from the feed's watchpoint toward the aircraft, degrees."""
     flags: list[str]
+    db_metadata: dict[str, Any]
+    """DB-derived fields (registration, operator, ``pia``/``ladd``/``mil`` markers,
+    …) so a flag table can show *why* a track is flagged — e.g. PIA vs LADD for an
+    ``interesting`` row. Empty dict when no databases are configured."""
 
     @classmethod
     def from_state(cls, state: AircraftState, *, watchpoint: str) -> Self:
@@ -312,6 +316,7 @@ class FlagAircraft(BaseModel):
             distance_nm=state.distance_to.get(watchpoint),
             bearing_deg=state.bearing_to.get(watchpoint),
             flags=sorted(state.flags),
+            db_metadata=dict(state.db_metadata),
         )
 
 
