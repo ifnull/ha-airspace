@@ -129,7 +129,13 @@ views:
                     type: markdown
                     content: |
                       {% set rows = state_attr('sensor.airspace_flag_military','aircraft') or [] -%}
+                      {% set p = state_attr('sensor.airspace_flag_military','photo') -%}
                       {% if rows -%}
+                      {% if p %}![photo]({{ p.thumbnail_url }})
+
+                      {{ ('_© ' ~ p.photographer ~ ' (nearest match)_') if p.photographer else '' }}
+
+                      {% endif -%}
                       | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk |
                       |---|---|--:|--:|--:|--:|
                       {% for a in rows -%}
@@ -151,7 +157,13 @@ views:
                     type: markdown
                     content: |
                       {% set rows = state_attr('sensor.airspace_flag_interesting','aircraft') or [] -%}
+                      {% set p = state_attr('sensor.airspace_flag_interesting','photo') -%}
                       {% if rows -%}
+                      {% if p %}![photo]({{ p.thumbnail_url }})
+
+                      {{ ('_© ' ~ p.photographer ~ ' (nearest match)_') if p.photographer else '' }}
+
+                      {% endif -%}
                       | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk |
                       |---|---|--:|--:|--:|--:|
                       {% for a in rows -%}
@@ -173,7 +185,13 @@ views:
                     type: markdown
                     content: |
                       {% set rows = state_attr('sensor.airspace_flag_emergency','aircraft') or [] -%}
+                      {% set p = state_attr('sensor.airspace_flag_emergency','photo') -%}
                       {% if rows -%}
+                      {% if p %}![photo]({{ p.thumbnail_url }})
+
+                      {{ ('_© ' ~ p.photographer ~ ' (nearest match)_') if p.photographer else '' }}
+
+                      {% endif -%}
                       | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk |
                       |---|---|--:|--:|--:|--:|
                       {% for a in rows -%}

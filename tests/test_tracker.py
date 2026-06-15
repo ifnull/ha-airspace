@@ -471,7 +471,12 @@ class TestSummary:
 
 class TestFlagFeeds:
     def _tracker(
-        self, publisher: FakePublisher, clock: Clock, *, feed_flags: list[str]
+        self,
+        publisher: FakePublisher,
+        clock: Clock,
+        *,
+        feed_flags: list[str],
+        photos: _StubPhotos | None = None,
     ) -> AircraftTracker:
         enricher = Enricher(
             EnrichmentConfig(
@@ -486,6 +491,7 @@ class TestFlagFeeds:
             [_HOME],
             enricher=enricher,
             feed_flags=feed_flags,
+            photos=photos,  # type: ignore[arg-type]
             clock=clock,
         )
 
@@ -541,6 +547,35 @@ class TestFlagFeeds:
         feed = publisher.summaries[-1]["flag_feeds"]["heavy"]
         assert feed.count == _FLAG_FEED_MAX + 5
         assert len(feed.aircraft) == _FLAG_FEED_MAX
+
+    async def test_feed_photo_is_nearest_match_only(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        photo = PhotoPayload(thumbnail_url="https://t/img.jpg", photographer="Jane")
+        stub = _StubPhotos(photo)
+        tracker = self._tracker(publisher, clock, feed_flags=["heavy"], photos=stub)
+        # Two heavies; ae0002 is nearer home than ae0001.
+        far = _obs("ae0001", category="A3", lat=31.50, lon=-97.99)
+        near = _obs("ae0002", category="A3", lat=30.40, lon=-97.99)
+        await tracker.process_poll([far, near])
+        feed = publisher.summaries[-1]["flag_feeds"]["heavy"]
+        assert feed.photo == photo
+        assert "ae0002" in stub.calls  # looked up the nearest match
+
+    async def test_empty_feed_has_no_photo(self, publisher: FakePublisher, clock: Clock) -> None:
+        stub = _StubPhotos(PhotoPayload(thumbnail_url="https://t/img.jpg"))
+        tracker = self._tracker(publisher, clock, feed_flags=["heavy"], photos=stub)
+        await tracker.process_poll([_obs("ae0001", category="A1")])  # no heavy match
+        feed = publisher.summaries[-1]["flag_feeds"]["heavy"]
+        assert feed.count == 0
+        assert feed.photo is None
+
+    async def test_no_photos_enricher_feed_photo_none(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = self._tracker(publisher, clock, feed_flags=["heavy"])  # no photos
+        await tracker.process_poll([_obs("ae0001", category="A3")])
+        assert publisher.summaries[-1]["flag_feeds"]["heavy"].photo is None
 
 
 # ---------------------------------------------------------------------------

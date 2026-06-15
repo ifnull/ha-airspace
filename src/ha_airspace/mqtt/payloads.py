@@ -335,6 +335,10 @@ class FlagFeedPayload(BaseModel):
     watchpoint: str
     """Watchpoint the rows' distance/bearing are relative to."""
     aircraft: list[FlagAircraft]
+    photo: PhotoPayload | None = None
+    """Planespotters photo of the *nearest matching* aircraft (``aircraft[0]``)
+    only, when photos are enabled and one exists — lets a flag card spotlight the
+    closest match. ``None`` when the feed is empty or photos are off."""
 
 
 class AlertPayload(AircraftPayload):

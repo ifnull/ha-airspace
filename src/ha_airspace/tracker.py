@@ -378,7 +378,7 @@ class AircraftTracker:
             count=len(aircraft),
             nearest=nearest_aircraft,
             count_by_flag=self._count_by_flag(aircraft),
-            flag_feeds=self._build_flag_feeds(aircraft),
+            flag_feeds=await self._build_flag_feeds(aircraft),
             nearest_photo=nearest_photo,
         )
         if self._has_drone_source:
@@ -397,12 +397,16 @@ class AircraftTracker:
                 counts[flag] = counts.get(flag, 0) + 1
         return counts
 
-    def _build_flag_feeds(self, states: list[AircraftState]) -> dict[str, FlagFeedPayload]:
+    async def _build_flag_feeds(self, states: list[AircraftState]) -> dict[str, FlagFeedPayload]:
         """One ``FlagFeedPayload`` per configured feed flag: the aircraft carrying
         that flag, nearest-to-primary first, capped at ``_FLAG_FEED_MAX``. Every
         feed flag is emitted even when nothing matches (count 0, empty list) so
         the discovered sensor reads 0 instead of going unavailable. Returns ``{}``
-        when no feed flags are configured (no by_flag topics published)."""
+        when no feed flags are configured (no by_flag topics published).
+
+        Each feed also carries ``photo`` — the Planespotters photo of its *nearest
+        matching* aircraft only (one cached/fails-soft lookup per non-empty flag),
+        so a flag card can spotlight the closest match without a per-row lookup."""
         if not self._feed_flags:
             return {}
         key = self._primary.name
@@ -412,8 +416,9 @@ class AircraftTracker:
             # Nearest first; unpositioned tracks (no distance to primary) sort last.
             matching.sort(key=lambda s: s.distance_to.get(key, float("inf")))
             rows = [FlagAircraft.from_state(s, watchpoint=key) for s in matching[:_FLAG_FEED_MAX]]
+            photo = await self._photo_for(matching[0]) if matching else None
             feeds[flag] = FlagFeedPayload(
-                flag=flag, count=len(matching), watchpoint=key, aircraft=rows
+                flag=flag, count=len(matching), watchpoint=key, aircraft=rows, photo=photo
             )
         return feeds
 
