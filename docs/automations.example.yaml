@@ -52,25 +52,25 @@
     - platform: state
       entity_id: binary_sensor.airspace_alert_military_close
       to: "on"
-  variables:
-    a: binary_sensor.airspace_alert_military_close
-    wp: home
+  # No automation-level `variables:` — the HA UI editor drops them on save/
+  # round-trip. Each template inlines `{% set a = ... %}` instead (robust).
   action:
     - service: notify.mobile_app_phone
       data:
         title: >-
-          🚨 {{ state_attr(a, 'flight') or state_attr(a, 'hex') }}
-          {{ '· ' ~ state_attr(a, 'aircraft_type') if state_attr(a, 'aircraft_type') }}
+          {% set a = 'binary_sensor.airspace_alert_military_close' -%}
+          🚨 {{ state_attr(a, 'flight') or state_attr(a, 'hex') }}{{ ' · ' ~ state_attr(a, 'aircraft_type') if state_attr(a, 'aircraft_type') }}
         message: >-
-          {% set d = (state_attr(a, 'distance_to') or {}).get(wp) %}
-          {% set b = (state_attr(a, 'bearing_to') or {}).get(wp) %}
+          {% set a = 'binary_sensor.airspace_alert_military_close' -%}
+          {% set d = (state_attr(a, 'distance_to') or {}).get('home') -%}
+          {% set b = (state_attr(a, 'bearing_to') or {}).get('home') -%}
           {{ '%.1f nm'|format(d) if d is not none else '? nm' }}
           {{ 'brg %d°'|format(b|round(0)|int) if b is not none else '' }}
           · {{ state_attr(a, 'alt_baro_ft') or '?' }} ft
           {% if state_attr(a, 'squawk') %}· squawk {{ state_attr(a, 'squawk') }}{% endif %}
         data:
           # entity_picture is a relative URL; prefix your HA base_url for mobile.
-          image: "{{ state_attr(a, 'entity_picture') }}"
+          image: "{{ state_attr('binary_sensor.airspace_alert_military_close', 'entity_picture') }}"
           # Tap-to-open (Android: clickAction / iOS: url). Point at your view.
           clickAction: "/lovelace/airspace"
           url: "/lovelace/airspace"
@@ -129,3 +129,60 @@
           {{ db.get('make') ~ ' ' ~ db.get('model') if db.get('make') else 'Unknown drone' }}
           · {{ states(s) }} nm
           {% if state_attr(s, 'operator_lat') %}· operator located{% endif %}
+
+# ---------------------------------------------------------------------------
+# 5. Drone conflict — push when a LOW aircraft is projected to pass within your
+#    drone's possible operating area, so you can land before a conflict. This is
+#    the replacement for a hand-rolled dump1090 "low traffic" alert.
+#
+#    TWO parts — the alert rule lives in the ADD-ON config, the push here:
+#
+#    (a) Add this rule to the add-on's extra_config under enrichment.alerts.rules
+#        (that list REPLACES the toggle-generated rules, so keep your others too):
+#
+#          - name: drone_conflict
+#            match:
+#              max_closest_approach_nm: 10.8   # ~20 km: optimistic consumer-drone
+#                                              #   (DJI O4/O3, FCC) range from home
+#              max_alt_agl_ft: 1640            # ~500 m: typical DJI max-altitude ceiling
+#              within_eta_s: 600               # only if arriving within 10 min
+#                                              #   (omit for earlier/broader warning)
+#              watchpoint: home
+#
+#        max_closest_approach_nm only fires for INBOUND tracks (a departing plane
+#        never matches). REQUIRES the home watchpoint to set elevation_m — without
+#        it AGL is computed from MSL and the altitude filter silently misses low
+#        traffic. Set it in the add-on options:
+#          watchpoints:
+#            - name: home
+#              lat: ...
+#              lon: ...
+#              elevation_m: 430        # YOUR ground elevation in metres
+#
+#    (b) This automation fires when the rule turns on. The alert info carries
+#        alt_baro_ft, distance/bearing, predicted closest approach + ETA.
+# ---------------------------------------------------------------------------
+- id: airspace_drone_conflict_notify
+  alias: "Airspace · drone conflict · notify"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.airspace_alert_drone_conflict
+      to: "on"
+  # No automation-level `variables:` (the HA UI editor drops them on save) —
+  # the message inlines `{% set a = ... %}` instead.
+  action:
+    - service: notify.mobile_app_phone
+      data:
+        title: "⚠️ Low aircraft inbound — land the drone"
+        message: >-
+          {% set a = 'binary_sensor.airspace_alert_drone_conflict' -%}
+          {{ state_attr(a,'flight') or state_attr(a,'hex') }}{{ ' · ' ~ state_attr(a,'aircraft_type') if state_attr(a,'aircraft_type') }}
+          · {{ state_attr(a,'alt_baro_ft') or '?' }} ft
+          {% set d = (state_attr(a,'distance_to') or {}).get('home') -%}
+          {{ '· ' ~ '%.1f'|format(d) ~ ' nm now' if d is not none }}
+          {% set cpa = state_attr(a,'predicted_closest_approach_nm') -%}
+          {% set eta = state_attr(a,'predicted_eta_to_home_s') -%}
+          {% if cpa is not none %}· within {{ '%.1f'|format(cpa) }} nm{% endif %}{% if eta is not none %} in ~{{ (eta/60)|round(0)|int }} min{% endif %}
+        data:
+          push:
+            interruption-level: time-sensitive   # iOS: bypass focus/silent

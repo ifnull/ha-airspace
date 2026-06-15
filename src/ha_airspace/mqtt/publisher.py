@@ -420,8 +420,12 @@ def _alert_info(state: AircraftState, photo: PhotoPayload | None) -> dict[str, A
         "track_id": state.track_id,
         "registration": canonical.registration,
         "aircraft_type": canonical.aircraft_type,
+        "squawk": canonical.squawk,
+        "alt_baro_ft": canonical.alt_baro_ft,
         "distance_to": dict(state.distance_to),
+        "bearing_to": dict(state.bearing_to),
         "predicted_closest_approach_nm": state.predicted_closest_approach_nm,
+        "predicted_eta_to_home_s": state.predicted_eta_to_home_s,
         "flags": sorted(state.flags),
     }
     if photo is not None:

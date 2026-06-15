@@ -290,7 +290,7 @@ wheels = [
 
 [[package]]
 name = "ha-airspace"
-version = "0.2.17"
+version = "0.2.18"
 source = { editable = "." }
 dependencies = [
     { name = "aiomqtt" },

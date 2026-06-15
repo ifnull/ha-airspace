@@ -17,6 +17,9 @@
 # (alt / distance / type / squawk / flags). The "Watched aircraft" cards below
 # render those as tables — replace the flag names with YOURS from enrichment.flags.
 #
+# Flight/hex are rendered as links to globe.adsbexchange.com/?icao=<hex> (HA opens
+# external markdown links in a new tab) — tap a callsign to see it on the map.
+#
 # Replace ids to match YOURS:
 #   - sensor.airspace_flag_<flag>           -> your enrichment.flags names
 #   - binary_sensor.airspace_alert_<rule>   -> your alert rule names
@@ -69,7 +72,7 @@ views:
                       {% set brg = (state_attr(s,'bearing_to') or {}).get('home') -%}
                       {% set cpa = state_attr(s,'predicted_closest_approach_nm') -%}
                       {% set gs = state_attr(s,'ground_speed_kt') -%}
-                      ## {{ state_attr(s,'flight') or state_attr(s,'hex') }}
+                      ## {{ '[' ~ (state_attr(s,'flight') or state_attr(s,'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(s,'hex') ~ ')' if state_attr(s,'hex') else (state_attr(s,'flight') or '?') }}
                       **{{ db.get('model') or state_attr(s,'aircraft_type') or 'unknown type' }}**{{ ' · ' ~ db.get('ownop') if db.get('ownop') }}
 
                       - **Distance:** {{ states(s) }} nm{{ ' · brg ' ~ brg|round(0)|int ~ '°' if brg is not none }}
@@ -139,7 +142,7 @@ views:
                       | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk |
                       |---|---|--:|--:|--:|--:|
                       {% for a in rows -%}
-                      | {{ a.flight or a.hex }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} |
+                      | {{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} |
                       {% endfor -%}
                       {% else -%}
                       None right now.
@@ -167,7 +170,7 @@ views:
                       | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk |
                       |---|---|--:|--:|--:|--:|
                       {% for a in rows -%}
-                      | {{ a.flight or a.hex }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} |
+                      | {{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} |
                       {% endfor -%}
                       {% else -%}
                       None right now.
@@ -195,7 +198,7 @@ views:
                       | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk |
                       |---|---|--:|--:|--:|--:|
                       {% for a in rows -%}
-                      | {{ a.flight or a.hex }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} |
+                      | {{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} |
                       {% endfor -%}
                       {% else -%}
                       None right now.
@@ -234,7 +237,7 @@ views:
           {% set brg = (state_attr(s, 'bearing_to') or {}).get('home') %}
           {% set cpa = state_attr(s, 'predicted_closest_approach_nm') %}
           {% set sq = state_attr(s, 'squawk') %}
-          **{{ state_attr(s, 'flight') or state_attr(s, 'hex') }}**
+          **{{ '[' ~ (state_attr(s, 'flight') or state_attr(s, 'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(s, 'hex') ~ ')' if state_attr(s, 'hex') else (state_attr(s, 'flight') or '?') }}**
           {{ db.get('model') or state_attr(s, 'aircraft_type') or '' }}
           {{ ' · ' ~ db.get('ownop') if db.get('ownop') else '' }}
 
@@ -265,7 +268,7 @@ views:
           | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk |
           |---|---|--:|--:|--:|--:|
           {% for a in rows -%}
-          | {{ a.flight or a.hex }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} |
+          | {{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} |
           {% endfor -%}
           {% else -%}
           None right now.
@@ -281,7 +284,7 @@ views:
           | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk |
           |---|---|--:|--:|--:|--:|
           {% for a in rows -%}
-          | {{ a.flight or a.hex }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} |
+          | {{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} |
           {% endfor -%}
           {% else -%}
           None right now.
@@ -297,7 +300,7 @@ views:
           | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk |
           |---|---|--:|--:|--:|--:|
           {% for a in rows -%}
-          | {{ a.flight or a.hex }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} |
+          | {{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} |
           {% endfor -%}
           {% else -%}
           None right now.
@@ -314,7 +317,7 @@ views:
           type: markdown
           content: >
             {% set a = 'binary_sensor.airspace_alert_military_close' %}
-            🚨 **{{ state_attr(a, 'flight') or state_attr(a, 'hex') }}**
+            🚨 **{{ '[' ~ (state_attr(a, 'flight') or state_attr(a, 'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(a, 'hex') ~ ')' if state_attr(a, 'hex') else (state_attr(a, 'flight') or '?') }}**
             {% set d = (state_attr(a, 'distance_to') or {}).get('home') %}
             {{ '· ' ~ d | round(1) ~ ' nm' if d is not none else '' }}
             {% set p = state_attr(a, 'entity_picture') %}
