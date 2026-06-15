@@ -142,8 +142,8 @@ def _alert_rules(options: dict[str, Any], flag_names: list[str], default_wp: str
 
 def _feature_sections(options: dict[str, Any], default_wp: str) -> dict[str, Any]:
     """Expand the batteries-included toggles into native config sections
-    (databases, enrichment flags/alerts, orbit, photos). extra_config can still
-    override any of these afterwards."""
+    (databases, enrichment flags/alerts, orbit, photos, drone_registry).
+    extra_config can still override any of these afterwards."""
     sections: dict[str, Any] = {}
 
     if options.get("enable_databases"):
@@ -170,6 +170,10 @@ def _feature_sections(options: dict[str, Any], default_wp: str) -> dict[str, Any
         }
     if options.get("enable_photos"):
         sections["photos"] = {"enabled": True}
+    if options.get("enable_drone_registry"):
+        # FAA UAS make/model lookup by broadcast serial. Only meaningful with a
+        # remoteid feed configured; harmless (never queried) without one.
+        sections["drone_registry"] = {"enabled": True}
 
     return sections
 

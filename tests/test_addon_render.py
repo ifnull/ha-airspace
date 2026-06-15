@@ -182,11 +182,13 @@ class TestFeatureToggles:
             enable_orbit=True,
             orbit_min_turn_deg=270,
             enable_photos=True,
+            enable_drone_registry=True,
             enable_journal=True,
         )
         config = _render_and_load(opts, tmp_path)  # load_config must accept it
         assert config.orbit.enabled is True
         assert config.photos.enabled is True
+        assert config.drone_registry.enabled is True
 
     def test_databases_expand_with_urls(self, tmp_path: Path) -> None:
         config = _render_and_load(_base_options(enable_databases=True), tmp_path)
@@ -242,6 +244,14 @@ class TestFeatureToggles:
         assert config.databases.sources == []
         assert config.orbit.enabled is False
         assert config.photos.enabled is False
+
+    def test_drone_registry_toggle_adds_section(self, tmp_path: Path) -> None:
+        config = _render_and_load(_base_options(enable_drone_registry=True), tmp_path)
+        assert config.drone_registry.enabled is True
+
+    def test_drone_registry_off_by_default(self, tmp_path: Path) -> None:
+        config = _render_and_load(_base_options(), tmp_path)
+        assert config.drone_registry.enabled is False
 
     def test_extra_config_overrides_generated_toggle(self, tmp_path: Path) -> None:
         # extra_config deep-merges last, so it wins over a generated section.
