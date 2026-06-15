@@ -1,7 +1,7 @@
 # Home Assistant add-on manifest for ha-airspace.
 # Schema reference: https://developers.home-assistant.io/docs/add-ons/configuration/
 name: ha-airspace
-version: "0.2.12"
+version: "0.2.13"
 slug: ha_airspace
 description: >-
   Multi-source ADS-B + drone Remote ID enrichment to MQTT for Home Assistant.
@@ -59,6 +59,7 @@ options:
   enable_orbit: false
   orbit_min_turn_deg: 360
   enable_photos: false
+  enable_drone_registry: false
   enable_metrics: false
   metrics_port: 9090
   extra_config: ""
@@ -93,6 +94,7 @@ schema:
   enable_orbit: bool?
   orbit_min_turn_deg: float?
   enable_photos: bool?
+  enable_drone_registry: bool?
   enable_metrics: bool?
   metrics_port: port?
   extra_config: str?

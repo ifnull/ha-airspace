@@ -57,6 +57,11 @@ the underlying flag/alert/database config for you.
 - **enable_orbit** / **orbit_min_turn_deg** — flag circling/loitering tracks
   (`orbiting`); with alerts on, also raises `orbiting_nearby`.
 - **enable_photos** — attach a Planespotters photo URL to alert payloads.
+- **enable_drone_registry** — look up each drone's broadcast serial against the
+  FAA UAS registry to add make / model / status to the drone payload. Only
+  resolves serial-type Remote IDs and only does anything with a **remoteid**
+  feed configured; cached in memory, fails soft. Compliance data, not operator
+  identity (operator *location* still comes from the broadcast).
 
 ### Optional
 
@@ -74,6 +79,22 @@ features. `extra_config` is raw YAML **deep-merged over** the generated config,
 for **custom** flag/alert rules the toggles don't express, or to **override** a
 generated value (e.g. a custom MQTT TLS setting, or a hand-tuned alert rule).
 A bad value fails fast in the add-on log with the offending field path.
+
+**Merge behavior — read this before mixing toggles and `extra_config`:**
+
+- **Nested mappings merge.** `extra_config`'s `enrichment.flags` is added to the
+  toggle-generated flags; `orbit: { min_turn_deg: 270 }` overrides just that key.
+- **Lists replace wholesale — they do not append.** If you set
+  `enrichment.alerts.rules` in `extra_config`, it **replaces every**
+  toggle-generated alert rule. So if you want a custom rule *plus* the automatic
+  ones, list them all in `extra_config` (the example below does this). The same
+  applies to `databases.sources` and `receivers`.
+- **Don't re-declare what a toggle already produces.** Turning a toggle on and
+  also setting the same section in `extra_config` is redundant and a common
+  source of confusion — prefer the toggle, and reserve `extra_config` for what
+  toggles can't express (e.g. `unseen_for_days` rules, `drone_registry` before
+  it had a toggle, custom MQTT TLS). Indentation must be exact: a stray space
+  fails the YAML parse at start-up.
 
 #### extra_config example (custom rules + a history-aware alert)
 
