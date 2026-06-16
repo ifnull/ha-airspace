@@ -37,7 +37,7 @@ def _base_options(**overrides: Any) -> dict[str, Any]:
     options: dict[str, Any] = {
         "log_level": "info",
         "mqtt_broker": "core-mosquitto",
-        "watchpoints": [{"name": "home", "lat": 30.33, "lon": -97.99}],
+        "watchpoints": [{"name": "home", "lat": 30.33, "lon": -75.99}],
         "receivers": [
             {
                 "name": "home-1090",
@@ -216,7 +216,7 @@ class TestFeatureToggles:
     def test_alert_uses_first_watchpoint_name(self, tmp_path: Path) -> None:
         # Generated distance alerts must resolve even when the watchpoint isn't "home".
         opts = _base_options(
-            watchpoints=[{"name": "base", "lat": 30.0, "lon": -97.0}],
+            watchpoints=[{"name": "base", "lat": 30.0, "lon": -75}],
             enable_military=True,
             enable_alerts=True,
         )

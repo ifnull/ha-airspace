@@ -92,7 +92,7 @@ class FakeMqttClient:
 def _config(**overrides: Any) -> Config:
     base: dict[str, Any] = {
         "service": {"poll_interval_s": 0.01},
-        "watchpoints": [{"name": "home", "lat": 30.33, "lon": -97.99}],
+        "watchpoints": [{"name": "home", "lat": 30.33, "lon": -75.99}],
         "mqtt": {"broker": "broker.local"},
         "receivers": [{"name": "rx-home", "url": "http://piaware/aircraft.json", "band": "1090"}],
     }
@@ -227,7 +227,7 @@ class TestRun:
             "rx-home",
             "1090",
             _FIXTURES / "aircraft_basic.json",
-            location=ReceiverLocation(lat=30.33, lon=-97.99, source="config"),
+            location=ReceiverLocation(lat=30.33, lon=-75.99, source="config"),
         )
         app = _make_app(client, receivers=[receiver])
 

@@ -490,8 +490,8 @@ service:
 # entry named "home" — backward-compatible feel.
 watchpoints:
   - name: "home"
-    lat: 30.3322
-    lon: -97.9853
+    lat: 40.7128
+    lon: -74.0060
     elevation_m: 200            # optional; used for max_alt_agl_ft
   # Additional watchpoints (optional):
   # - name: "office"
@@ -552,8 +552,8 @@ receivers:
     band: "1090"
     poll_interval_s: 1.0        # optional override
     location:                   # optional; auto-detected from receiver.json if absent
-      lat: 30.3322
-      lon: -97.9853
+      lat: 40.7128
+      lon: -74.0060
     auth:                       # optional
       type: "none"              # "none" | "basic" | "header"
     enabled: true

@@ -26,7 +26,7 @@ service:
 watchpoints:
   - name: home
     lat: 30.33
-    lon: -97.99
+    lon: -75.99
 mqtt:
   broker: broker.local
 receivers:

@@ -100,7 +100,7 @@ def _make_config(
 ) -> Config:
     return Config.model_validate(
         {
-            "watchpoints": [{"name": "home", "lat": 30.33, "lon": -97.99}],
+            "watchpoints": [{"name": "home", "lat": 30.33, "lon": -75.99}],
             "mqtt": {
                 "broker": "broker.local",
                 "publish_aircraft_min_interval_s": aircraft_throttle,
@@ -125,7 +125,7 @@ def _make_state(hex_code: str = "ae0001") -> AircraftState:
         band="1090",
         flight="RCH171",
         lat=30.33,
-        lon=-97.99,
+        lon=-75.99,
         alt_baro_ft=35000,
     )
     return AircraftState.from_first_observation(obs)
@@ -190,7 +190,7 @@ class TestOnConnect:
     ) -> None:
         cfg = Config.model_validate(
             {
-                "watchpoints": [{"name": "home", "lat": 30.33, "lon": -97.99}],
+                "watchpoints": [{"name": "home", "lat": 30.33, "lon": -75.99}],
                 "mqtt": {"broker": "broker.local", "discovery_enabled": False},
                 "receivers": [
                     {
@@ -519,7 +519,7 @@ class TestReceiverTopics:
 
     async def test_location_publishes_runtime_to_json(self, fake_client: FakeMqttClient) -> None:
         pub = _make_publisher(fake_client)
-        loc = ReceiverLocation(lat=30.33, lon=-97.99, alt_m=200.0, source="receiver_json")
+        loc = ReceiverLocation(lat=30.33, lon=-75.99, alt_m=200.0, source="receiver_json")
         await pub.publish_receiver_location("rx-home", loc)
         call = fake_client.publishes[0]
         assert call["topic"] == "airspace/receiver/rx-home/location"
@@ -541,8 +541,8 @@ def _make_drone_state(track_id: str = "Spoofed_Serial_1") -> AircraftState:
         observed_at=_now_dt(),
         seen_by="dump3411",
         band="remoteid",
-        lat=30.30,
-        lon=-98.06,
+        lat=40.7128,
+        lon=-74.0060,
         alt_geom_ft=1276,
         ground_speed_kt=93.3,
         drone=DroneInfo(
@@ -550,8 +550,8 @@ def _make_drone_state(track_id: str = "Spoofed_Serial_1") -> AircraftState:
             ua_type="multirotor",
             agl_ft=246.1,
             rid_source="wifi_beacon",
-            operator_lat=30.29,
-            operator_lon=-98.05,
+            operator_lat=40.7165,
+            operator_lon=-73.9990,
             operator_id="OP123",
             operator_alt_takeoff_ft=50.0,
         ),
@@ -578,8 +578,8 @@ class TestPublishDrone:
         await pub.publish_drone(_make_drone_state())
         body = json.loads(fake_client.publishes[0]["payload"])
         assert body["agl_ft"] == 246.1
-        assert body["operator_lat"] == 30.29
-        assert body["operator_lon"] == -98.05
+        assert body["operator_lat"] == 40.7165
+        assert body["operator_lon"] == -73.9990
         assert body["operator_id"] == "OP123"
         assert body["id_type"] == "serial"
         assert body["rid_source"] == "wifi_beacon"

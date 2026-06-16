@@ -39,7 +39,7 @@ def _aircraft_response_body() -> dict[str, Any]:
                 "flight": "RCH171  ",
                 "alt_baro": 35000,
                 "lat": 30.33,
-                "lon": -97.99,
+                "lon": -75.99,
                 "gs": 480.5,
                 "track": 90.0,
                 "category": "A4",
@@ -247,15 +247,15 @@ class TestLocation:
             if request.url.path.endswith("/receiver.json"):
                 return httpx.Response(
                     200,
-                    json={"version": "v8.2", "lat": 30.3322, "lon": -97.9853},
+                    json={"version": "v8.2", "lat": 40.7128, "lon": -74.0060},
                 )
             return httpx.Response(200, json=_aircraft_response_body())
 
         rx = _make_receiver(handler)
         loc = await rx.location()
         assert loc is not None
-        assert loc.lat == 30.3322
-        assert loc.lon == -97.9853
+        assert loc.lat == 40.7128
+        assert loc.lon == -74.0060
         assert loc.source == "receiver_json"
         await rx.aclose()
 

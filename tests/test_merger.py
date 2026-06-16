@@ -28,7 +28,7 @@ def _obs(
     seen_pos: float | None = None,
     rssi: float | None = None,
     lat: float | None = 30.4,
-    lon: float | None = -97.9,
+    lon: float | None = -75.9,
 ) -> AircraftObservation:
     return AircraftObservation(
         hex=hex_code,
@@ -188,7 +188,7 @@ class TestNonIcaoIdentity:
             seen_by=seen_by,
             band="remoteid",
             lat=30.3,
-            lon=-98.0,
+            lon=-76,
         )
 
     def test_drone_keyed_by_track_id(self) -> None:

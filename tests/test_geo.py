@@ -37,7 +37,7 @@ JFK = (40.6398, -73.7789)
 class TestHaversine:
     def test_zero_distance_for_same_point(self) -> None:
         # Numerically not exactly 0 due to floating point, but well within abs.
-        assert haversine(30.33, -97.99, 30.33, -97.99) == pytest.approx(0.0, abs=1e-9)
+        assert haversine(30.33, -75.99, 30.33, -75.99) == pytest.approx(0.0, abs=1e-9)
 
     def test_lax_to_jfk_reference(self) -> None:
         # Canonical reference: ~2146 NM by spherical haversine with
@@ -80,8 +80,8 @@ class TestHaversine:
 
     def test_short_range_alert_distance(self) -> None:
         # Sanity at the 30 NM alert-rule scale: 0.5deg latitude offset
-        # near Austin should be ~30 NM.
-        nm = haversine(30.33, -97.99, 30.83, -97.99)
+        # should be ~30 NM.
+        nm = haversine(30.33, -75.99, 30.83, -75.99)
         assert nm == pytest.approx(30.0, abs=0.2)
 
 
@@ -110,7 +110,7 @@ class TestBearing:
     def test_zero_bearing_for_same_point(self) -> None:
         # atan2(0, 0) returns 0 by convention; we accept that for the
         # degenerate case rather than raising.
-        assert bearing(30.33, -97.99, 30.33, -97.99) == pytest.approx(0.0, abs=1e-6)
+        assert bearing(30.33, -75.99, 30.33, -75.99) == pytest.approx(0.0, abs=1e-6)
 
     def test_result_always_in_range(self) -> None:
         # Spot-check across all four quadrants that the result stays in
@@ -150,13 +150,13 @@ class TestEarthRadius:
 # closest_point_of_approach (Phase 5 predictive)
 # ---------------------------------------------------------------------------
 
-_HOME = (30.0, -97.0)  # lat, lon
+_HOME = (30.0, -75)  # lat, lon
 
 
 class TestClosestPointOfApproach:
     def test_head_on_passes_through_home(self) -> None:
         # Aircraft due south of home, tracking north (000) -> flies straight to it.
-        ac_lat, ac_lon = 29.0, -97.0  # 60 nm south
+        ac_lat, ac_lon = 29.0, -75  # 60 nm south
         cpa, eta = closest_point_of_approach(*_HOME, ac_lat, ac_lon, 0.0, 360.0)
         assert cpa == pytest.approx(0.0, abs=1e-6)  # passes through home
         assert eta == pytest.approx(600.0, rel=0.01)  # 60 nm at 360 kt = 600 s
@@ -165,7 +165,7 @@ class TestClosestPointOfApproach:
         # Aircraft 60 nm south + 10 nm east of home, tracking due north (000):
         # it stays 10 nm east, so CPA = 10 nm when it's abeam.
         ac_lat = 29.0
-        ac_lon = -97.0 + 10.0 / (60.0 * math.cos(math.radians(30.0)))
+        ac_lon = -75 + 10.0 / (60.0 * math.cos(math.radians(30.0)))
         cpa, eta = closest_point_of_approach(*_HOME, ac_lat, ac_lon, 0.0, 360.0)
         assert cpa == pytest.approx(10.0, abs=0.05)
         assert eta is not None
@@ -173,11 +173,11 @@ class TestClosestPointOfApproach:
 
     def test_departing_has_no_eta(self) -> None:
         # 60 nm south of home but tracking south (180) -> moving away.
-        cpa, eta = closest_point_of_approach(*_HOME, 29.0, -97.0, 180.0, 360.0)
+        cpa, eta = closest_point_of_approach(*_HOME, 29.0, -75, 180.0, 360.0)
         assert eta is None
         assert cpa == pytest.approx(60.0, rel=0.01)  # current distance
 
     def test_stationary_has_no_eta(self) -> None:
-        cpa, eta = closest_point_of_approach(*_HOME, 29.0, -97.0, 0.0, 0.0)
+        cpa, eta = closest_point_of_approach(*_HOME, 29.0, -75, 0.0, 0.0)
         assert eta is None
         assert cpa == pytest.approx(60.0, rel=0.01)
