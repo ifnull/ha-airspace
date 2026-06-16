@@ -50,7 +50,7 @@ def _make_observation(**overrides: object) -> AircraftObservation:
         "band": "1090",
         "flight": "RCH171",
         "lat": 30.33,
-        "lon": -97.99,
+        "lon": -75.99,
         "alt_baro_ft": 35000,
         "ground_speed_kt": 480.5,
         "track_deg": 90.0,
@@ -79,9 +79,9 @@ def _make_drone_state() -> AircraftState:
         seen_by="dump3411",
         band="remoteid",
         lat=30.34,
-        lon=-97.98,
+        lon=-75.98,
         alt_geom_ft=400,
-        drone=DroneInfo(id_type="serial", agl_ft=300.0, operator_lat=30.33, operator_lon=-97.99),
+        drone=DroneInfo(id_type="serial", agl_ft=300.0, operator_lat=30.33, operator_lon=-75.99),
     )
     return AircraftState.from_first_observation(obs)
 
@@ -119,7 +119,7 @@ class TestAircraftPayload:
         assert payload.hex == "ae0001"
         assert payload.flight == "RCH171"
         assert payload.lat == 30.33
-        assert payload.lon == -97.99
+        assert payload.lon == -75.99
         assert payload.alt_baro_ft == 35000
         assert payload.ground_speed_kt == 480.5
         assert payload.category == "A4"
@@ -292,26 +292,26 @@ class TestReceiverStatsPayload:
 
 class TestReceiverLocationPayload:
     def test_from_runtime_with_full_location(self) -> None:
-        loc = ReceiverLocation(lat=30.33, lon=-97.99, alt_m=200.0, source="receiver_json")
+        loc = ReceiverLocation(lat=30.33, lon=-75.99, alt_m=200.0, source="receiver_json")
         payload = ReceiverLocationPayload.from_runtime(loc)
         assert payload.lat == 30.33
-        assert payload.lon == -97.99
+        assert payload.lon == -75.99
         assert payload.alt_m == 200.0
         assert payload.source == "receiver_json"
 
     def test_from_runtime_without_alt(self) -> None:
-        loc = ReceiverLocation(lat=30.33, lon=-97.99, source="config")
+        loc = ReceiverLocation(lat=30.33, lon=-75.99, source="config")
         payload = ReceiverLocationPayload.from_runtime(loc)
         assert payload.alt_m is None
 
     def test_serialization_round_trip(self) -> None:
-        loc = ReceiverLocation(lat=30.33, lon=-97.99, alt_m=200.0, source="config")
+        loc = ReceiverLocation(lat=30.33, lon=-75.99, alt_m=200.0, source="config")
         payload = ReceiverLocationPayload.from_runtime(loc)
         text = payload.model_dump_json()
         parsed = json.loads(text)
         assert parsed == {
             "lat": 30.33,
-            "lon": -97.99,
+            "lon": -75.99,
             "alt_m": 200.0,
             "source": "config",
         }
@@ -374,17 +374,17 @@ class TestMapAliases:
     def test_aircraft_latitude_longitude_mirror_lat_lon(self) -> None:
         payload = AircraftPayload.from_state(_make_state())
         assert payload.latitude == payload.lat == 30.33
-        assert payload.longitude == payload.lon == -97.99
+        assert payload.longitude == payload.lon == -75.99
 
     def test_drone_latitude_longitude_mirror_lat_lon(self) -> None:
         payload = DronePayload.from_state(_make_drone_state())
         assert payload.latitude == payload.lat == 30.34
-        assert payload.longitude == payload.lon == -97.98
+        assert payload.longitude == payload.lon == -75.98
 
     def test_aliases_in_json_for_map_card(self) -> None:
         data = json.loads(AircraftPayload.from_state(_make_state()).model_dump_json())
         assert data["latitude"] == 30.33
-        assert data["longitude"] == -97.99
+        assert data["longitude"] == -75.99
 
 
 # ---------------------------------------------------------------------------

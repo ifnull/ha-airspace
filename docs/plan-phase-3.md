@@ -170,7 +170,7 @@ aircraft position fields.
   (we already have real captures — including the spoofed/edge-case drones);
   `RemoteIdHttpReceiver` via the same injected-transport pattern as
   `HttpJsonReceiver`; drone discovery/payload shape.
-- **Live validation:** point at the real `dump3411` feed (192.168.1.204:8754)
+- **Live validation:** point at the real `dump3411` feed (dump3411.local:8754)
   and the two ADS-B receivers; prove a drone entity and a merged aircraft
   end to end, the way every prior slice was verified on live data.
 - Coverage stays 80%+ on `src/`.

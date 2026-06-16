@@ -67,7 +67,7 @@ class TestFieldMapping:
                     "alt_baro": 35000,
                     "alt_geom": 35100,
                     "lat": 30.33,
-                    "lon": -97.99,
+                    "lon": -75.99,
                     "gs": 480.5,
                     "track": 90.0,
                     "baro_rate": 0,
@@ -94,7 +94,7 @@ class TestFieldMapping:
         assert obs.alt_baro_ft == 35000
         assert obs.alt_geom_ft == 35100
         assert obs.lat == 30.33
-        assert obs.lon == -97.99
+        assert obs.lon == -75.99
         assert obs.ground_speed_kt == 480.5
         assert obs.track_deg == 90.0
         assert obs.vertical_rate_fpm == 0
@@ -146,6 +146,22 @@ class TestEdgeCases:
         obs = observations[0]
         assert obs.alt_baro_ft is None
         assert obs.on_ground is True
+
+    def test_vertical_rate_falls_back_to_geom_rate(self) -> None:
+        # Aircraft reporting only geometric vertical rate (no baro_rate).
+        payload = {"aircraft": [{"hex": "ae0001", "geom_rate": -1216}]}
+        observations, _ = parse_aircraft_json(
+            payload, receiver_name=_RX, band=_BAND, observed_at=_now()
+        )
+        assert observations[0].vertical_rate_fpm == -1216
+
+    def test_baro_rate_zero_not_masked_by_geom_rate(self) -> None:
+        # baro_rate 0 is level flight, not "missing" — it must win over geom_rate.
+        payload = {"aircraft": [{"hex": "ae0001", "baro_rate": 0, "geom_rate": 64}]}
+        observations, _ = parse_aircraft_json(
+            payload, receiver_name=_RX, band=_BAND, observed_at=_now()
+        )
+        assert observations[0].vertical_rate_fpm == 0
 
     def test_callsign_padded_with_spaces_stripped(self) -> None:
         payload = {"aircraft": [{"hex": "ae0001", "flight": "N12345  "}]}

@@ -182,6 +182,13 @@ def _parse_one(
     on_ground = alt_baro_raw == "ground"
     alt_baro_ft = alt_baro_raw if isinstance(alt_baro_raw, int) else None
 
+    # Vertical rate: prefer barometric, fall back to geometric. readsb /
+    # dump1090-fa records often carry only one; an explicit None check (not `or`)
+    # keeps a legitimate baro_rate of 0 (level flight) rather than masking it.
+    vertical_rate = _get_int(raw, "baro_rate")
+    if vertical_rate is None:
+        vertical_rate = _get_int(raw, "geom_rate")
+
     return AircraftObservation(
         hex=hex_code,
         observed_at=observed_at,
@@ -197,7 +204,7 @@ def _parse_one(
         nav_altitude_mcp_ft=_get_int(raw, "nav_altitude_mcp"),
         ground_speed_kt=_get_float(raw, "gs"),
         track_deg=_get_float(raw, "track"),
-        vertical_rate_fpm=_get_int(raw, "baro_rate"),
+        vertical_rate_fpm=vertical_rate,
         on_ground=on_ground if on_ground else None,
         rssi_dbfs=_get_float(raw, "rssi"),
         seen_pos_age_s=_get_float(raw, "seen_pos"),

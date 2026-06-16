@@ -104,25 +104,25 @@ class TestParseCallsign:
 
 class TestWatchpoint:
     def test_construction_with_required_fields(self) -> None:
-        wp = Watchpoint(name="home", lat=30.33, lon=-97.99)
+        wp = Watchpoint(name="home", lat=30.33, lon=-75.99)
         assert wp.name == "home"
         assert wp.lat == 30.33
-        assert wp.lon == -97.99
+        assert wp.lon == -75.99
         assert wp.elevation_m is None
 
     def test_construction_with_elevation(self) -> None:
-        wp = Watchpoint(name="home", lat=30.33, lon=-97.99, elevation_m=200.0)
+        wp = Watchpoint(name="home", lat=30.33, lon=-75.99, elevation_m=200.0)
         assert wp.elevation_m == 200.0
 
     def test_frozen_assignment_raises(self) -> None:
-        wp = Watchpoint(name="home", lat=30.33, lon=-97.99)
+        wp = Watchpoint(name="home", lat=30.33, lon=-75.99)
         with pytest.raises(FrozenInstanceError):
             wp.lat = 0.0  # type: ignore[misc]
 
     def test_hashable_for_set_membership(self) -> None:
         # Frozen dataclasses are hashable; useful for dedup in config validation.
-        a = Watchpoint(name="home", lat=30.33, lon=-97.99)
-        b = Watchpoint(name="home", lat=30.33, lon=-97.99)
+        a = Watchpoint(name="home", lat=30.33, lon=-75.99)
+        b = Watchpoint(name="home", lat=30.33, lon=-75.99)
         assert {a, b} == {a}
 
 
@@ -133,17 +133,17 @@ class TestWatchpoint:
 
 class TestReceiverLocation:
     def test_construction_minimal(self) -> None:
-        loc = ReceiverLocation(lat=30.33, lon=-97.99)
+        loc = ReceiverLocation(lat=30.33, lon=-75.99)
         assert loc.alt_m is None
         assert loc.source == "unknown"
 
     def test_construction_full(self) -> None:
-        loc = ReceiverLocation(lat=30.33, lon=-97.99, alt_m=200.0, source="receiver_json")
+        loc = ReceiverLocation(lat=30.33, lon=-75.99, alt_m=200.0, source="receiver_json")
         assert loc.alt_m == 200.0
         assert loc.source == "receiver_json"
 
     def test_frozen(self) -> None:
-        loc = ReceiverLocation(lat=30.33, lon=-97.99)
+        loc = ReceiverLocation(lat=30.33, lon=-75.99)
         with pytest.raises(FrozenInstanceError):
             loc.lat = 0.0  # type: ignore[misc]
 
@@ -183,7 +183,7 @@ class TestAircraftObservation:
             band="1090",
             flight="RCH171",
             lat=30.33,
-            lon=-97.99,
+            lon=-75.99,
             alt_baro_ft=37000,
             ground_speed_kt=480.5,
             track_deg=270.0,
@@ -229,7 +229,7 @@ class TestAircraftStateConstruction:
             seen_by="rx-home",
             band="1090",
             lat=30.33,
-            lon=-97.99,
+            lon=-75.99,
         )
         state = AircraftState.from_first_observation(obs)
 

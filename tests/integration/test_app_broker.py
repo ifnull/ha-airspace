@@ -36,7 +36,7 @@ def _config(endpoint: BrokerEndpoint, *, base_topic: str) -> Config:
     return Config.model_validate(
         {
             "service": {"poll_interval_s": 0.05},
-            "watchpoints": [{"name": "home", "lat": 30.33, "lon": -97.99}],
+            "watchpoints": [{"name": "home", "lat": 30.33, "lon": -75.99}],
             "mqtt": {
                 "broker": endpoint.host,
                 "port": endpoint.port,

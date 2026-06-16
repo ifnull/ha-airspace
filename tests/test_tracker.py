@@ -134,9 +134,9 @@ class Clock:
 
 _T0 = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
 
-# Watchpoint at Austin-ish; aircraft coords below are relative to it.
-_HOME = Watchpoint(name="home", lat=30.33, lon=-97.99)
-_OFFICE = Watchpoint(name="office", lat=30.40, lon=-97.70)
+# Watchpoint and aircraft coords below are relative to it.
+_HOME = Watchpoint(name="home", lat=30.33, lon=-75.99)
+_OFFICE = Watchpoint(name="office", lat=30.40, lon=-75.7)
 
 
 def _obs(
@@ -144,7 +144,7 @@ def _obs(
     *,
     at: datetime = _T0,
     lat: float | None = 30.40,
-    lon: float | None = -97.90,
+    lon: float | None = -75.9,
     band: str = "1090",
     seen_by: str = "rx-home",
     flight: str | None = "RCH171",
@@ -233,7 +233,7 @@ class TestGeometry:
         self, publisher: FakePublisher, clock: Clock
     ) -> None:
         tracker = _make_tracker(publisher, clock, watchpoints=[_HOME, _OFFICE])
-        await tracker.process_poll([_obs("ae0001", lat=30.40, lon=-97.90)])
+        await tracker.process_poll([_obs("ae0001", lat=30.40, lon=-75.9)])
         state = publisher.published[-1]
         assert set(state.distance_to) == {"home", "office"}
         assert set(state.bearing_to) == {"home", "office"}
@@ -246,7 +246,7 @@ class TestGeometry:
     ) -> None:
         tracker = _make_tracker(publisher, clock)
         # First a positioned obs, then the same hex with no position.
-        await tracker.process_poll([_obs("ae0001", lat=30.40, lon=-97.90)])
+        await tracker.process_poll([_obs("ae0001", lat=30.40, lon=-75.9)])
         assert publisher.published[-1].distance_to
         clock.advance(1.0)
         await tracker.process_poll([_obs("ae0001", at=clock.now, lat=None, lon=None)])
@@ -328,9 +328,9 @@ class TestNearest:
         self, publisher: FakePublisher, clock: Clock
     ) -> None:
         tracker = _make_tracker(publisher, clock)
-        # ae0002 is closer to home (30.33,-97.99) than ae0001.
-        far = _obs("ae0001", lat=31.50, lon=-97.00)
-        near = _obs("ae0002", lat=30.34, lon=-97.98)
+        # ae0002 is closer to home (30.33,-75.99) than ae0001.
+        far = _obs("ae0001", lat=31.50, lon=-75)
+        near = _obs("ae0002", lat=30.34, lon=-75.98)
         await tracker.process_poll([far, near])
         nearest = publisher.summaries[-1]["nearest"]
         assert nearest is not None
@@ -341,7 +341,7 @@ class TestNearest:
     ) -> None:
         tracker = _make_tracker(publisher, clock)
         await tracker.process_poll(
-            [_obs("ae0001", lat=None, lon=None), _obs("ae0002", lat=30.34, lon=-97.98)]
+            [_obs("ae0001", lat=None, lon=None), _obs("ae0002", lat=30.34, lon=-75.98)]
         )
         nearest = publisher.summaries[-1]["nearest"]
         assert nearest is not None
@@ -377,7 +377,7 @@ class TestPrimaryWatchpoint:
     ) -> None:
         # office listed first, but home is the primary for "nearest".
         tracker = _make_tracker(publisher, clock, watchpoints=[_OFFICE, _HOME])
-        near_home = _obs("ae0001", lat=30.34, lon=-97.98)
+        near_home = _obs("ae0001", lat=30.34, lon=-75.98)
         await tracker.process_poll([near_home])
         nearest = publisher.summaries[-1]["nearest"]
         assert nearest is not None
@@ -388,10 +388,10 @@ class TestPrimaryWatchpoint:
     async def test_first_watchpoint_used_when_no_home(
         self, publisher: FakePublisher, clock: Clock
     ) -> None:
-        wp_a = Watchpoint(name="alpha", lat=30.33, lon=-97.99)
+        wp_a = Watchpoint(name="alpha", lat=30.33, lon=-75.99)
         wp_b = Watchpoint(name="bravo", lat=10.0, lon=10.0)
         tracker = _make_tracker(publisher, clock, watchpoints=[wp_a, wp_b])
-        await tracker.process_poll([_obs("ae0001", lat=30.34, lon=-97.98)])
+        await tracker.process_poll([_obs("ae0001", lat=30.34, lon=-75.98)])
         # Nearest measured to alpha (first); it resolves regardless, but the
         # primary-key path must not raise when no "home" exists.
         assert publisher.summaries[-1]["nearest"] is not None
@@ -532,8 +532,8 @@ class TestFlagFeeds:
     async def test_feed_sorted_nearest_first(self, publisher: FakePublisher, clock: Clock) -> None:
         tracker = self._tracker(publisher, clock, feed_flags=["heavy"])
         # Two heavies: ae0002 is closer to home than ae0001.
-        far = _obs("ae0001", category="A3", lat=31.50, lon=-97.99)
-        near = _obs("ae0002", category="A3", lat=30.40, lon=-97.99)
+        far = _obs("ae0001", category="A3", lat=31.50, lon=-75.99)
+        near = _obs("ae0002", category="A3", lat=30.40, lon=-75.99)
         await tracker.process_poll([far, near])
         rows = publisher.summaries[-1]["flag_feeds"]["heavy"].aircraft
         assert [r.hex for r in rows] == ["ae0002", "ae0001"]
@@ -555,8 +555,8 @@ class TestFlagFeeds:
         stub = _StubPhotos(photo)
         tracker = self._tracker(publisher, clock, feed_flags=["heavy"], photos=stub)
         # Two heavies; ae0002 is nearer home than ae0001.
-        far = _obs("ae0001", category="A3", lat=31.50, lon=-97.99)
-        near = _obs("ae0002", category="A3", lat=30.40, lon=-97.99)
+        far = _obs("ae0001", category="A3", lat=31.50, lon=-75.99)
+        near = _obs("ae0002", category="A3", lat=30.40, lon=-75.99)
         await tracker.process_poll([far, near])
         feed = publisher.summaries[-1]["flag_feeds"]["heavy"]
         assert feed.photo == photo
@@ -669,9 +669,9 @@ def _drone_obs(track_id: str = "Drone1", *, at: datetime = _T0) -> AircraftObser
         seen_by="dump3411",
         band="remoteid",
         lat=30.34,
-        lon=-97.98,
+        lon=-75.98,
         alt_geom_ft=400,
-        drone=DroneInfo(id_type="serial", agl_ft=300.0, operator_lat=30.33, operator_lon=-97.99),
+        drone=DroneInfo(id_type="serial", agl_ft=300.0, operator_lat=30.33, operator_lon=-75.99),
     )
 
 
@@ -956,7 +956,7 @@ def _obs_heading(heading: float, at: datetime) -> AircraftObservation:
         seen_by="rx-home",
         band="1090",
         lat=30.40,
-        lon=-97.90,
+        lon=-75.9,
         alt_baro_ft=3000,
         track_deg=heading,
     )
@@ -1032,7 +1032,7 @@ class TestPrediction:
         tracker = _make_tracker(publisher, clock)  # primary watchpoint = _HOME
         # South of home, tracking north toward it.
         await tracker.process_poll(
-            [_obs_kinematic(lat=29.83, lon=-97.99, track_deg=0.0, ground_speed_kt=300.0)]
+            [_obs_kinematic(lat=29.83, lon=-75.99, track_deg=0.0, ground_speed_kt=300.0)]
         )
         s = publisher.published[-1]
         assert s.predicted_closest_approach_nm is not None
@@ -1043,7 +1043,7 @@ class TestPrediction:
     async def test_departing_has_no_eta(self, publisher: FakePublisher, clock: Clock) -> None:
         tracker = _make_tracker(publisher, clock)
         await tracker.process_poll(
-            [_obs_kinematic(lat=29.83, lon=-97.99, track_deg=180.0, ground_speed_kt=300.0)]
+            [_obs_kinematic(lat=29.83, lon=-75.99, track_deg=180.0, ground_speed_kt=300.0)]
         )
         s = publisher.published[-1]
         assert s.predicted_eta_to_home_s is None
@@ -1052,7 +1052,7 @@ class TestPrediction:
     async def test_no_track_no_prediction(self, publisher: FakePublisher, clock: Clock) -> None:
         tracker = _make_tracker(publisher, clock)
         await tracker.process_poll(
-            [_obs_kinematic(lat=29.83, lon=-97.99, track_deg=None, ground_speed_kt=300.0)]
+            [_obs_kinematic(lat=29.83, lon=-75.99, track_deg=None, ground_speed_kt=300.0)]
         )
         s = publisher.published[-1]
         assert s.predicted_closest_approach_nm is None
@@ -1061,7 +1061,7 @@ class TestPrediction:
     async def test_too_slow_no_prediction(self, publisher: FakePublisher, clock: Clock) -> None:
         tracker = _make_tracker(publisher, clock)
         await tracker.process_poll(
-            [_obs_kinematic(lat=29.83, lon=-97.99, track_deg=0.0, ground_speed_kt=20.0)]
+            [_obs_kinematic(lat=29.83, lon=-75.99, track_deg=0.0, ground_speed_kt=20.0)]
         )
         assert publisher.published[-1].predicted_closest_approach_nm is None
 
@@ -1070,7 +1070,7 @@ class TestPrediction:
         await tracker.process_poll(
             [
                 _obs_kinematic(
-                    lat=29.83, lon=-97.99, track_deg=0.0, ground_speed_kt=300.0, on_ground=True
+                    lat=29.83, lon=-75.99, track_deg=0.0, ground_speed_kt=300.0, on_ground=True
                 )
             ]
         )
@@ -1081,7 +1081,7 @@ class TestPrediction:
     ) -> None:
         tracker = _make_tracker(publisher, clock)
         await tracker.process_poll(
-            [_obs_kinematic(lat=29.83, lon=-97.99, track_deg=0.0, ground_speed_kt=300.0)]
+            [_obs_kinematic(lat=29.83, lon=-75.99, track_deg=0.0, ground_speed_kt=300.0)]
         )
         clock.advance(1.0)
         # Same track, now no position -> prediction must clear.
@@ -1157,7 +1157,7 @@ class TestDroneRegistry:
             seen_by="dump3411",
             band="remoteid",
             lat=30.34,
-            lon=-97.98,
+            lon=-75.98,
             drone=DroneInfo(id_type="session"),
         )
         await tracker.process_poll([obs])

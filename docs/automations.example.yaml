@@ -157,7 +157,7 @@
 #            - name: home
 #              lat: ...
 #              lon: ...
-#              elevation_m: 430        # YOUR ground elevation in metres
+#              elevation_m: 100        # YOUR ground elevation in metres
 #
 #    (b) This automation fires when the rule turns on. The alert info carries
 #        alt_baro_ft, distance/bearing, predicted closest approach + ETA.

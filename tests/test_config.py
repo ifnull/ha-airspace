@@ -46,7 +46,7 @@ def _minimal_config_dict() -> dict[str, Any]:
     """Smallest config that validates. Single watchpoint, single
     receiver, mqtt broker; everything else uses schema defaults."""
     return {
-        "watchpoints": [{"name": "home", "lat": 30.33, "lon": -97.99}],
+        "watchpoints": [{"name": "home", "lat": 30.33, "lon": -75.99}],
         "mqtt": {"broker": "broker.local"},
         "receivers": [
             {
@@ -92,7 +92,7 @@ class TestServiceConfig:
 
 class TestWatchpointConfig:
     def test_minimal(self) -> None:
-        wp = WatchpointConfig(name="home", lat=30.33, lon=-97.99)
+        wp = WatchpointConfig(name="home", lat=30.33, lon=-75.99)
         assert wp.elevation_m is None
 
     def test_lat_range(self) -> None:
@@ -109,10 +109,10 @@ class TestWatchpointConfig:
 
     def test_name_required_non_empty(self) -> None:
         with pytest.raises(ValidationError, match="name"):
-            WatchpointConfig(name="", lat=30.33, lon=-97.99)
+            WatchpointConfig(name="", lat=30.33, lon=-75.99)
 
     def test_to_runtime_produces_frozen_watchpoint(self) -> None:
-        wp = WatchpointConfig(name="home", lat=30.33, lon=-97.99, elevation_m=200.0)
+        wp = WatchpointConfig(name="home", lat=30.33, lon=-75.99, elevation_m=200.0)
         runtime = wp.to_runtime()
         assert isinstance(runtime, Watchpoint)
         assert runtime.name == "home"
@@ -265,8 +265,8 @@ class TestConfigUniqueness:
     def test_duplicate_watchpoint_names_rejected(self) -> None:
         d = _minimal_config_dict()
         d["watchpoints"] = [
-            {"name": "home", "lat": 30.33, "lon": -97.99},
-            {"name": "home", "lat": 30.40, "lon": -98.00},
+            {"name": "home", "lat": 30.33, "lon": -75.99},
+            {"name": "home", "lat": 30.40, "lon": -76},
         ]
         with pytest.raises(ValidationError, match="unique"):
             Config.model_validate(d)
@@ -283,8 +283,8 @@ class TestConfigUniqueness:
     def test_distinct_names_pass(self) -> None:
         d = _minimal_config_dict()
         d["watchpoints"] = [
-            {"name": "home", "lat": 30.33, "lon": -97.99},
-            {"name": "office", "lat": 30.40, "lon": -98.00},
+            {"name": "home", "lat": 30.33, "lon": -75.99},
+            {"name": "office", "lat": 30.40, "lon": -76},
         ]
         d["receivers"] = [
             {"name": "rx-1090", "url": "http://a", "band": "1090"},
@@ -337,7 +337,7 @@ class TestLoadConfig:
 watchpoints:
   - name: home
     lat: 30.33
-    lon: -97.99
+    lon: -75.99
 mqtt:
   broker: broker.local
 receivers:
@@ -366,11 +366,11 @@ service:
 watchpoints:
   - name: home
     lat: 30.33
-    lon: -97.99
+    lon: -75.99
     elevation_m: 200
   - name: office
     lat: 30.40
-    lon: -98.00
+    lon: -76
 
 mqtt:
   broker: homeassistant.home.arpa
@@ -396,7 +396,7 @@ receivers:
     poll_interval_s: 1.0
     location:
       lat: 30.33
-      lon: -97.99
+      lon: -75.99
     auth:
       type: none
     enabled: true
@@ -563,7 +563,7 @@ class TestAlertsConfig:
 
     def test_agl_with_elevation_ok(self) -> None:
         base = _minimal_config_dict()
-        base["watchpoints"] = [{"name": "home", "lat": 30.33, "lon": -97.99, "elevation_m": 200}]
+        base["watchpoints"] = [{"name": "home", "lat": 30.33, "lon": -75.99, "elevation_m": 200}]
         base["enrichment"] = {
             "alerts": {"rules": [{"name": "low", "match": {"max_alt_agl_ft": 2000}}]}
         }
@@ -572,7 +572,7 @@ class TestAlertsConfig:
 
     def test_default_watchpoint_home_must_exist(self) -> None:
         base = _minimal_config_dict()
-        base["watchpoints"] = [{"name": "office", "lat": 30.4, "lon": -97.7}]
+        base["watchpoints"] = [{"name": "office", "lat": 30.4, "lon": -75.7}]
         base["enrichment"] = {
             "alerts": {"rules": [{"name": "r", "match": {"max_distance_nm": 10}}]}
         }

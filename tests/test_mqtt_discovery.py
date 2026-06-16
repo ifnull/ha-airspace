@@ -23,7 +23,7 @@ from ha_airspace.mqtt.discovery import build_discovery_payloads
 
 def _make_config(**mqtt_overrides: object) -> Config:
     base: dict[str, Any] = {
-        "watchpoints": [{"name": "home", "lat": 30.33, "lon": -97.99}],
+        "watchpoints": [{"name": "home", "lat": 30.33, "lon": -75.99}],
         "mqtt": {
             "broker": "broker.local",
             **mqtt_overrides,
@@ -42,7 +42,7 @@ def _make_config(**mqtt_overrides: object) -> Config:
 def _make_config_multi_receiver() -> Config:
     return Config.model_validate(
         {
-            "watchpoints": [{"name": "home", "lat": 30.33, "lon": -97.99}],
+            "watchpoints": [{"name": "home", "lat": 30.33, "lon": -75.99}],
             "mqtt": {"broker": "broker.local"},
             "receivers": [
                 {
@@ -211,7 +211,7 @@ class TestReceiverEntities:
     def test_disabled_receiver_emits_no_entities(self) -> None:
         cfg = Config.model_validate(
             {
-                "watchpoints": [{"name": "home", "lat": 30.33, "lon": -97.99}],
+                "watchpoints": [{"name": "home", "lat": 30.33, "lon": -75.99}],
                 "mqtt": {"broker": "broker.local"},
                 "receivers": [
                     {
@@ -328,7 +328,7 @@ class TestAlertAttributes:
         # the per-rule info topic, for a picture/glance alert card.
         cfg = Config.model_validate(
             {
-                "watchpoints": [{"name": "home", "lat": 30.33, "lon": -97.99}],
+                "watchpoints": [{"name": "home", "lat": 30.33, "lon": -75.99}],
                 "mqtt": {"broker": "broker.local"},
                 "receivers": [{"name": "rx", "url": "http://x/a.json", "band": "1090"}],
                 "enrichment": {
@@ -389,7 +389,7 @@ class TestAlertEntities:
     def _config_with_alerts(self) -> Config:
         return Config.model_validate(
             {
-                "watchpoints": [{"name": "home", "lat": 30.33, "lon": -97.99}],
+                "watchpoints": [{"name": "home", "lat": 30.33, "lon": -75.99}],
                 "mqtt": {"broker": "broker.local"},
                 "receivers": [
                     {"name": "rx-home", "url": "http://piaware/aircraft.json", "band": "1090"}
@@ -432,7 +432,7 @@ class TestAlertEntities:
 class TestFlagEntities:
     def _config_with_flags(self, *, orbit: bool = False) -> Config:
         base: dict[str, Any] = {
-            "watchpoints": [{"name": "home", "lat": 30.33, "lon": -97.99}],
+            "watchpoints": [{"name": "home", "lat": 30.33, "lon": -75.99}],
             "mqtt": {"broker": "broker.local"},
             "receivers": [
                 {"name": "rx-home", "url": "http://piaware/aircraft.json", "band": "1090"}
@@ -483,7 +483,7 @@ class TestDroneEntities:
     def _config_with_drones(self) -> Config:
         return Config.model_validate(
             {
-                "watchpoints": [{"name": "home", "lat": 30.33, "lon": -97.99}],
+                "watchpoints": [{"name": "home", "lat": 30.33, "lon": -75.99}],
                 "mqtt": {"broker": "broker.local"},
                 "receivers": [
                     {"name": "rx-home", "url": "http://piaware/aircraft.json", "band": "1090"}

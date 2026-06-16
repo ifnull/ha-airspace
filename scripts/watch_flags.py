@@ -45,7 +45,7 @@ from ha_airspace.receivers import (
     RemoteIdHttpReceiver,
 )
 
-DEFAULT_DRONE_URL = "http://192.168.1.204:8754/data/remoteid.json"
+DEFAULT_DRONE_URL = "http://dump3411.local:8754/data/remoteid.json"
 _MICTRONICS_URL = "https://github.com/wiedehopf/tar1090-db/raw/csv/aircraft.csv.gz"
 _ADSBEX_URL = "https://downloads.adsbexchange.com/downloads/basic-ac-db.json.gz"
 

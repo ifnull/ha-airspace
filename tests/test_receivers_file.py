@@ -37,7 +37,7 @@ class TestBasicFixture:
         assert rch.flight == "RCH171"
         assert rch.alt_baro_ft == 35000
         assert rch.lat == 30.33
-        assert rch.lon == -97.99
+        assert rch.lon == -75.99
         assert rch.ground_speed_kt == 480.5
         assert rch.category == "A4"
         assert rch.nic == 8
@@ -167,7 +167,7 @@ class TestLocation:
         assert await rx.location() is None
 
     async def test_returns_supplied_location(self) -> None:
-        loc = ReceiverLocation(lat=30.33, lon=-97.99, alt_m=200.0, source="config")
+        loc = ReceiverLocation(lat=30.33, lon=-75.99, alt_m=200.0, source="config")
         rx = FileReceiver(
             name="rx-home",
             band="1090",

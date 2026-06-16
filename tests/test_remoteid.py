@@ -69,8 +69,8 @@ class TestFieldMapping:
     def test_shared_position_fields_mapped(self) -> None:
         obs, _ = parse_remoteid_json(_BASIC, receiver_name="dump3411", observed_at=_now())
         d = next(o for o in obs if o.track_id == "0x00")
-        assert d.lat == 30.2835008
-        assert d.lon == -98.061495
+        assert d.lat == 40.7128
+        assert d.lon == -74.0060
         assert d.alt_geom_ft == 1276  # 1276.2 -> int (whole-ish)
         assert d.ground_speed_kt == 93.3
         assert d.track_deg == 0.0
@@ -90,8 +90,8 @@ class TestFieldMapping:
         obs, _ = parse_remoteid_json(_BASIC, receiver_name="dump3411", observed_at=_now())
         d = next(o for o in obs if o.track_id == "0x00")
         assert d.drone is not None
-        assert d.drone.operator_lat == 30.2874197
-        assert d.drone.operator_lon == -98.0524077
+        assert d.drone.operator_lat == 40.7165
+        assert d.drone.operator_lon == -73.9990
         assert d.drone.operator_alt_takeoff_ft == -3251.3
 
     def test_positionless_drone_kept(self) -> None:
