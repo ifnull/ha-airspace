@@ -122,8 +122,8 @@ Minimal config:
 ```yaml
 watchpoints:
   - name: home
-    lat: 40.7128
-    lon: -74.0060
+    lat: 38.8977
+    lon: -77.0365
 
 mqtt:
   broker: homeassistant.local

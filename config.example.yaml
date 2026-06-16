@@ -26,12 +26,12 @@ service:
 # --------------------------------------------------------------------------
 watchpoints:
   - name: home
-    lat: 40.7128
-    lon: -74.0060
+    lat: 38.8977
+    lon: -77.0365
     elevation_m: 200            # optional; reserved for AGL approximation (Phase 2+)
   # - name: office
-  #   lat: 40.6413
-  #   lon: -73.7781
+  #   lat: 38.8899
+  #   lon: -77.0091
 
 # --------------------------------------------------------------------------
 # mqtt — broker connection + publish behavior. `broker` is required.
@@ -67,8 +67,8 @@ receivers:
     band: "1090"
     # poll_interval_s: 1.0      # optional per-receiver override
     # location:                 # optional; auto-detected from receiver.json if absent
-    #   lat: 40.7128
-    #   lon: -74.0060
+    #   lat: 38.8977
+    #   lon: -77.0365
     #   alt_m: 200
     # auth:                     # optional; type: none | basic | header
     #   type: basic
