@@ -57,15 +57,30 @@ def _passes_alt_agl(
     max_alt_agl_ft: float,
     elevation_m_for: Callable[[str], float | None],
     wp_name: str,
+    *,
+    predictive: bool = False,
 ) -> bool:
     """At or below ``max_alt_agl_ft`` above the watchpoint. v1 AGL is MSL minus
     the watchpoint ground elevation (config-validated to exist when used).
-    Missing altitude can't satisfy it. 1 m = 3.28084 ft."""
+    Missing altitude can't satisfy it. 1 m = 3.28084 ft.
+
+    For a ``predictive`` (inbound) rule, also extrapolate the altitude the track
+    will have at closest approach — current AGL plus vertical rate over the ETA —
+    and test the *lower* of now-vs-projected. So a descending aircraft dipping
+    into drone airspace trips the alert before it is actually low; a climber still
+    trips while genuinely low and clears once it has climbed past the threshold.
+    Falls back to the current snapshot when vertical rate or ETA is unknown."""
     alt_msl = state.canonical.alt_baro_ft
     if alt_msl is None:
         return False
     ground_ft = (elevation_m_for(wp_name) or 0.0) * 3.28084
-    return (alt_msl - ground_ft) <= max_alt_agl_ft
+    agl = alt_msl - ground_ft
+    if predictive:
+        vr = state.canonical.vertical_rate_fpm
+        eta = state.predicted_eta_to_home_s
+        if vr is not None and eta is not None:
+            agl = min(agl, agl + vr * (eta / 60.0))  # vr is ft/min, eta seconds
+    return agl <= max_alt_agl_ft
 
 
 def rule_matches(
@@ -99,7 +114,11 @@ def rule_matches(
             return False
 
     if match.max_alt_agl_ft is not None and not _passes_alt_agl(
-        state, match.max_alt_agl_ft, elevation_m_for, wp_name
+        state,
+        match.max_alt_agl_ft,
+        elevation_m_for,
+        wp_name,
+        predictive=match.max_closest_approach_nm is not None,
     ):
         return False
 

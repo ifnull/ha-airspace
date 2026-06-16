@@ -29,6 +29,9 @@ def _state(
     category: str | None = None,
     distance_home: float | None = None,
     alt_baro_ft: int | None = None,
+    vertical_rate_fpm: int | None = None,
+    cpa_nm: float | None = None,
+    eta_s: float | None = None,
     prior_last_seen: datetime | None = None,
 ) -> AircraftState:
     obs = AircraftObservation(
@@ -38,12 +41,15 @@ def _state(
         band="1090",
         category=category,
         alt_baro_ft=alt_baro_ft,
+        vertical_rate_fpm=vertical_rate_fpm,
     )
     state = AircraftState.from_first_observation(obs)
     if flags:
         state.flags = set(flags)
     if distance_home is not None:
         state.distance_to["home"] = distance_home
+    state.predicted_closest_approach_nm = cpa_nm
+    state.predicted_eta_to_home_s = eta_s
     state.prior_last_seen = prior_last_seen
     return state
 
@@ -99,6 +105,40 @@ class TestRuleMatches:
     def test_max_alt_agl_missing_altitude_no_match(self) -> None:
         match = MatchBlock(max_alt_agl_ft=2000, watchpoint="home")
         assert not rule_matches(_state(alt_baro_ft=None), match, elevation_m_for=lambda _n: 200.0)
+
+
+class TestPredictiveAltitude:
+    """Inbound (max_closest_approach_nm) rules project altitude over the ETA and
+    gate on the *lower* of now-vs-projected, so descents into drone airspace fire."""
+
+    # Drone-conflict-shaped rule: inbound + low. elevation 0 -> AGL == MSL.
+    _RULE = MatchBlock(max_closest_approach_nm=10, max_alt_agl_ft=1640, watchpoint="home")
+
+    def test_descending_above_threshold_matches(self) -> None:
+        # 4000 ft now, descending 1000 ft/min, 3 min to approach -> ~1000 ft there.
+        s = _state(alt_baro_ft=4000, vertical_rate_fpm=-1000, cpa_nm=2.0, eta_s=180.0)
+        assert rule_matches(s, self._RULE, elevation_m_for=_no_elevation)
+
+    def test_high_and_level_does_not_match(self) -> None:
+        s = _state(alt_baro_ft=4000, vertical_rate_fpm=0, cpa_nm=2.0, eta_s=180.0)
+        assert not rule_matches(s, self._RULE, elevation_m_for=_no_elevation)
+
+    def test_currently_low_climber_still_matches(self) -> None:
+        # Low now (1000 ft) climbing out — it's a conflict *now*, so it fires.
+        s = _state(alt_baro_ft=1000, vertical_rate_fpm=2000, cpa_nm=2.0, eta_s=180.0)
+        assert rule_matches(s, self._RULE, elevation_m_for=_no_elevation)
+
+    def test_non_predictive_rule_uses_current_snapshot(self) -> None:
+        # No max_closest_approach_nm -> no projection; a high descender is excluded.
+        flat = MatchBlock(max_distance_nm=10, max_alt_agl_ft=1640, watchpoint="home")
+        s = _state(
+            alt_baro_ft=4000, vertical_rate_fpm=-1000, distance_home=5, cpa_nm=2.0, eta_s=180.0
+        )
+        assert not rule_matches(s, flat, elevation_m_for=_no_elevation)
+
+    def test_missing_vertical_rate_falls_back_to_snapshot(self) -> None:
+        s = _state(alt_baro_ft=4000, vertical_rate_fpm=None, cpa_nm=2.0, eta_s=180.0)
+        assert not rule_matches(s, self._RULE, elevation_m_for=_no_elevation)
 
 
 # ---------------------------------------------------------------------------

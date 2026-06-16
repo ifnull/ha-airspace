@@ -14,11 +14,19 @@ the major version; a removed/renamed/retyped field does.
 ### Added
 - `LICENSE` (MIT), this `CHANGELOG`, and a documented stability contract +
   troubleshooting guide in the README — v1 readiness.
+- Inbound alerts (`max_closest_approach_nm` + `max_alt_agl_ft`) are now
+  altitude-aware: the AGL gate projects the track's altitude to closest-approach
+  time using its vertical rate and tests the lower of now-vs-projected, so
+  descending traffic dipping into drone airspace fires before it is actually low.
 
 ### Fixed
 - Vertical rate now falls back to `geom_rate` when a receiver reports only the
   geometric rate (no `baro_rate`); a `baro_rate` of `0` (level flight) is still
   preserved rather than masked.
+
+### Changed
+- Privacy: maintainer location, LAN IP, and ground elevation scrubbed from
+  examples/tests/fixtures; example watchpoint is now the White House.
 
 ## [0.2.22] — 2026-06-15
 ### Fixed
