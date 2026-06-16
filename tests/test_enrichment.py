@@ -78,6 +78,41 @@ def test_db_join_populates_metadata_and_resolves_flag() -> None:
     assert state.flags == {"military"}
 
 
+def test_db_type_backfills_aircraft_type() -> None:
+    # Broadcast omits `t` (military) — the DB type fills aircraft_type.
+    store = DatabaseStore()
+    store.swap({"ae292b": {"type": "E6", "model": "E-6B Mercury"}})
+    enricher = Enricher(EnrichmentConfig(), db_store=store)
+    state = _mil_state("ae292b")
+    assert state.canonical.aircraft_type is None
+    enricher.enrich(state)
+    assert state.canonical.aircraft_type == "E6"
+
+
+def test_broadcast_type_not_overwritten_by_db() -> None:
+    store = DatabaseStore()
+    store.swap({"ae292b": {"type": "E6"}})
+    enricher = Enricher(EnrichmentConfig(), db_store=store)
+    obs = AircraftObservation(
+        hex="ae292b", observed_at=_T0, seen_by="rx", band="1090", aircraft_type="B738"
+    )
+    state = AircraftState.from_first_observation(obs)
+    enricher.enrich(state)
+    assert state.canonical.aircraft_type == "B738"  # broadcast wins
+
+
+def test_types_flag_matches_via_backfilled_db_type() -> None:
+    store = DatabaseStore()
+    store.swap({"ae292b": {"type": "C17"}})
+    enricher = Enricher(
+        EnrichmentConfig(flags={"heavy_mil": FlagConfig(types=["C17", "B52"])}),
+        db_store=store,
+    )
+    state = _mil_state("ae292b")
+    enricher.enrich(state)
+    assert state.flags == {"heavy_mil"}  # types matcher saw the backfilled type
+
+
 def test_db_join_empty_for_unknown_hex() -> None:
     store = DatabaseStore()
     store.swap({"ae292b": {"mil": True}})

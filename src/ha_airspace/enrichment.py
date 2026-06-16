@@ -17,6 +17,7 @@ exactly Phase 1 (no flags, empty db_metadata).
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from ha_airspace.flags import evaluate_flags
@@ -58,6 +59,14 @@ class Enricher:
             db = self._db_store.current
             metadata = db.get(state.hex)
             state.db_metadata = dict(metadata) if metadata else {}
+            # Backfill the ICAO type designator from the DB when the broadcast
+            # omitted it. Most aircraft — military especially — don't transmit
+            # `t`, so without this aircraft_type is empty everywhere (payloads,
+            # the "Type" column, the `types` flag matcher) despite the DB knowing
+            # it. canonical is frozen, so swap in a copy with the type filled.
+            db_type = state.db_metadata.get("type")
+            if isinstance(db_type, str) and db_type and state.canonical.aircraft_type is None:
+                state.canonical = replace(state.canonical, aircraft_type=db_type)
         state.flags = evaluate_flags(state, self._config.flags)
 
 
