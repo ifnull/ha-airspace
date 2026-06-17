@@ -364,6 +364,11 @@ class TestAlertPayload:
         assert payload.country == "us"
         assert payload.country_flag == "🇺🇸"
 
+    def test_entity_picture_mirrors_photo_for_ha_map(self) -> None:
+        photo = PhotoPayload(thumbnail_url="https://x/p.jpg")
+        assert AircraftPayload.from_state(_make_state(), photo).entity_picture == "https://x/p.jpg"
+        assert AircraftPayload.from_state(_make_state()).entity_picture is None
+
 
 # ---------------------------------------------------------------------------
 # HA-map aliases: latitude/longitude mirror lat/lon (dashboard polish)

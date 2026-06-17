@@ -9,6 +9,17 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [0.2.27] — 2026-06-16
+### Added
+- Nearest-aircraft payload exposes `entity_picture` (the photo), so the HA Map
+  marker shows the aircraft photo instead of name initials.
+
+### Changed
+- Example dashboard: consolidated the redundant "Overview" glance into the
+  "tap for details" list; the standalone "Nearest aircraft" card now uses the
+  rich popup layout (heading + detail bullets + photo). Documented optional
+  template sensors for dynamic first-3-of-hex / RID-id map-marker labels.
+
 ## [0.2.26] — 2026-06-16
 ### Fixed
 - Add-on changelog now shows in Home Assistant — HA reads `CHANGELOG.md` from the
@@ -106,4 +117,4 @@ Initial development. Established the full pipeline and contracts:
   optional Prometheus `/metrics`.
 - Pydantic v2 config (strict, fail-fast), structlog logging.
 
-[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.26...HEAD
+[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.27...HEAD
