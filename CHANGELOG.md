@@ -9,15 +9,25 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
-## [Unreleased]
-
+## [0.2.25] — 2026-06-16
 ### Added
-- `LICENSE` (MIT), this `CHANGELOG`, and a documented stability contract +
-  troubleshooting guide in the README — v1 readiness.
-- Inbound alerts (`max_closest_approach_nm` + `max_alt_agl_ft`) are now
-  altitude-aware: the AGL gate projects the track's altitude to closest-approach
-  time using its vertical rate and tests the lower of now-vs-projected, so
-  descending traffic dipping into drone airspace fires before it is actually low.
+- README "Stable interfaces" (v1 contract) + "Troubleshooting" sections.
+- Add-on `icon.png` + `logo.png` artwork.
+
+### Changed
+- The add-on now displays as **"Airspace"** in Home Assistant; the slug, package,
+  repo, and image names stay `ha-airspace`.
+
+## [0.2.24] — 2026-06-15
+### Added
+- Inbound alerts (`max_closest_approach_nm` + `max_alt_agl_ft`) are altitude-aware:
+  the AGL gate projects the track's altitude to closest-approach time using its
+  vertical rate and tests the lower of now-vs-projected, so descending traffic
+  dipping into drone airspace fires before it is actually low.
+
+## [0.2.23] — 2026-06-15
+### Added
+- `LICENSE` (MIT) and this `CHANGELOG`.
 
 ### Fixed
 - Vertical rate now falls back to `geom_rate` when a receiver reports only the
@@ -26,7 +36,7 @@ the major version; a removed/renamed/retyped field does.
 
 ### Changed
 - Privacy: maintainer location, LAN IP, and ground elevation scrubbed from
-  examples/tests/fixtures; example watchpoint is now the White House.
+  examples / tests / fixtures; the example watchpoint is now the White House.
 
 ## [0.2.22] — 2026-06-15
 ### Fixed
@@ -87,4 +97,4 @@ Initial development. Established the full pipeline and contracts:
   optional Prometheus `/metrics`.
 - Pydantic v2 config (strict, fail-fast), structlog logging.
 
-[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.22...HEAD
+[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.25...HEAD

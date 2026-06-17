@@ -29,9 +29,3 @@ The add-on ships as **prebuilt per-arch images** (`config.yaml` `image:` →
 than building on the device — fast, reliable installs and updates. The release
 workflow builds those images (FROM the service image) on each `v*` tag.
 `build.yaml` is kept for local development builds.
-
-## Still TODO before store release
-
-- `icon.png` / `logo.png` add-on artwork.
-- Make the `*-addon-ha-airspace` GHCR packages **public** (one-time, like the
-  service image) so the Supervisor can pull them without auth.

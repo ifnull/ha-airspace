@@ -1,7 +1,9 @@
 # Home Assistant add-on manifest for ha-airspace.
 # Schema reference: https://developers.home-assistant.io/docs/add-ons/configuration/
-name: ha-airspace
-version: "0.2.24"
+# Display name is "Airspace" (friendly, matches the MQTT device); the slug,
+# package, repo, and image names stay ha-airspace as the technical identity.
+name: Airspace
+version: "0.2.25"
 slug: ha_airspace
 description: >-
   Multi-source ADS-B + drone Remote ID enrichment to MQTT for Home Assistant.
