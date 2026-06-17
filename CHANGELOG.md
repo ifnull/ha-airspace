@@ -9,6 +9,15 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [0.2.26] — 2026-06-16
+### Fixed
+- Add-on changelog now shows in Home Assistant — HA reads `CHANGELOG.md` from the
+  add-on directory, so `addon/CHANGELOG.md` symlinks to the root changelog
+  ("No changelog found" before).
+- Add-on README (its HA long-description) now uses absolute links to the project,
+  docs, and example dashboard/automations; the broken relative `../README.md`
+  link is fixed.
+
 ## [0.2.25] — 2026-06-16
 ### Added
 - README "Stable interfaces" (v1 contract) + "Troubleshooting" sections.
@@ -97,4 +106,4 @@ Initial development. Established the full pipeline and contracts:
   optional Prometheus `/metrics`.
 - Pydantic v2 config (strict, fail-fast), structlog logging.
 
-[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.25...HEAD
+[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.26...HEAD
