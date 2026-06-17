@@ -34,6 +34,11 @@ views:
     cards:
       # Map: nearest aircraft + nearest drone, around home. No template sensors —
       # the nearest sensors carry latitude/longitude attributes directly.
+      # Markers: the nearest sensors expose `entity_picture` = the Planespotters
+      # photo (when photos are on and one exists), so the aircraft marker becomes
+      # the actual photo; otherwise HA shows the entity-name initials. For a
+      # dynamic first-3-of-hex / RID-id label instead of initials, see the OPTIONAL
+      # marker template sensors at the BOTTOM of this file and plot those instead.
       - type: map
         title: Nearest traffic
         default_zoom: 9
@@ -47,8 +52,8 @@ views:
       # surface beside it: tap a row to open a popup. Nearest aircraft/drone show
       # a detail card; the flag rows show a table of all matching aircraft. Delete
       # this whole card if you don't use browser_mod — everything else is stock.
-      # Note: photos ride ALERT payloads only, so they're not in these popups; for
-      # a photo popup, put one on a binary_sensor.airspace_alert_<rule> entity.
+      # The nearest aircraft popup shows the Planespotters photo (when photos are
+      # enabled and one exists); flag popups show the nearest match's photo.
       - type: entities
         title: Airspace — tap for details
         state_color: true
@@ -205,32 +210,10 @@ views:
                       None right now.
                       {% endif -%}
 
-      # At-a-glance counts. The flag sensors (state = count) sit alongside the
-      # totals; tap one to open the matching aircraft list in its attributes.
-      - type: glance
-        title: Overview
-        entities:
-          - entity: sensor.airspace_aircraft_count
-            name: Aircraft
-          - entity: sensor.airspace_drone_count
-            name: Drones
-          - entity: sensor.airspace_nearest_aircraft
-            name: Nearest (nm)
-          # These must match flags you actually configured (enrichment.flags).
-          # The add-on toggles produce: military, interesting, emergency.
-          - entity: sensor.airspace_flag_military
-            name: Military
-          - entity: sensor.airspace_flag_interesting
-            name: Interesting
-          - entity: sensor.airspace_flag_emergency
-            name: Emergency
-
-      # Nearest aircraft detail, templated from the sensor's attributes
-      # (the full payload rides as attributes via json_attributes_topic).
-      # Shows the same fields the map popup can't: altitude, distance, bearing,
-      # type, squawk, flags, and the predictive closest-approach.
-      # Literal block (content: |), not folded (>), so the photo image lands on
-      # its own line. Photo needs photos enabled + a Planespotters hit.
+      # Nearest aircraft — the same rich layout as the tap-for-details popup:
+      # heading (country flag + linked callsign), type/operator, detail bullets,
+      # photo. Literal block (content: |) so the image lands on its own line.
+      # (The at-a-glance counts now live in the "tap for details" list above.)
       - type: markdown
         title: Nearest aircraft
         content: |
@@ -238,14 +221,21 @@ views:
           {% if states(s) in ['unknown', 'unavailable'] -%}
           No aircraft in range.
           {% else -%}
-          {% set db = state_attr(s, 'db_metadata') or {} -%}
-          {% set brg = (state_attr(s, 'bearing_to') or {}).get('home') -%}
-          {% set cpa = state_attr(s, 'predicted_closest_approach_nm') -%}
-          {% set p = state_attr(s, 'photo') -%}
-          **{{ (state_attr(s,'country_flag') ~ ' ') if state_attr(s,'country_flag') else '' }}{{ '[' ~ (state_attr(s,'flight') or state_attr(s,'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(s,'hex') ~ ')' if state_attr(s,'hex') else (state_attr(s,'flight') or '?') }}**
-          {{ db.get('model') or state_attr(s,'aircraft_type') or '' }}{{ ' · ' ~ db.get('ownop') if db.get('ownop') }}
+          {% set db = state_attr(s,'db_metadata') or {} -%}
+          {% set brg = (state_attr(s,'bearing_to') or {}).get('home') -%}
+          {% set cpa = state_attr(s,'predicted_closest_approach_nm') -%}
+          {% set gs = state_attr(s,'ground_speed_kt') -%}
+          ## {{ (state_attr(s,'country_flag') ~ ' ') if state_attr(s,'country_flag') else '' }}{{ '[' ~ (state_attr(s,'flight') or state_attr(s,'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(s,'hex') ~ ')' if state_attr(s,'hex') else (state_attr(s,'flight') or '?') }}
+          **{{ db.get('model') or state_attr(s,'aircraft_type') or 'unknown type' }}**{{ ' · ' ~ db.get('ownop') if db.get('ownop') }}
 
-          {{ states(s) }} nm{{ ', brg ' ~ brg|round(0)|int ~ '°' if brg is not none }} · {{ state_attr(s,'alt_baro_ft') or '?' }} ft{% if state_attr(s,'squawk') %} · squawk {{ state_attr(s,'squawk') }}{% endif %}{% if cpa is not none %} · CPA {{ cpa|round(1) }} nm{% endif %}{% if state_attr(s,'flags') %} · **{{ state_attr(s,'flags')|join(', ') }}**{% endif %}
+          - **Distance:** {{ states(s) }} nm{{ ' · brg ' ~ brg|round(0)|int ~ '°' if brg is not none }}
+          - **Altitude:** {{ state_attr(s,'alt_baro_ft') or '—' }} ft
+          - **Speed:** {{ gs|round(0)|int if gs is not none else '—' }} kt
+          - **Squawk:** {{ state_attr(s,'squawk') or '—' }}
+          - **Closest approach:** {{ (cpa|round(1)|string ~ ' nm') if cpa is not none else '—' }}
+          - **Flags:** {{ state_attr(s,'flags')|join(', ') if state_attr(s,'flags') else '—' }}
+          - **Registration:** {{ state_attr(s,'registration') or '—' }}
+          {% set p = state_attr(s,'photo') -%}
           {% if p %}
           ![photo]({{ p.thumbnail_url }})
 
@@ -354,21 +344,43 @@ views:
             name: 978 msg/s
 
 # ---------------------------------------------------------------------------
-# Optional: drone OPERATOR on the map.
+# Optional template sensors (configuration.yaml).
 #
-# The nearest-drone sensor already maps the drone itself. The operator's
-# location (operator_lat / operator_lon attributes) needs one tiny template
-# sensor in configuration.yaml to expose it as latitude/longitude:
+# (1) Dynamic marker LABELS. The map already shows the Planespotters photo on the
+#     marker (the nearest sensor exposes `entity_picture`); with no photo it falls
+#     back to the entity-name initials. If you'd rather the fallback be the first 3
+#     of the hex (aircraft) / RID id (drone), add these and plot them on the map
+#     INSTEAD of sensor.airspace_nearest_aircraft / _drone.
+#     CAVEAT: HA derives a template sensor's entity_id from its *first rendered
+#     name*, so the auto id will be something like `sensor.air`. After adding,
+#     rename in Settings → Entities to `sensor.airspace_nearest_aircraft_marker` /
+#     `_drone_marker` (or just reference whatever id HA assigned).
 #
 # template:
 #   - sensor:
+#       - name: "{{ (state_attr('sensor.airspace_nearest_aircraft','hex') or 'air')[:3] | upper }}"
+#         unique_id: airspace_nearest_aircraft_marker
+#         state: "{{ states('sensor.airspace_nearest_aircraft') }}"
+#         availability: "{{ states('sensor.airspace_nearest_aircraft') not in ['unknown','unavailable'] }}"
+#         picture: "{{ (state_attr('sensor.airspace_nearest_aircraft','photo') or {}).get('thumbnail_url') or '' }}"
+#         attributes:
+#           latitude: "{{ state_attr('sensor.airspace_nearest_aircraft','latitude') }}"
+#           longitude: "{{ state_attr('sensor.airspace_nearest_aircraft','longitude') }}"
+#       - name: "{{ (state_attr('sensor.airspace_nearest_drone','track_id') or 'uav')[:3] | upper }}"
+#         unique_id: airspace_nearest_drone_marker
+#         state: "{{ states('sensor.airspace_nearest_drone') }}"
+#         availability: "{{ states('sensor.airspace_nearest_drone') not in ['unknown','unavailable'] }}"
+#         attributes:
+#           latitude: "{{ state_attr('sensor.airspace_nearest_drone','latitude') }}"
+#           longitude: "{{ state_attr('sensor.airspace_nearest_drone','longitude') }}"
+#
+# (2) Drone OPERATOR on the map (operator_lat / operator_lon):
 #       - name: Airspace Drone Operator
 #         unique_id: airspace_drone_operator_map
-#         state: "{{ state_attr('sensor.airspace_nearest_drone', 'operator_id') or 'operator' }}"
+#         state: "{{ state_attr('sensor.airspace_nearest_drone','operator_id') or 'operator' }}"
 #         attributes:
-#           latitude: "{{ state_attr('sensor.airspace_nearest_drone', 'operator_lat') }}"
-#           longitude: "{{ state_attr('sensor.airspace_nearest_drone', 'operator_lon') }}"
+#           latitude: "{{ state_attr('sensor.airspace_nearest_drone','operator_lat') }}"
+#           longitude: "{{ state_attr('sensor.airspace_nearest_drone','operator_lon') }}"
 #           icon: mdi:account-alert
-#
-# Then add `- entity: sensor.airspace_drone_operator` to the Map card entities.
+#     Then add `- entity: sensor.airspace_drone_operator` to the Map card.
 # ---------------------------------------------------------------------------

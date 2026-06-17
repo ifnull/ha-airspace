@@ -137,6 +137,11 @@ class AircraftPayload(BaseModel):
     summary (when photos are enabled and a photo exists); ``None`` on the
     high-cardinality ``airspace/aircraft/<hex>`` wildcard — no lookup is done
     there, preserving the per-hex cost guarantee."""
+    entity_picture: str | None = None
+    """The photo thumbnail URL, flattened to the attribute name Home Assistant's
+    Map card / more-info use for an entity image — so the nearest-aircraft marker
+    renders the photo instead of name initials. Mirrors ``photo.thumbnail_url``;
+    ``None`` when there's no photo."""
 
     @classmethod
     def from_state(cls, state: AircraftState, photo: PhotoPayload | None = None) -> Self:
@@ -181,6 +186,7 @@ class AircraftPayload(BaseModel):
             flags=sorted(state.flags),
             db_metadata=dict(state.db_metadata),
             photo=photo,
+            entity_picture=photo.thumbnail_url if photo else None,
         )
 
 
