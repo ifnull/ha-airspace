@@ -199,12 +199,67 @@ cleared (no zombie aircraft lingering in HA).
 
 ---
 
+## Stable interfaces
+
+As of **v1.0** the following are the supported public surface. Breaking changes to
+them bump the **major** version (and the payload `schema_version`); additive,
+optional changes do not.
+
+- **MQTT payload contract.** Every consumer-facing JSON payload (aircraft, drone,
+  alert, per-flag feed) carries `schema_version` (currently **1**) as its first
+  field. A new optional field may be added without a bump; a removed, renamed, or
+  retyped field bumps both the major version and `schema_version`. Branch on
+  `schema_version` before reading anything else.
+- **MQTT topic tree** under `base_topic` (default `airspace`): `status`;
+  `summary/{count,nearest,count_by_flag,drone_count,nearest_drone,by_flag/<flag>}`;
+  `aircraft/<hex>`; `drone/<id>`; `alert/<rule>/{active,info,<id>}`;
+  `receiver/<name>/{status,stats,location}`. Topic names are stable.
+- **Home Assistant entities** created via MQTT discovery (the set under
+  [Home Assistant entities](#home-assistant-entities)). Entity ids derive from the
+  device name + entity name; `unique_id`s stay stable across renames.
+- **Configuration schema** — the native `config.yaml` (Pydantic, strict) and the
+  add-on options. New optional keys may be added; removing or retyping a key is
+  breaking. Unknown keys are rejected at startup.
+
+Not part of the contract (may change anytime): internal types in `models.py`, log
+event names, and Prometheus metric names.
+
+---
+
 ## Optional: Prometheus metrics
 
 Off by default; localhost-bound when enabled. Set `prometheus.enabled: true` in
 config to expose `/metrics` (receiver poll outcomes, MQTT publish/drop/reconnect
 counters, active-aircraft gauge). Bind to `0.0.0.0` only if you want it on the
 LAN — the endpoint is unauthenticated.
+
+---
+
+## Troubleshooting
+
+- **Add-on shows an update is available but no Update button appears.** A
+  Supervisor↔frontend desync — update from the CLI instead: `ha addons update
+  <slug>` (find the slug with `ha addons`). Non-destructive; no uninstall needed.
+- **`browser_mod` popups (the tap-for-details cards) do nothing.** Install
+  *browser_mod* from HACS **and add its integration** (Settings → Devices &
+  Services → Add Integration → Browser Mod), then restart HA and hard-refresh the
+  browser. Sanity-check with Developer Tools → Actions → `browser_mod.popup`.
+- **AGL alerts never fire, or the "Type" column is empty.** AGL needs
+  `elevation_m` on the watchpoint (without it AGL is computed from MSL and misses
+  low traffic). Aircraft type comes from the reference DB — enable `databases`
+  (most transponders don't broadcast the type designator).
+- **Duplicate HA entities with a `_2` suffix after a rename.** Use the device's
+  "recreate entity ids" action, or delete the stale entities — ids derive from the
+  device + entity name.
+- **Add-on won't start after editing `extra_config`.** It's YAML inside an options
+  field: indentation must be exact, and select-all before pasting (the editor
+  appends, silently duplicating lists). Lists (`alerts.rules`, `databases.sources`)
+  **replace** the toggle-generated ones wholesale — list every entry you want.
+- **No aircraft appear.** Check the receiver URL is reachable from the host and
+  the `band` is correct. A flaky receiver is isolated and marked unhealthy
+  (`receiver/<name>/status`) rather than taking down the service.
+- **64-bit only.** Images are built for `aarch64` / `amd64`; 32-bit (armv7) is not
+  supported.
 
 ---
 
@@ -228,4 +283,4 @@ Mosquitto container via testcontainers and are skipped unless you pass
 
 ## License
 
-MIT. See the `license` field in [`pyproject.toml`](pyproject.toml).
+[MIT](LICENSE).
