@@ -323,14 +323,14 @@ views:
             {{ '_© ' ~ state_attr(a, 'photographer') ~ '_' if state_attr(a, 'photographer') else '' }}
             {% endif %}
 
-      # Receiver health. !!! REPLACE the receiver name in every id below with
-      # YOURS !!! The id is airspace_receiver_<name>_... where <name> is your
-      # receiver's config name, slugified (hyphens -> underscores). Find them in
-      # Settings -> Entities (filter "receiver"). Example shows a 1090 + 978 pair
-      # named "rx-1090" / "rx-978" -> rx_1090 / rx_978; delete the 978 block if
-      # you only run 1090.
+      # Receiver + Remote-ID-feed health. !!! REPLACE the names in every id below
+      # with YOURS !!! ADS-B receiver ids are airspace_receiver_<name>_...; Remote
+      # ID feed ids are airspace_remote_id_<name>_... (HA slugifies the display
+      # name, hyphens -> underscores). Find them in Settings -> Entities (filter
+      # "receiver" / "remote id"). Example: a 1090 + 978 pair (rx-1090 / rx-978)
+      # plus a Remote ID feed (dump3411); delete blocks you don't run.
       - type: entities
-        title: Receivers
+        title: Receivers & feeds
         entities:
           - entity: binary_sensor.airspace_receiver_rx_1090_status
             name: 1090 receiver
@@ -344,6 +344,12 @@ views:
             name: 978 aircraft
           - entity: sensor.airspace_receiver_rx_978_message_rate
             name: 978 msg/s
+          - entity: binary_sensor.airspace_remote_id_dump3411_status
+            name: Remote ID feed
+          - entity: sensor.airspace_remote_id_dump3411_drone_count
+            name: Drones seen
+          - entity: sensor.airspace_remote_id_dump3411_message_rate
+            name: RID msg/s
 
 # ---------------------------------------------------------------------------
 # Optional template sensors (configuration.yaml).

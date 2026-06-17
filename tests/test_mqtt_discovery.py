@@ -512,3 +512,17 @@ class TestDroneEntities:
     def test_no_drone_entities_without_remoteid_source(self) -> None:
         payloads = build_discovery_payloads(_make_config())
         assert not any("drone" in t for t in _topics(payloads))
+
+    def test_remoteid_feed_gets_receiver_style_health_entities(self) -> None:
+        # Remote ID feeds publish under receiver/<name>; they should get the same
+        # status/count/rate entities as ADS-B receivers, with drone-flavored labels.
+        bodies = _bodies_by_unique_id(build_discovery_payloads(self._config_with_drones()))
+        status = bodies["airspace_receiver_dump3411_status"]
+        count = bodies["airspace_receiver_dump3411_aircraft_count"]
+        rate = bodies["airspace_receiver_dump3411_messages_per_sec"]
+        assert status["state_topic"] == "airspace/receiver/dump3411/status"
+        assert status["device_class"] == "connectivity"
+        assert count["name"] == "Remote ID dump3411 Drone Count"
+        assert count["icon"] == "mdi:quadcopter"
+        assert count["value_template"] == "{{ value_json.aircraft_count }}"
+        assert rate["state_topic"] == "airspace/receiver/dump3411/stats"

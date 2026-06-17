@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ha_airspace.config import Config, ReceiverConfig
+from ha_airspace.config import Config
 from ha_airspace.orbit import ORBIT_FLAG
 
 DISCOVERY_NODE_ID: str = "airspace"
@@ -115,11 +115,30 @@ def build_discovery_payloads(
             continue
         payloads.extend(
             _build_receiver_entities(
-                receiver=receiver,
+                name=receiver.name,
                 base=base,
                 discovery_prefix=discovery_prefix,
                 availability_topic=availability_topic,
                 device_block=device_block,
+            )
+        )
+
+    # --- Per-Remote-ID-feed entities -----------------------------------
+    # Remote ID feeds publish the same status/stats under receiver/<name>; give
+    # them matching entities so a drone feed's health shows up like a receiver.
+    for feed in config.remoteid:
+        if not feed.enabled:
+            continue
+        payloads.extend(
+            _build_receiver_entities(
+                name=feed.name,
+                base=base,
+                discovery_prefix=discovery_prefix,
+                availability_topic=availability_topic,
+                device_block=device_block,
+                name_prefix=f"Remote ID {feed.name}",
+                count_name="Drone Count",
+                count_icon="mdi:quadcopter",
             )
         )
 
@@ -255,24 +274,30 @@ def _build_drone_entities(
 
 def _build_receiver_entities(
     *,
-    receiver: ReceiverConfig,
+    name: str,
     base: str,
     discovery_prefix: str,
     availability_topic: str,
     device_block: dict[str, Any],
+    name_prefix: str | None = None,
+    count_name: str = "Aircraft Count",
+    count_icon: str = "mdi:airplane",
 ) -> list[tuple[str, dict[str, Any]]]:
-    """Three entities per receiver: status, count, message rate."""
-    rx_topic_base = f"{base}/receiver/{receiver.name}"
-    name_prefix = f"Receiver {receiver.name}"
+    """Three entities (status, count, message rate) for an ADS-B receiver or a
+    Remote ID feed — both publish under ``receiver/<name>/{status,stats}``, so a
+    feed just overrides the display labels (``name_prefix`` / ``count_name`` /
+    ``count_icon``); the unique_ids/topics keep the ``receiver_<name>`` scheme."""
+    rx_topic_base = f"{base}/receiver/{name}"
+    prefix = name_prefix or f"Receiver {name}"
 
     return [
         _entity_config(
             discovery_prefix=discovery_prefix,
             component="binary_sensor",
-            object_id=f"receiver_{receiver.name}_status",
+            object_id=f"receiver_{name}_status",
             body={
-                "name": f"{name_prefix} Status",
-                "unique_id": f"airspace_receiver_{receiver.name}_status",
+                "name": f"{prefix} Status",
+                "unique_id": f"airspace_receiver_{name}_status",
                 "state_topic": f"{rx_topic_base}/status",
                 "payload_on": "online",
                 "payload_off": "offline",
@@ -286,14 +311,14 @@ def _build_receiver_entities(
         _entity_config(
             discovery_prefix=discovery_prefix,
             component="sensor",
-            object_id=f"receiver_{receiver.name}_aircraft_count",
+            object_id=f"receiver_{name}_aircraft_count",
             body={
-                "name": f"{name_prefix} Aircraft Count",
-                "unique_id": f"airspace_receiver_{receiver.name}_aircraft_count",
+                "name": f"{prefix} {count_name}",
+                "unique_id": f"airspace_receiver_{name}_aircraft_count",
                 "state_topic": f"{rx_topic_base}/stats",
                 "value_template": "{{ value_json.aircraft_count }}",
                 "state_class": "measurement",
-                "icon": "mdi:airplane",
+                "icon": count_icon,
                 "availability_topic": availability_topic,
                 "payload_available": "online",
                 "payload_not_available": "offline",
@@ -303,10 +328,10 @@ def _build_receiver_entities(
         _entity_config(
             discovery_prefix=discovery_prefix,
             component="sensor",
-            object_id=f"receiver_{receiver.name}_messages_per_sec",
+            object_id=f"receiver_{name}_messages_per_sec",
             body={
-                "name": f"{name_prefix} Message Rate",
-                "unique_id": f"airspace_receiver_{receiver.name}_messages_per_sec",
+                "name": f"{prefix} Message Rate",
+                "unique_id": f"airspace_receiver_{name}_messages_per_sec",
                 "state_topic": f"{rx_topic_base}/stats",
                 "value_template": "{{ value_json.messages_per_sec }}",
                 "unit_of_measurement": "msg/s",
