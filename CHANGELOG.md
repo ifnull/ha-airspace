@@ -9,6 +9,12 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [0.2.31] — 2026-06-18
+### Changed
+- Example map uses `label_mode: icon` markers: a type-aware aircraft icon
+  (✈️ / 🚁 for rotorcraft), a game-controller drone, operator pin, and the alert
+  icon for flagged aircraft — via small template sensors documented at the bottom.
+
 ## [0.2.30] — 2026-06-17
 ### Added
 - Flag-feed sensors expose the nearest match's `latitude`/`longitude`, so
@@ -141,4 +147,4 @@ Initial development. Established the full pipeline and contracts:
   optional Prometheus `/metrics`.
 - Pydantic v2 config (strict, fail-fast), structlog logging.
 
-[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.30...HEAD
+[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.31...HEAD

@@ -48,12 +48,22 @@ views:
             default_zoom: 9
             theme_mode: auto
             grid_options: { columns: full, rows: 5 }
+            # `label_mode: icon` renders each entity's mdi icon as the marker:
+            # ✈️/🚁 by type (aircraft template sensor), game controller (drone),
+            # operator pin, and the alert icon for flagged aircraft. The aircraft
+            # & drone markers are template sensors (see the config block at the
+            # bottom); the flag sensors are plotted directly.
             entities:
-              - entity: sensor.airspace_nearest_aircraft
-              - entity: sensor.airspace_nearest_drone
+              - entity: sensor.airspace_aircraft_map
+                label_mode: icon
+              - entity: sensor.airspace_drone_map
+                label_mode: icon
               - entity: sensor.airspace_drone_operator
+                label_mode: icon
               - entity: sensor.airspace_flag_military
+                label_mode: icon
               - entity: sensor.airspace_flag_interesting
+                label_mode: icon
               - entity: zone.home
           # Nearest aircraft detail (rich — heading, bullets, photo).
           - type: markdown
@@ -359,29 +369,44 @@ views:
             tap_action: { action: url, url_path: "http://dump3411.local:8754/" }
 
 # ---------------------------------------------------------------------------
-# configuration.yaml — template sensors used / usable by this dashboard.
+# configuration.yaml — template sensors the map above plots. They mirror the
+# nearest aircraft/drone position and set an `icon`, which the Map card renders
+# via `label_mode: icon`. Static names = stable entity_ids (sensor.airspace_*_map).
+# Add to configuration.yaml and restart HA.
 #
-# REQUIRED for the map's drone-operator marker:
-#   template:
-#     - sensor:
-#         - name: Airspace Drone Operator
-#           unique_id: airspace_drone_operator_map
-#           state: "{{ state_attr('sensor.airspace_nearest_drone','operator_id') or 'operator' }}"
-#           attributes:
-#             latitude: "{{ state_attr('sensor.airspace_nearest_drone','operator_lat') }}"
-#             longitude: "{{ state_attr('sensor.airspace_nearest_drone','operator_lon') }}"
-#             icon: mdi:account-alert
+# template:
+#   - sensor:
+#       # Aircraft: ✈️ by default, 🚁 for rotorcraft (emitter category A7).
+#       - name: Airspace Aircraft Map
+#         unique_id: airspace_aircraft_map
+#         state: "{{ states('sensor.airspace_nearest_aircraft') }}"
+#         availability: "{{ states('sensor.airspace_nearest_aircraft') not in ['unknown','unavailable'] }}"
+#         icon: >-
+#           {{ 'mdi:helicopter' if state_attr('sensor.airspace_nearest_aircraft','category') == 'A7' else 'mdi:airplane' }}
+#         attributes:
+#           latitude: "{{ state_attr('sensor.airspace_nearest_aircraft','latitude') }}"
+#           longitude: "{{ state_attr('sensor.airspace_nearest_aircraft','longitude') }}"
+#       # Drone: game-controller icon.
+#       - name: Airspace Drone Map
+#         unique_id: airspace_drone_map
+#         state: "{{ states('sensor.airspace_nearest_drone') }}"
+#         availability: "{{ states('sensor.airspace_nearest_drone') not in ['unknown','unavailable'] }}"
+#         icon: mdi:controller-classic
+#         attributes:
+#           latitude: "{{ state_attr('sensor.airspace_nearest_drone','latitude') }}"
+#           longitude: "{{ state_attr('sensor.airspace_nearest_drone','longitude') }}"
+#       # Drone OPERATOR location (the security-relevant marker).
+#       - name: Airspace Drone Operator
+#         unique_id: airspace_drone_operator_map
+#         state: "{{ state_attr('sensor.airspace_nearest_drone','operator_id') or 'operator' }}"
+#         icon: mdi:account-alert
+#         attributes:
+#           latitude: "{{ state_attr('sensor.airspace_nearest_drone','operator_lat') }}"
+#           longitude: "{{ state_attr('sensor.airspace_nearest_drone','operator_lon') }}"
 #
-# OPTIONAL — dynamic marker labels (first-3-of-hex / RID-id) for the nearest
-# aircraft/drone instead of the entity-name initials. HA derives a template
-# sensor's entity_id from its first rendered name, so rename them in Settings →
-# Entities afterwards (or reference whatever id HA assigns):
-#         - name: "{{ (state_attr('sensor.airspace_nearest_aircraft','hex') or 'air')[:3] | upper }}"
-#           unique_id: airspace_nearest_aircraft_marker
-#           state: "{{ states('sensor.airspace_nearest_aircraft') }}"
-#           availability: "{{ states('sensor.airspace_nearest_aircraft') not in ['unknown','unavailable'] }}"
-#           picture: "{{ (state_attr('sensor.airspace_nearest_aircraft','photo') or {}).get('thumbnail_url') or '' }}"
-#           attributes:
-#             latitude: "{{ state_attr('sensor.airspace_nearest_aircraft','latitude') }}"
-#             longitude: "{{ state_attr('sensor.airspace_nearest_aircraft','longitude') }}"
+# Note: the flag markers (sensor.airspace_flag_military / _interesting) are
+# plotted directly and show their own icon (mdi:airplane-alert) via label_mode.
+# Tip: mdi has airplane / helicopter / controller-classic; for full tar1090-style
+# per-type silhouettes you'd register the SVG set as a custom icon pack and set
+# the aircraft icon to e.g. `adsb:{{ aircraft_type|lower }}` — a separate project.
 # ---------------------------------------------------------------------------
