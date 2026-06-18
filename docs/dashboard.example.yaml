@@ -1,394 +1,387 @@
-# Example Home Assistant dashboard for ha-airspace (v0.2.11+).
+# Example Home Assistant dashboard for Airspace (ha-airspace, v0.2.30+).
 #
-# Built entirely from the entities the service publishes via MQTT discovery —
-# every card here is stock except the clearly-marked OPTIONAL "tap for details"
-# card near the top, which needs the HACS `browser_mod` add-on (delete it if you
-# don't use browser_mod). Two ways to use it:
-#   - whole view: dashboard -> Edit -> Raw configuration editor, add the `- title:
-#     Airspace ...` block under your `views:`.
-#   - one card at a time: Edit -> Add Card -> Manual, paste a single card object.
+# A "sections" view (Nearest Traffic / Overview / Alerts). Use a STORAGE-mode
+# dashboard so you can drag cards: Settings → Dashboards → Add dashboard, then
+# Edit → ⋮ → Raw configuration editor and paste the `views:` block below.
 #
-# As of v0.2.7 the nearest sensors expose `latitude`/`longitude` attributes, so
-# the Map card works with NO template sensors. (Only the optional drone-OPERATOR
-# marker still needs one tiny template — see the note at the bottom.)
+# REPLACE these to match YOURS:
+#   - sensor.airspace_flag_<flag>          -> your enrichment.flags names
+#   - *_receiver_rx_1090_* / *_rx_978_*    -> your receiver names (slugified)
+#   - *_remote_id_dump3411_*               -> your Remote ID feed name
+#   - binary_sensor.airspace_alert_<rule>  -> your alert rule names
+#   - the two shortcut card URLs           -> your receiver / drone-host URLs
 #
-# As of v0.2.11 each configured flag gets a sensor.airspace_flag_<flag> whose
-# state is the count and whose `aircraft` attribute is a distance-sorted list
-# (alt / distance / type / squawk / flags). The "Watched aircraft" cards below
-# render those as tables — replace the flag names with YOURS from enrichment.flags.
-#
-# Flight/hex are rendered as links to globe.adsbexchange.com/?icao=<hex> (HA opens
-# external markdown links in a new tab) — tap a callsign to see it on the map —
-# and prefixed with the country-of-origin flag emoji derived from the ICAO hex.
-#
-# Replace ids to match YOURS:
-#   - sensor.airspace_flag_<flag>           -> your enrichment.flags names
-#   - binary_sensor.airspace_alert_<rule>   -> your alert rule names
-#   - *_receiver_<name>_*                    -> your receiver names
-#     (HA slugifies "home-1090" -> "home_1090")
+# Notes:
+#   - Tile / marker popups need the HACS `browser_mod` add-on. Without it the
+#     tiles still show counts; tap just opens the default more-info.
+#   - The map's drone-operator marker needs a template sensor — see the
+#     "configuration.yaml" block at the very bottom.
+#   - Flight/hex link to globe.adsbexchange.com; flags render as country emoji.
 
 title: Airspace
 views:
   - title: Airspace
-    path: airspace
-    cards:
-      # Map: nearest aircraft + nearest drone, around home. No template sensors —
-      # the nearest sensors carry latitude/longitude attributes directly.
-      # Markers: the nearest sensors expose `entity_picture` = the Planespotters
-      # photo (when photos are on and one exists), so the aircraft marker becomes
-      # the actual photo; otherwise HA shows the entity-name initials. For a
-      # dynamic first-3-of-hex / RID-id label instead of initials, see the OPTIONAL
-      # marker template sensors at the BOTTOM of this file and plot those instead.
-      - type: map
-        title: Nearest traffic
-        default_zoom: 9
-        entities:
-          - entity: sensor.airspace_nearest_aircraft
-          - entity: sensor.airspace_nearest_drone
-          - entity: zone.home
+    type: sections
+    max_columns: 5
+    icon: mdi:radar
+    dense_section_placement: true
+    header:
+      card:
+        type: markdown
+        content: "# Airspace"
+        text_only: true
+    sections:
+      # ===================================================================
+      # Nearest Traffic
+      # ===================================================================
+      - type: grid
+        cards:
+          - type: heading
+            heading: Nearest Traffic
+            heading_style: title
+            icon: mdi:near-me
+          # Map: nearest aircraft + drone (+ operator), plus the nearest
+          # MILITARY / INTERESTING aircraft as their own markers — the flag
+          # sensors now carry the nearest match's lat/lon. zone.home for ref.
+          # sensor.airspace_drone_operator is a template sensor (see bottom).
+          - type: map
+            default_zoom: 9
+            theme_mode: auto
+            grid_options: { columns: full, rows: 5 }
+            entities:
+              - entity: sensor.airspace_nearest_aircraft
+              - entity: sensor.airspace_nearest_drone
+              - entity: sensor.airspace_drone_operator
+              - entity: sensor.airspace_flag_military
+              - entity: sensor.airspace_flag_interesting
+              - entity: zone.home
+          # Nearest aircraft detail (rich — heading, bullets, photo).
+          - type: markdown
+            content: |
+              {% set s = 'sensor.airspace_nearest_aircraft' -%}
+              {% if states(s) in ['unknown', 'unavailable'] -%}
+              No aircraft in range.
+              {% else -%}
+              {% set db = state_attr(s,'db_metadata') or {} -%}
+              {% set brg = (state_attr(s,'bearing_to') or {}).get('home') -%}
+              {% set cpa = state_attr(s,'predicted_closest_approach_nm') -%}
+              {% set gs = state_attr(s,'ground_speed_kt') -%}
+              ## {{ (state_attr(s,'country_flag') ~ ' ') if state_attr(s,'country_flag') else '' }}{{ '[' ~ (state_attr(s,'flight') or state_attr(s,'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(s,'hex') ~ ')' if state_attr(s,'hex') else (state_attr(s,'flight') or '?') }}
+              **{{ db.get('model') or state_attr(s,'aircraft_type') or 'unknown type' }}**{{ ' · ' ~ db.get('ownop') if db.get('ownop') }}
 
-      # Overview — an at-a-glance icon grid (counts + nearest) that's also the
-      # tappable detail surface: each tile shows the entity's icon + value, and
-      # (with the HACS `browser_mod` add-on) tapping nearest/drone/flag opens a
-      # popup. Without browser_mod the tiles still show counts; tap just opens the
-      # default more-info. The Aircraft/Drones tiles are plain counts.
-      # The nearest aircraft popup shows the Planespotters photo (when photos are
-      # enabled and one exists); flag popups show the nearest match's photo.
-      - type: glance
-        title: Overview
-        state_color: true
-        entities:
-          - entity: sensor.airspace_aircraft_count
-            name: Aircraft
-          - entity: sensor.airspace_drone_count
-            name: Drones
+              - **Distance:** {{ states(s) }} nm{{ ' · brg ' ~ brg|round(0)|int ~ '°' if brg is not none }}
+              - **Altitude:** {{ state_attr(s,'alt_baro_ft') or '—' }} ft
+              - **Speed:** {{ gs|round(0)|int if gs is not none else '—' }} kt
+              - **Squawk:** {{ state_attr(s,'squawk') or '—' }}
+              - **Closest approach:** {{ (cpa|round(1)|string ~ ' nm') if cpa is not none else '—' }}
+              - **Flags:** {{ state_attr(s,'flags')|join(', ') if state_attr(s,'flags') else '—' }}
+              - **Registration:** {{ state_attr(s,'registration') or '—' }}
+              {% set p = state_attr(s,'photo') -%}
+              {% if p %}
+              ![photo]({{ p.thumbnail_url }})
+
+              {{ ('_© ' ~ p.photographer ~ '_') if p.photographer else '' }}
+              {% endif -%}
+              {% endif -%}
+
+      # ===================================================================
+      # Overview — icon grid (counts + nearest), tap a tile for a popup
+      # ===================================================================
+      - type: grid
+        cards:
+          - type: heading
+            heading: Overview
+            heading_style: title
+            icon: mdi:space-station
+          - type: glance
+            state_color: true
+            entities:
+              - entity: sensor.airspace_aircraft_count
+                name: Aircraft
+              - entity: sensor.airspace_drone_count
+                name: Drones
+                icon: mdi:quadcopter
+                tap_action:
+                  action: fire-dom-event
+                  browser_mod:
+                    service: browser_mod.popup
+                    data:
+                      title: Nearest drone
+                      content:
+                        type: markdown
+                        content: |
+                          {% set s = 'sensor.airspace_nearest_drone' -%}
+                          {% if states(s) in ['unknown','unavailable'] -%}
+                          No drones in range.
+                          {% else -%}
+                          {% set db = state_attr(s,'db_metadata') or {} -%}
+                          {% set brg = (state_attr(s,'bearing_to') or {}).get('home') -%}
+                          {% set agl = state_attr(s,'agl_ft') -%}
+                          ## {{ state_attr(s,'operator_id') or state_attr(s,'track_id') }}
+                          **{{ (db.get('make') ~ ' ' ~ db.get('model')) if db.get('make') else (state_attr(s,'ua_type') or 'drone') }}**
+
+                          - **Distance:** {{ states(s) }} nm{{ ' · brg ' ~ brg|round(0)|int ~ '°' if brg is not none }}
+                          - **Height (AGL):** {{ agl|round(0)|int if agl is not none else '—' }} ft
+                          - **ID type:** {{ state_attr(s,'id_type') or '—' }}
+                          - **Operator:** {{ 'located' if state_attr(s,'operator_lat') is not none else 'not broadcast' }}
+                          - **FAA status:** {{ db.get('status') or '—' }}
+                          {% endif -%}
+              - entity: sensor.airspace_nearest_aircraft
+                name: Nearest
+                icon: mdi:airplane-marker
+                tap_action:
+                  action: fire-dom-event
+                  browser_mod:
+                    service: browser_mod.popup
+                    data:
+                      title: Nearest aircraft
+                      content:
+                        type: markdown
+                        content: |
+                          {% set s = 'sensor.airspace_nearest_aircraft' -%}
+                          {% if states(s) in ['unknown','unavailable'] -%}
+                          No aircraft in range.
+                          {% else -%}
+                          {% set db = state_attr(s,'db_metadata') or {} -%}
+                          {% set brg = (state_attr(s,'bearing_to') or {}).get('home') -%}
+                          {% set cpa = state_attr(s,'predicted_closest_approach_nm') -%}
+                          {% set gs = state_attr(s,'ground_speed_kt') -%}
+                          ## {{ (state_attr(s,'country_flag') ~ ' ') if state_attr(s,'country_flag') else '' }}{{ '[' ~ (state_attr(s,'flight') or state_attr(s,'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(s,'hex') ~ ')' if state_attr(s,'hex') else (state_attr(s,'flight') or '?') }}
+                          **{{ db.get('model') or state_attr(s,'aircraft_type') or 'unknown type' }}**{{ ' · ' ~ db.get('ownop') if db.get('ownop') }}
+
+                          - **Distance:** {{ states(s) }} nm{{ ' · brg ' ~ brg|round(0)|int ~ '°' if brg is not none }}
+                          - **Altitude:** {{ state_attr(s,'alt_baro_ft') or '—' }} ft
+                          - **Speed:** {{ gs|round(0)|int if gs is not none else '—' }} kt
+                          - **Squawk:** {{ state_attr(s,'squawk') or '—' }}
+                          - **Closest approach:** {{ (cpa|round(1)|string ~ ' nm') if cpa is not none else '—' }}
+                          - **Flags:** {{ state_attr(s,'flags')|join(', ') if state_attr(s,'flags') else '—' }}
+                          - **Registration:** {{ state_attr(s,'registration') or '—' }}
+                          {% set p = state_attr(s,'photo') -%}
+                          {% if p %}
+                          ![photo]({{ p.thumbnail_url }})
+
+                          {{ ('_© ' ~ p.photographer ~ '_') if p.photographer else '' }}
+                          {% endif -%}
+                          {% endif -%}
+              # Flag tiles — tap for a table of every matching aircraft.
+              # Duplicate per flag: change the entity + name + the sensor id in
+              # the template (3 places: rows, photo, and the heading title).
+              - entity: sensor.airspace_flag_military
+                name: Military
+                icon: mdi:airplane-alert
+                tap_action:
+                  action: fire-dom-event
+                  browser_mod:
+                    service: browser_mod.popup
+                    data:
+                      title: Flagged aircraft
+                      content:
+                        type: markdown
+                        content: |
+                          {% set s = 'sensor.airspace_flag_military' -%}
+                          {% set rows = state_attr(s,'aircraft') or [] -%}
+                          {% set p = state_attr(s,'photo') -%}
+                          {% if rows -%}
+                          {% if p %}![photo]({{ p.thumbnail_url }})
+
+                          {{ ('_© ' ~ p.photographer ~ ' (nearest match)_') if p.photographer else '' }}
+
+                          {% endif -%}
+                          | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk | Notes |
+                          |---|---|--:|--:|--:|--:|:--|
+                          {% for a in rows -%}
+                          | {{ (a.country_flag ~ ' ') if a.country_flag else '' }}{{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
+                          {% endfor -%}
+                          {% else -%}
+                          None right now.
+                          {% endif -%}
+              - entity: sensor.airspace_flag_interesting
+                name: Interesting
+                icon: mdi:airplane-alert
+                tap_action:
+                  action: fire-dom-event
+                  browser_mod:
+                    service: browser_mod.popup
+                    data:
+                      title: Interesting aircraft
+                      content:
+                        type: markdown
+                        content: |
+                          {% set s = 'sensor.airspace_flag_interesting' -%}
+                          {% set rows = state_attr(s,'aircraft') or [] -%}
+                          {% set p = state_attr(s,'photo') -%}
+                          {% if rows -%}
+                          {% if p %}![photo]({{ p.thumbnail_url }})
+
+                          {{ ('_© ' ~ p.photographer ~ ' (nearest match)_') if p.photographer else '' }}
+
+                          {% endif -%}
+                          | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk | Notes |
+                          |---|---|--:|--:|--:|--:|:--|
+                          {% for a in rows -%}
+                          | {{ (a.country_flag ~ ' ') if a.country_flag else '' }}{{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
+                          {% endfor -%}
+                          {% else -%}
+                          None right now.
+                          {% endif -%}
+              - entity: sensor.airspace_flag_emergency
+                name: Emergency
+                icon: mdi:airplane-alert
+                tap_action:
+                  action: fire-dom-event
+                  browser_mod:
+                    service: browser_mod.popup
+                    data:
+                      title: Emergency aircraft
+                      content:
+                        type: markdown
+                        content: |
+                          {% set s = 'sensor.airspace_flag_emergency' -%}
+                          {% set rows = state_attr(s,'aircraft') or [] -%}
+                          {% set p = state_attr(s,'photo') -%}
+                          {% if rows -%}
+                          {% if p %}![photo]({{ p.thumbnail_url }})
+
+                          {{ ('_© ' ~ p.photographer ~ ' (nearest match)_') if p.photographer else '' }}
+
+                          {% endif -%}
+                          | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk | Notes |
+                          |---|---|--:|--:|--:|--:|:--|
+                          {% for a in rows -%}
+                          | {{ (a.country_flag ~ ' ') if a.country_flag else '' }}{{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
+                          {% endfor -%}
+                          {% else -%}
+                          None right now.
+                          {% endif -%}
+          # Receiver + Remote-ID-feed health. REPLACE the names with yours.
+          - type: entities
+            title: Receivers & feeds
+            entities:
+              - entity: binary_sensor.airspace_receiver_rx_1090_status
+                name: 1090 receiver
+              - entity: sensor.airspace_receiver_rx_1090_aircraft_count
+                name: 1090 aircraft
+              - entity: sensor.airspace_receiver_rx_1090_message_rate
+                name: 1090 msg/s
+              - entity: binary_sensor.airspace_receiver_rx_978_status
+                name: 978 receiver
+              - entity: sensor.airspace_receiver_rx_978_aircraft_count
+                name: 978 aircraft
+              - entity: sensor.airspace_receiver_rx_978_message_rate
+                name: 978 msg/s
+              - entity: binary_sensor.airspace_remote_id_dump3411_status
+                name: Remote ID feed
+              - entity: sensor.airspace_remote_id_dump3411_drone_count
+                name: Drones seen
+              - entity: sensor.airspace_remote_id_dump3411_message_rate
+                name: RID msg/s
+
+      # ===================================================================
+      # Alerts
+      # ===================================================================
+      - type: grid
+        cards:
+          - type: heading
+            heading: Alerts
+            heading_style: title
+            icon: mdi:alert
+          # Photo banner while an alert rule is active. Duplicate per rule —
+          # change the binary_sensor in both the condition and the template.
+          - type: conditional
+            conditions:
+              - entity: binary_sensor.airspace_alert_military_close
+                state: "on"
+            card:
+              type: markdown
+              content: |
+                {% set a = 'binary_sensor.airspace_alert_military_close' -%}
+                {% set d = (state_attr(a,'distance_to') or {}).get('home') -%}
+                🚨 **{{ (state_attr(a,'country_flag') ~ ' ') if state_attr(a,'country_flag') else '' }}{{ '[' ~ (state_attr(a,'flight') or state_attr(a,'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(a,'hex') ~ ')' if state_attr(a,'hex') else (state_attr(a,'flight') or '?') }}**{{ ' · ' ~ '%.1f'|format(d) ~ ' nm' if d is not none }}
+                {% set p = state_attr(a,'entity_picture') -%}
+                {% if p %}
+                ![photo]({{ p }})
+
+                {{ ('_© ' ~ state_attr(a,'photographer') ~ '_') if state_attr(a,'photographer') else '' }}
+                {% endif -%}
+          # Always-visible flag tables (same content as the Overview popups).
+          - type: markdown
+            title: Emergency aircraft
+            content: |
+              {% set s = 'sensor.airspace_flag_emergency' -%}
+              {% set rows = state_attr(s,'aircraft') or [] -%}
+              {% if rows -%}
+              | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk | Notes |
+              |---|---|--:|--:|--:|--:|:--|
+              {% for a in rows -%}
+              | {{ (a.country_flag ~ ' ') if a.country_flag else '' }}{{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
+              {% endfor -%}
+              {% else -%}
+              None right now.
+              {% endif -%}
+          - type: markdown
+            title: Military aircraft
+            content: |
+              {% set s = 'sensor.airspace_flag_military' -%}
+              {% set rows = state_attr(s,'aircraft') or [] -%}
+              {% if rows -%}
+              | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk | Notes |
+              |---|---|--:|--:|--:|--:|:--|
+              {% for a in rows -%}
+              | {{ (a.country_flag ~ ' ') if a.country_flag else '' }}{{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
+              {% endfor -%}
+              {% else -%}
+              None right now.
+              {% endif -%}
+          - type: markdown
+            title: Interesting aircraft
+            content: |
+              {% set s = 'sensor.airspace_flag_interesting' -%}
+              {% set rows = state_attr(s,'aircraft') or [] -%}
+              {% if rows -%}
+              | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk | Notes |
+              |---|---|--:|--:|--:|--:|:--|
+              {% for a in rows -%}
+              | {{ (a.country_flag ~ ' ') if a.country_flag else '' }}{{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
+              {% endfor -%}
+              {% else -%}
+              None right now.
+              {% endif -%}
+          # Quick links to your receiver + drone web UIs. REPLACE the URLs.
+          - type: shortcut
+            label: Flight Map (1090/978)
+            icon: mdi:airplane
+            grid_options: { columns: full }
+            tap_action: { action: url, url_path: "http://piaware.local:8080/" }
+          - type: shortcut
+            label: Drone Dashboard
             icon: mdi:quadcopter
-            tap_action:
-              action: fire-dom-event
-              browser_mod:
-                service: browser_mod.popup
-                data:
-                  title: Nearest drone
-                  content:
-                    type: markdown
-                    content: |
-                      {% set s = 'sensor.airspace_nearest_drone' -%}
-                      {% if states(s) in ['unknown','unavailable'] -%}
-                      No drones in range.
-                      {% else -%}
-                      {% set db = state_attr(s,'db_metadata') or {} -%}
-                      {% set brg = (state_attr(s,'bearing_to') or {}).get('home') -%}
-                      {% set agl = state_attr(s,'agl_ft') -%}
-                      ## {{ state_attr(s,'operator_id') or state_attr(s,'track_id') }}
-                      **{{ (db.get('make') ~ ' ' ~ db.get('model')) if db.get('make') else (state_attr(s,'ua_type') or 'drone') }}**
-
-                      - **Distance:** {{ states(s) }} nm{{ ' · brg ' ~ brg|round(0)|int ~ '°' if brg is not none }}
-                      - **Height (AGL):** {{ agl|round(0)|int if agl is not none else '—' }} ft
-                      - **ID type:** {{ state_attr(s,'id_type') or '—' }}
-                      - **Operator:** {{ 'located' if state_attr(s,'operator_lat') is not none else 'not broadcast' }}
-                      - **FAA status:** {{ db.get('status') or '—' }}
-                      {% endif -%}
-          - entity: sensor.airspace_nearest_aircraft
-            name: Nearest
-            icon: mdi:airplane-marker
-            tap_action:
-              action: fire-dom-event
-              browser_mod:
-                service: browser_mod.popup
-                data:
-                  title: Nearest aircraft
-                  content:
-                    type: markdown
-                    content: |
-                      {% set s = 'sensor.airspace_nearest_aircraft' -%}
-                      {% if states(s) in ['unknown','unavailable'] -%}
-                      No aircraft in range.
-                      {% else -%}
-                      {% set db = state_attr(s,'db_metadata') or {} -%}
-                      {% set brg = (state_attr(s,'bearing_to') or {}).get('home') -%}
-                      {% set cpa = state_attr(s,'predicted_closest_approach_nm') -%}
-                      {% set gs = state_attr(s,'ground_speed_kt') -%}
-                      ## {{ (state_attr(s,'country_flag') ~ ' ') if state_attr(s,'country_flag') else '' }}{{ '[' ~ (state_attr(s,'flight') or state_attr(s,'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(s,'hex') ~ ')' if state_attr(s,'hex') else (state_attr(s,'flight') or '?') }}
-                      **{{ db.get('model') or state_attr(s,'aircraft_type') or 'unknown type' }}**{{ ' · ' ~ db.get('ownop') if db.get('ownop') }}
-
-                      - **Distance:** {{ states(s) }} nm{{ ' · brg ' ~ brg|round(0)|int ~ '°' if brg is not none }}
-                      - **Altitude:** {{ state_attr(s,'alt_baro_ft') or '—' }} ft
-                      - **Speed:** {{ gs|round(0)|int if gs is not none else '—' }} kt
-                      - **Squawk:** {{ state_attr(s,'squawk') or '—' }}
-                      - **Closest approach:** {{ (cpa|round(1)|string ~ ' nm') if cpa is not none else '—' }}
-                      - **Flags:** {{ state_attr(s,'flags')|join(', ') if state_attr(s,'flags') else '—' }}
-                      - **Registration:** {{ state_attr(s,'registration') or '—' }}
-                      {% set p = state_attr(s,'photo') -%}
-                      {% if p %}
-                      ![photo]({{ p.thumbnail_url }})
-
-                      {{ ('_© ' ~ p.photographer ~ '_') if p.photographer else '' }}
-                      {% endif -%}
-                      {% endif -%}
-          # Flag tiles — tap to see every matching aircraft. Duplicate per flag,
-          # changing the entity, the name, and the sensor id inside the template.
-          - entity: sensor.airspace_flag_military
-            name: Military
-            icon: mdi:airplane-alert
-            tap_action:
-              action: fire-dom-event
-              browser_mod:
-                service: browser_mod.popup
-                data:
-                  title: Military aircraft
-                  content:
-                    type: markdown
-                    content: |
-                      {% set rows = state_attr('sensor.airspace_flag_military','aircraft') or [] -%}
-                      {% set p = state_attr('sensor.airspace_flag_military','photo') -%}
-                      {% if rows -%}
-                      {% if p %}![photo]({{ p.thumbnail_url }})
-
-                      {{ ('_© ' ~ p.photographer ~ ' (nearest match)_') if p.photographer else '' }}
-
-                      {% endif -%}
-                      | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk | Notes |
-                      |---|---|--:|--:|--:|--:|:--|
-                      {% for a in rows -%}
-                      | {{ (a.country_flag ~ ' ') if a.country_flag else '' }}{{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
-                      {% endfor -%}
-                      {% else -%}
-                      None right now.
-                      {% endif -%}
-          - entity: sensor.airspace_flag_interesting
-            name: Interesting
-            icon: mdi:airplane-alert
-            tap_action:
-              action: fire-dom-event
-              browser_mod:
-                service: browser_mod.popup
-                data:
-                  title: Interesting aircraft
-                  content:
-                    type: markdown
-                    content: |
-                      {% set rows = state_attr('sensor.airspace_flag_interesting','aircraft') or [] -%}
-                      {% set p = state_attr('sensor.airspace_flag_interesting','photo') -%}
-                      {% if rows -%}
-                      {% if p %}![photo]({{ p.thumbnail_url }})
-
-                      {{ ('_© ' ~ p.photographer ~ ' (nearest match)_') if p.photographer else '' }}
-
-                      {% endif -%}
-                      | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk | Notes |
-                      |---|---|--:|--:|--:|--:|:--|
-                      {% for a in rows -%}
-                      | {{ (a.country_flag ~ ' ') if a.country_flag else '' }}{{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
-                      {% endfor -%}
-                      {% else -%}
-                      None right now.
-                      {% endif -%}
-          - entity: sensor.airspace_flag_emergency
-            name: Emergency
-            icon: mdi:airplane-alert
-            tap_action:
-              action: fire-dom-event
-              browser_mod:
-                service: browser_mod.popup
-                data:
-                  title: Emergency aircraft
-                  content:
-                    type: markdown
-                    content: |
-                      {% set rows = state_attr('sensor.airspace_flag_emergency','aircraft') or [] -%}
-                      {% set p = state_attr('sensor.airspace_flag_emergency','photo') -%}
-                      {% if rows -%}
-                      {% if p %}![photo]({{ p.thumbnail_url }})
-
-                      {{ ('_© ' ~ p.photographer ~ ' (nearest match)_') if p.photographer else '' }}
-
-                      {% endif -%}
-                      | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk | Notes |
-                      |---|---|--:|--:|--:|--:|:--|
-                      {% for a in rows -%}
-                      | {{ (a.country_flag ~ ' ') if a.country_flag else '' }}{{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
-                      {% endfor -%}
-                      {% else -%}
-                      None right now.
-                      {% endif -%}
-
-      # Nearest aircraft — the same rich layout as the tap-for-details popup:
-      # heading (country flag + linked callsign), type/operator, detail bullets,
-      # photo. Literal block (content: |) so the image lands on its own line.
-      # (The at-a-glance counts now live in the "tap for details" list above.)
-      - type: markdown
-        title: Nearest aircraft
-        content: |
-          {% set s = 'sensor.airspace_nearest_aircraft' -%}
-          {% if states(s) in ['unknown', 'unavailable'] -%}
-          No aircraft in range.
-          {% else -%}
-          {% set db = state_attr(s,'db_metadata') or {} -%}
-          {% set brg = (state_attr(s,'bearing_to') or {}).get('home') -%}
-          {% set cpa = state_attr(s,'predicted_closest_approach_nm') -%}
-          {% set gs = state_attr(s,'ground_speed_kt') -%}
-          ## {{ (state_attr(s,'country_flag') ~ ' ') if state_attr(s,'country_flag') else '' }}{{ '[' ~ (state_attr(s,'flight') or state_attr(s,'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(s,'hex') ~ ')' if state_attr(s,'hex') else (state_attr(s,'flight') or '?') }}
-          **{{ db.get('model') or state_attr(s,'aircraft_type') or 'unknown type' }}**{{ ' · ' ~ db.get('ownop') if db.get('ownop') }}
-
-          - **Distance:** {{ states(s) }} nm{{ ' · brg ' ~ brg|round(0)|int ~ '°' if brg is not none }}
-          - **Altitude:** {{ state_attr(s,'alt_baro_ft') or '—' }} ft
-          - **Speed:** {{ gs|round(0)|int if gs is not none else '—' }} kt
-          - **Squawk:** {{ state_attr(s,'squawk') or '—' }}
-          - **Closest approach:** {{ (cpa|round(1)|string ~ ' nm') if cpa is not none else '—' }}
-          - **Flags:** {{ state_attr(s,'flags')|join(', ') if state_attr(s,'flags') else '—' }}
-          - **Registration:** {{ state_attr(s,'registration') or '—' }}
-          {% set p = state_attr(s,'photo') -%}
-          {% if p %}
-          ![photo]({{ p.thumbnail_url }})
-
-          {{ ('_© ' ~ p.photographer ~ '_') if p.photographer else '' }}
-          {% endif -%}
-          {% endif -%}
-
-      # Watched aircraft — one table per flag. The state is the count; the
-      # `aircraft` attribute is a distance-sorted list of matching aircraft, each
-      # with the fields you asked to see everywhere: flight, type, alt, distance,
-      # bearing, squawk. Duplicate this card per flag and change the entity + title.
-      #
-      # NOTE: the content uses a LITERAL block scalar (`content: |`), not folded
-      # (`>`). A folded scalar collapses every table row onto one line, so the
-      # markdown table renders as a single mushed row. Keep the `|` and the `-%}`
-      # whitespace trims, and don't reindent the Jinja lines.
-      - type: markdown
-        title: Military aircraft
-        content: |
-          {% set s = 'sensor.airspace_flag_military' -%}
-          {% set rows = state_attr(s, 'aircraft') or [] -%}
-          {% if rows -%}
-          | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk | Notes |
-          |---|---|--:|--:|--:|--:|:--|
-          {% for a in rows -%}
-          | {{ (a.country_flag ~ ' ') if a.country_flag else '' }}{{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
-          {% endfor -%}
-          {% else -%}
-          None right now.
-          {% endif -%}
-
-      # Same card for the `interesting` flag — change the entity + title only.
-      - type: markdown
-        title: Interesting aircraft
-        content: |
-          {% set s = 'sensor.airspace_flag_interesting' -%}
-          {% set rows = state_attr(s, 'aircraft') or [] -%}
-          {% if rows -%}
-          | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk | Notes |
-          |---|---|--:|--:|--:|--:|:--|
-          {% for a in rows -%}
-          | {{ (a.country_flag ~ ' ') if a.country_flag else '' }}{{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
-          {% endfor -%}
-          {% else -%}
-          None right now.
-          {% endif -%}
-
-      # ...and the `emergency` flag (squawk 7500/7600/7700).
-      - type: markdown
-        title: Emergency aircraft
-        content: |
-          {% set s = 'sensor.airspace_flag_emergency' -%}
-          {% set rows = state_attr(s, 'aircraft') or [] -%}
-          {% if rows -%}
-          | Flight | Type | Alt (ft) | Dist (nm) | Brg | Squawk | Notes |
-          |---|---|--:|--:|--:|--:|:--|
-          {% for a in rows -%}
-          | {{ (a.country_flag ~ ' ') if a.country_flag else '' }}{{ '[' ~ (a.flight or a.hex) ~ '](https://globe.adsbexchange.com/?icao=' ~ a.hex ~ ')' if a.hex else (a.flight or '—') }} | {{ a.aircraft_type or '—' }} | {{ a.alt_baro_ft or '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} | {{ a.squawk or '—' }} | {{ 'PIA' if a.db_metadata.get('pia') else ('LADD' if a.db_metadata.get('ladd') else ('mil' if a.db_metadata.get('mil') else (a.db_metadata.get('ownop') or '—'))) }} |
-          {% endfor -%}
-          {% else -%}
-          None right now.
-          {% endif -%}
-
-      # Alert card with the Planespotters photo. Shows only while the rule is
-      # active; entity_picture + flight come from the alert's info attributes.
-      # One conditional card per rule — replace the rule name.
-      - type: conditional
-        conditions:
-          - entity: binary_sensor.airspace_alert_military_close
-            state: "on"
-        card:
-          type: markdown
-          content: >
-            {% set a = 'binary_sensor.airspace_alert_military_close' %}
-            🚨 **{{ (state_attr(a, 'country_flag') ~ ' ') if state_attr(a, 'country_flag') else '' }}{{ '[' ~ (state_attr(a, 'flight') or state_attr(a, 'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(a, 'hex') ~ ')' if state_attr(a, 'hex') else (state_attr(a, 'flight') or '?') }}**
-            {% set d = (state_attr(a, 'distance_to') or {}).get('home') %}
-            {{ '· ' ~ d | round(1) ~ ' nm' if d is not none else '' }}
-            {% set p = state_attr(a, 'entity_picture') %}
-            {% if p %}
-
-            ![photo]({{ p }})
-
-            {{ '_© ' ~ state_attr(a, 'photographer') ~ '_' if state_attr(a, 'photographer') else '' }}
-            {% endif %}
-
-      # Receiver + Remote-ID-feed health. !!! REPLACE the names in every id below
-      # with YOURS !!! ADS-B receiver ids are airspace_receiver_<name>_...; Remote
-      # ID feed ids are airspace_remote_id_<name>_... (HA slugifies the display
-      # name, hyphens -> underscores). Find them in Settings -> Entities (filter
-      # "receiver" / "remote id"). Example: a 1090 + 978 pair (rx-1090 / rx-978)
-      # plus a Remote ID feed (dump3411); delete blocks you don't run.
-      - type: entities
-        title: Receivers & feeds
-        entities:
-          - entity: binary_sensor.airspace_receiver_rx_1090_status
-            name: 1090 receiver
-          - entity: sensor.airspace_receiver_rx_1090_aircraft_count
-            name: 1090 aircraft
-          - entity: sensor.airspace_receiver_rx_1090_message_rate
-            name: 1090 msg/s
-          - entity: binary_sensor.airspace_receiver_rx_978_status
-            name: 978 receiver
-          - entity: sensor.airspace_receiver_rx_978_aircraft_count
-            name: 978 aircraft
-          - entity: sensor.airspace_receiver_rx_978_message_rate
-            name: 978 msg/s
-          - entity: binary_sensor.airspace_remote_id_dump3411_status
-            name: Remote ID feed
-          - entity: sensor.airspace_remote_id_dump3411_drone_count
-            name: Drones seen
-          - entity: sensor.airspace_remote_id_dump3411_message_rate
-            name: RID msg/s
+            grid_options: { columns: full }
+            tap_action: { action: url, url_path: "http://dump3411.local:8754/" }
 
 # ---------------------------------------------------------------------------
-# Optional template sensors (configuration.yaml).
+# configuration.yaml — template sensors used / usable by this dashboard.
 #
-# (1) Dynamic marker LABELS. The map already shows the Planespotters photo on the
-#     marker (the nearest sensor exposes `entity_picture`); with no photo it falls
-#     back to the entity-name initials. If you'd rather the fallback be the first 3
-#     of the hex (aircraft) / RID id (drone), add these and plot them on the map
-#     INSTEAD of sensor.airspace_nearest_aircraft / _drone.
-#     CAVEAT: HA derives a template sensor's entity_id from its *first rendered
-#     name*, so the auto id will be something like `sensor.air`. After adding,
-#     rename in Settings → Entities to `sensor.airspace_nearest_aircraft_marker` /
-#     `_drone_marker` (or just reference whatever id HA assigned).
+# REQUIRED for the map's drone-operator marker:
+#   template:
+#     - sensor:
+#         - name: Airspace Drone Operator
+#           unique_id: airspace_drone_operator_map
+#           state: "{{ state_attr('sensor.airspace_nearest_drone','operator_id') or 'operator' }}"
+#           attributes:
+#             latitude: "{{ state_attr('sensor.airspace_nearest_drone','operator_lat') }}"
+#             longitude: "{{ state_attr('sensor.airspace_nearest_drone','operator_lon') }}"
+#             icon: mdi:account-alert
 #
-# template:
-#   - sensor:
-#       - name: "{{ (state_attr('sensor.airspace_nearest_aircraft','hex') or 'air')[:3] | upper }}"
-#         unique_id: airspace_nearest_aircraft_marker
-#         state: "{{ states('sensor.airspace_nearest_aircraft') }}"
-#         availability: "{{ states('sensor.airspace_nearest_aircraft') not in ['unknown','unavailable'] }}"
-#         picture: "{{ (state_attr('sensor.airspace_nearest_aircraft','photo') or {}).get('thumbnail_url') or '' }}"
-#         attributes:
-#           latitude: "{{ state_attr('sensor.airspace_nearest_aircraft','latitude') }}"
-#           longitude: "{{ state_attr('sensor.airspace_nearest_aircraft','longitude') }}"
-#       - name: "{{ (state_attr('sensor.airspace_nearest_drone','track_id') or 'uav')[:3] | upper }}"
-#         unique_id: airspace_nearest_drone_marker
-#         state: "{{ states('sensor.airspace_nearest_drone') }}"
-#         availability: "{{ states('sensor.airspace_nearest_drone') not in ['unknown','unavailable'] }}"
-#         attributes:
-#           latitude: "{{ state_attr('sensor.airspace_nearest_drone','latitude') }}"
-#           longitude: "{{ state_attr('sensor.airspace_nearest_drone','longitude') }}"
-#
-# (2) Drone OPERATOR on the map (operator_lat / operator_lon):
-#       - name: Airspace Drone Operator
-#         unique_id: airspace_drone_operator_map
-#         state: "{{ state_attr('sensor.airspace_nearest_drone','operator_id') or 'operator' }}"
-#         attributes:
-#           latitude: "{{ state_attr('sensor.airspace_nearest_drone','operator_lat') }}"
-#           longitude: "{{ state_attr('sensor.airspace_nearest_drone','operator_lon') }}"
-#           icon: mdi:account-alert
-#     Then add `- entity: sensor.airspace_drone_operator` to the Map card.
+# OPTIONAL — dynamic marker labels (first-3-of-hex / RID-id) for the nearest
+# aircraft/drone instead of the entity-name initials. HA derives a template
+# sensor's entity_id from its first rendered name, so rename them in Settings →
+# Entities afterwards (or reference whatever id HA assigns):
+#         - name: "{{ (state_attr('sensor.airspace_nearest_aircraft','hex') or 'air')[:3] | upper }}"
+#           unique_id: airspace_nearest_aircraft_marker
+#           state: "{{ states('sensor.airspace_nearest_aircraft') }}"
+#           availability: "{{ states('sensor.airspace_nearest_aircraft') not in ['unknown','unavailable'] }}"
+#           picture: "{{ (state_attr('sensor.airspace_nearest_aircraft','photo') or {}).get('thumbnail_url') or '' }}"
+#           attributes:
+#             latitude: "{{ state_attr('sensor.airspace_nearest_aircraft','latitude') }}"
+#             longitude: "{{ state_attr('sensor.airspace_nearest_aircraft','longitude') }}"
 # ---------------------------------------------------------------------------

@@ -9,6 +9,17 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [0.2.30] — 2026-06-17
+### Added
+- Flag-feed sensors expose the nearest match's `latitude`/`longitude`, so
+  `sensor.airspace_flag_<flag>` can be plotted on the HA Map (nearest military /
+  interesting / … as their own markers).
+
+### Changed
+- Example dashboard rebuilt as a `sections` view (Nearest Traffic / Overview /
+  Alerts) with headings and receiver/drone web-UI shortcuts; map now includes the
+  nearest military + interesting markers.
+
 ## [0.2.29] — 2026-06-17
 ### Added
 - Remote ID feeds now get Home Assistant health entities (status / drone count /
@@ -130,4 +141,4 @@ Initial development. Established the full pipeline and contracts:
   optional Prometheus `/metrics`.
 - Pydantic v2 config (strict, fail-fast), structlog logging.
 
-[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.29...HEAD
+[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.30...HEAD

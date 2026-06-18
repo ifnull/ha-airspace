@@ -416,9 +416,17 @@ class AircraftTracker:
             # Nearest first; unpositioned tracks (no distance to primary) sort last.
             matching.sort(key=lambda s: s.distance_to.get(key, float("inf")))
             rows = [FlagAircraft.from_state(s, watchpoint=key) for s in matching[:_FLAG_FEED_MAX]]
-            photo = await self._photo_for(matching[0]) if matching else None
+            nearest = matching[0] if matching else None
+            photo = await self._photo_for(nearest) if nearest is not None else None
             feeds[flag] = FlagFeedPayload(
-                flag=flag, count=len(matching), watchpoint=key, aircraft=rows, photo=photo
+                flag=flag,
+                count=len(matching),
+                watchpoint=key,
+                aircraft=rows,
+                # Nearest match's position, so the flag sensor maps as one marker.
+                latitude=nearest.canonical.lat if nearest is not None else None,
+                longitude=nearest.canonical.lon if nearest is not None else None,
+                photo=photo,
             )
         return feeds
 
