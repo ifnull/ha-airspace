@@ -577,6 +577,23 @@ class TestFlagFeeds:
         await tracker.process_poll([_obs("ae0001", category="A3")])
         assert publisher.summaries[-1]["flag_feeds"]["heavy"].photo is None
 
+    async def test_feed_carries_nearest_match_position(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        # Lets the flag sensor be plotted on the map at the nearest match.
+        tracker = self._tracker(publisher, clock, feed_flags=["heavy"])
+        await tracker.process_poll([_obs("ae0001", category="A3", lat=30.40, lon=-75.90)])
+        feed = publisher.summaries[-1]["flag_feeds"]["heavy"]
+        assert feed.latitude == 30.40
+        assert feed.longitude == -75.90
+
+    async def test_empty_feed_has_no_position(self, publisher: FakePublisher, clock: Clock) -> None:
+        tracker = self._tracker(publisher, clock, feed_flags=["heavy"])
+        await tracker.process_poll([_obs("ae0001", category="A1")])  # no heavy match
+        feed = publisher.summaries[-1]["flag_feeds"]["heavy"]
+        assert feed.latitude is None
+        assert feed.longitude is None
+
 
 # ---------------------------------------------------------------------------
 # Metrics
