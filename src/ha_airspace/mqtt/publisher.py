@@ -425,6 +425,7 @@ def _alert_info(state: AircraftState, photo: PhotoPayload | None) -> dict[str, A
         "country_flag": flag_for(state.hex),
         "squawk": canonical.squawk,
         "alt_baro_ft": canonical.alt_baro_ft,
+        "vertical_rate_fpm": canonical.vertical_rate_fpm,
         "distance_to": dict(state.distance_to),
         "bearing_to": dict(state.bearing_to),
         "predicted_closest_approach_nm": state.predicted_closest_approach_nm,

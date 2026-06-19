@@ -52,6 +52,16 @@ def _default_clock() -> datetime:
     return datetime.now(UTC)
 
 
+# How far ahead the predictive AGL gate extrapolates the track's altitude. The
+# projection (current AGL + vertical_rate * horizon) is a straight-line
+# extrapolation, which is only realistic over a short window — a descent rate
+# held constant for several minutes drives the projected altitude wildly low and
+# trips the gate when the aircraft is still high and tens of nm out. Capping the
+# look-ahead keeps the "fire before it dips into drone airspace" intent while
+# only firing when the track will actually be low *soon*.
+_AGL_PREDICTION_HORIZON_S = 120.0
+
+
 def _passes_alt_agl(
     state: AircraftState,
     max_alt_agl_ft: float,
@@ -65,11 +75,14 @@ def _passes_alt_agl(
     Missing altitude can't satisfy it. 1 m = 3.28084 ft.
 
     For a ``predictive`` (inbound) rule, also extrapolate the altitude the track
-    will have at closest approach — current AGL plus vertical rate over the ETA —
-    and test the *lower* of now-vs-projected. So a descending aircraft dipping
-    into drone airspace trips the alert before it is actually low; a climber still
-    trips while genuinely low and clears once it has climbed past the threshold.
-    Falls back to the current snapshot when vertical rate or ETA is unknown."""
+    will have at closest approach — current AGL plus vertical rate over the ETA,
+    capped at ``_AGL_PREDICTION_HORIZON_S`` — and test the *lower* of
+    now-vs-projected. So a descending aircraft dipping into drone airspace trips
+    the alert before it is actually low; a climber still trips while genuinely low
+    and clears once it has climbed past the threshold. The horizon cap stops a
+    sustained descent rate from projecting a still-high, far-out track below the
+    threshold minutes early. Falls back to the current snapshot when vertical rate
+    or ETA is unknown."""
     alt_msl = state.canonical.alt_baro_ft
     if alt_msl is None:
         return False
@@ -79,7 +92,8 @@ def _passes_alt_agl(
         vr = state.canonical.vertical_rate_fpm
         eta = state.predicted_eta_to_home_s
         if vr is not None and eta is not None:
-            agl = min(agl, agl + vr * (eta / 60.0))  # vr is ft/min, eta seconds
+            horizon = min(eta, _AGL_PREDICTION_HORIZON_S)  # cap the look-ahead
+            agl = min(agl, agl + vr * (horizon / 60.0))  # vr ft/min, horizon seconds
     return agl <= max_alt_agl_ft
 
 

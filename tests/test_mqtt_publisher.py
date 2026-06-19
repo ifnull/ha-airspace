@@ -704,7 +704,8 @@ class TestAlertInfo:
         data = json.loads(_info_publishes(fake_client)[0]["payload"])
         assert data["alt_baro_ft"] == 35000
         # Predictive + geometry keys are always present (None until computed).
-        for key in ("predicted_eta_to_home_s", "bearing_to", "squawk"):
+        # vertical_rate_fpm explains the predictive-AGL projection (why it fired).
+        for key in ("predicted_eta_to_home_s", "bearing_to", "squawk", "vertical_rate_fpm"):
             assert key in data
 
     async def test_inactive_clears_info(self, fake_client: FakeMqttClient) -> None:
