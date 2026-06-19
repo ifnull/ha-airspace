@@ -88,6 +88,10 @@ class DroneInfo:
     """``serial`` | ``caa_reg`` | ``utm_uuid`` | ``session`` | ``unknown``."""
     ua_type: str | None = None
     """UA category (e.g. ``rotorcraft``); from Basic ID."""
+    self_id: str | None = None
+    """Free-text operator description broadcast in the Self-ID message
+    (e.g. ``"Spoofing test"``, flight intent). Useful when the registry
+    lookup misses, and a flag for test/spoof broadcasts."""
     agl_ft: float | None = None
     """Height above takeoff/ground, broadcast natively by Remote ID."""
     rid_source: str | None = None

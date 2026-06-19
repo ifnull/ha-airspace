@@ -9,6 +9,20 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [0.2.32] — 2026-06-18
+### Added
+- Drone payloads carry `self_id` — the Remote ID Self-ID message (free-text
+  operator/flight description, e.g. `"Spoofing test"`). Additive optional field;
+  no `schema_version` bump.
+
+### Changed
+- Example "drone detected" automation: triggers on the drone count **increasing**
+  instead of `numeric_state above: 0`, which only fired on the single `0 -> 1`
+  crossing and missed a second drone arriving while one was already tracked. The
+  message now degrades gracefully (FAA make/model → UA type → "Drone") and shows
+  `self_id` + AGL, so it is informative even when the registry can't resolve the
+  serial (the source of the "Unknown drone" / blank values).
+
 ## [0.2.31] — 2026-06-18
 ### Changed
 - Example map uses `label_mode: icon` markers: a type-aware aircraft icon
@@ -147,4 +161,4 @@ Initial development. Established the full pipeline and contracts:
   optional Prometheus `/metrics`.
 - Pydantic v2 config (strict, fail-fast), structlog logging.
 
-[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.31...HEAD
+[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.32...HEAD
