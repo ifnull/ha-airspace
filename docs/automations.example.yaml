@@ -110,25 +110,43 @@
 
 # ---------------------------------------------------------------------------
 # 4. Drone in the area — Remote ID, with operator location. The nearest-drone
-#    sensor carries operator_lat/operator_lon and (with drone_registry on)
-#    make/model in db_metadata. Trigger on the count rising above zero.
+#    sensor carries ua_type / self_id / agl_ft / operator_lat-lon and (with
+#    drone_registry on) make/model in db_metadata.
+#
+#    Trigger on the count INCREASING, not `numeric_state above: 0`: the latter
+#    only fires on the single 0 -> 1 crossing, so a second drone arriving while
+#    one is already tracked (1 -> 2), or a re-appearance before the count falls
+#    back to 0, is silently missed. The condition guards startup (no from_state)
+#    and unavailable/unknown via `int(0)`.
 # ---------------------------------------------------------------------------
 - id: airspace_drone_detected_notify
   alias: "Airspace · drone detected · notify"
   trigger:
-    - platform: numeric_state
+    - platform: state
       entity_id: sensor.airspace_drone_count
-      above: 0
+  condition:
+    - "{{ trigger.from_state is not none
+          and (trigger.to_state.state | int(0)) > (trigger.from_state.state | int(0)) }}"
   action:
     - service: notify.mobile_app_phone
       data:
         title: "🛸 Drone detected"
+        # Degrades gracefully: FAA make/model when drone_registry resolves the
+        # serial, else the UA type, else just "Drone" — plus the self-ID, which
+        # surfaces test/spoof broadcasts (e.g. "Spoofing test").
         message: >-
           {% set s = 'sensor.airspace_nearest_drone' %}
           {% set db = state_attr(s, 'db_metadata') or {} %}
-          {{ db.get('make') ~ ' ' ~ db.get('model') if db.get('make') else 'Unknown drone' }}
+          {% set make = db.get('make') %}
+          {% set ua = state_attr(s, 'ua_type') %}
+          {% set sid = state_attr(s, 'self_id') %}
+          {%- if make %}{{ make }} {{ db.get('model') }}
+          {%- elif ua %}{{ ua | capitalize }}
+          {%- else %}Drone{% endif %}
+          {%- if sid %} “{{ sid }}”{% endif %}
           · {{ states(s) }} nm
-          {% if state_attr(s, 'operator_lat') %}· operator located{% endif %}
+          {%- if state_attr(s, 'agl_ft') is not none %} · {{ state_attr(s, 'agl_ft') | round }} ft AGL{% endif %}
+          {%- if state_attr(s, 'operator_lat') is not none %} · operator located{% endif %}
 
 # ---------------------------------------------------------------------------
 # 5. Drone conflict — push when a LOW aircraft is projected to pass within your

@@ -9,6 +9,7 @@
       "message_count": 344,
       "seen": 0.5,
       "ua_type": "multirotor",
+      "self_id": "Spoofing test",
       "lat": 47.3758918,
       "lon": 8.5452087,
       "alt_geom_ft": 311.7,

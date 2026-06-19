@@ -85,6 +85,13 @@ class TestFieldMapping:
         assert d.drone.ua_type == "multirotor"
         assert d.drone.agl_ft == 246.1
         assert d.drone.rid_source == "wifi_beacon"
+        assert d.drone.self_id is None  # this drone broadcast no Self-ID
+
+    def test_self_id_extracted(self) -> None:
+        obs, _ = parse_remoteid_json(_BASIC, receiver_name="dump3411", observed_at=_now())
+        d = next(o for o in obs if o.track_id == "Spoofed_Serial_40456")
+        assert d.drone is not None
+        assert d.drone.self_id == "Spoofing test"
 
     def test_operator_block_extracted(self) -> None:
         obs, _ = parse_remoteid_json(_BASIC, receiver_name="dump3411", observed_at=_now())

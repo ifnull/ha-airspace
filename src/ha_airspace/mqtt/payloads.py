@@ -214,6 +214,8 @@ class DronePayload(BaseModel):
     id_type: str
     """``serial`` | ``caa_reg`` | ``utm_uuid`` | ``session`` | ``unknown``."""
     ua_type: str | None = None
+    self_id: str | None = None
+    """Free-text operator/flight description from the Self-ID message."""
 
     # --- Position / movement ------------------------------------------
     lat: float | None = None
@@ -261,6 +263,7 @@ class DronePayload(BaseModel):
             track_id=state.track_id,
             id_type=drone.id_type if drone else "unknown",
             ua_type=drone.ua_type if drone else None,
+            self_id=drone.self_id if drone else None,
             lat=canonical.lat,
             lon=canonical.lon,
             latitude=canonical.lat,

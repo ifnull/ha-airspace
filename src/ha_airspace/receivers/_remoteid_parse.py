@@ -122,6 +122,7 @@ def _parse_one(
     drone = DroneInfo(
         id_type=id_type,
         ua_type=_get_str(raw, "ua_type"),
+        self_id=_get_str(raw, "self_id"),
         agl_ft=_get_float(raw, "agl_ft"),
         rid_source=_get_str(raw, "rid_source"),
         operator_lat=_get_float(operator, "lat"),

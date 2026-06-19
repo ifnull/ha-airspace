@@ -392,6 +392,26 @@ class TestMapAliases:
         assert data["longitude"] == -75.99
 
 
+class TestDroneSelfId:
+    def test_self_id_none_by_default(self) -> None:
+        assert DronePayload.from_state(_make_drone_state()).self_id is None
+
+    def test_self_id_flows_through(self) -> None:
+        obs = AircraftObservation(
+            track_id="1581F5BK000000000001",
+            hex=None,
+            non_icao=True,
+            observed_at=_now(),
+            seen_by="dump3411",
+            band="remoteid",
+            lat=30.34,
+            lon=-75.98,
+            drone=DroneInfo(id_type="serial", self_id="Spoofing test"),
+        )
+        state = AircraftState.from_first_observation(obs)
+        assert DronePayload.from_state(state).self_id == "Spoofing test"
+
+
 # ---------------------------------------------------------------------------
 # DronePayload db_metadata (FAA make/model enrichment)
 # ---------------------------------------------------------------------------
