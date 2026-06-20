@@ -9,6 +9,20 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [0.2.33] — 2026-06-19
+### Fixed
+- Predictive AGL alert gate (`max_alt_agl_ft` on an inbound rule) now caps its
+  altitude look-ahead at 120 s. It extrapolates `current AGL + vertical_rate *
+  horizon` linearly; with the previous unbounded ETA, a routine descent
+  projected a still-high, 20+ nm-out aircraft below the threshold and tripped the
+  alert minutes early (descending bizjets at 3000+ ft firing a 1000 ft rule). The
+  cap keeps the "fire before it dips into drone airspace" intent but only when the
+  track will actually be low soon.
+
+### Added
+- Alert `info` attributes now include `vertical_rate_fpm`, so the per-rule
+  `binary_sensor` shows the descent/climb rate that drove a predictive-AGL firing.
+
 ## [0.2.32] — 2026-06-18
 ### Added
 - Drone payloads carry `self_id` — the Remote ID Self-ID message (free-text
@@ -161,4 +175,4 @@ Initial development. Established the full pipeline and contracts:
   optional Prometheus `/metrics`.
 - Pydantic v2 config (strict, fail-fast), structlog logging.
 
-[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.32...HEAD
+[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.33...HEAD

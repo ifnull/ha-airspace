@@ -115,9 +115,17 @@ class TestPredictiveAltitude:
     _RULE = MatchBlock(max_closest_approach_nm=10, max_alt_agl_ft=1640, watchpoint="home")
 
     def test_descending_above_threshold_matches(self) -> None:
-        # 4000 ft now, descending 1000 ft/min, 3 min to approach -> ~1000 ft there.
-        s = _state(alt_baro_ft=4000, vertical_rate_fpm=-1000, cpa_nm=2.0, eta_s=180.0)
+        # 3000 ft now, descending 1000 ft/min, 2 min to approach (within the
+        # look-ahead cap) -> ~1000 ft there, below the 1640 ft threshold.
+        s = _state(alt_baro_ft=3000, vertical_rate_fpm=-1000, cpa_nm=2.0, eta_s=120.0)
         assert rule_matches(s, self._RULE, elevation_m_for=_no_elevation)
+
+    def test_far_out_descender_capped_does_not_match(self) -> None:
+        # The over-eager case: 4000 ft now, descending 1000 ft/min, but 6 min
+        # out. Uncapped the projection would be -2000 ft (matches); capped at
+        # 120 s it only projects to 2000 ft, above the 1640 ft threshold.
+        s = _state(alt_baro_ft=4000, vertical_rate_fpm=-1000, cpa_nm=2.0, eta_s=360.0)
+        assert not rule_matches(s, self._RULE, elevation_m_for=_no_elevation)
 
     def test_high_and_level_does_not_match(self) -> None:
         s = _state(alt_baro_ft=4000, vertical_rate_fpm=0, cpa_nm=2.0, eta_s=180.0)
