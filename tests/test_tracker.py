@@ -23,6 +23,7 @@ from typing import Any
 
 import pytest
 from prometheus_client import CollectorRegistry
+from structlog.testing import capture_logs
 
 from ha_airspace.alerts import AlertEvaluator
 from ha_airspace.config import (
@@ -737,6 +738,58 @@ class TestDroneRouting:
         await tracker.process_poll([])
         assert "Drone1" in publisher.drones_purged
         assert "Drone1" not in publisher.purged
+
+
+class TestDroneDetectionLog:
+    """The durable per-detection record: a `drone_detected` line emitted once
+    per drone (after enrichment), surviving in journald independent of MQTT."""
+
+    def _tracker(self, publisher: FakePublisher, clock: Clock) -> AircraftTracker:
+        return AircraftTracker(
+            publisher,  # type: ignore[arg-type]
+            [_HOME],
+            has_drone_source=True,
+            clock=clock,
+        )
+
+    @staticmethod
+    def _detections(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [e for e in logs if e["event"] == "drone_detected"]
+
+    async def test_logged_once_per_drone_not_per_poll(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = self._tracker(publisher, clock)
+        with capture_logs() as logs:
+            for _ in range(3):  # three polls of the same live drone
+                await tracker.process_poll([_drone_obs("Drone1", at=clock.now)])
+                clock.advance(1.0)
+        detections = self._detections(logs)
+        assert len(detections) == 1
+        assert detections[0]["track_id"] == "Drone1"
+
+    async def test_carries_identity_and_geometry(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = self._tracker(publisher, clock)
+        with capture_logs() as logs:
+            await tracker.process_poll([_drone_obs("Drone1", at=clock.now)])
+        entry = self._detections(logs)[0]
+        assert entry["id_type"] == "serial"
+        assert entry["agl_ft"] == 300.0
+        assert entry["operator_located"] is True
+        assert entry["distance_nm"] is not None  # positioned -> distance to home
+
+    async def test_relogs_after_purge(self, publisher: FakePublisher, clock: Clock) -> None:
+        tracker = self._tracker(publisher, clock)
+        with capture_logs() as logs:
+            await tracker.process_poll([_drone_obs("Drone1", at=clock.now)])
+            clock.advance(61.0)
+            await tracker.process_poll([])  # purge
+            clock.advance(1.0)
+            await tracker.process_poll([_drone_obs("Drone1", at=clock.now)])  # returns
+        # A genuine re-appearance after expiry is a new detection event.
+        assert len(self._detections(logs)) == 2
 
 
 # ---------------------------------------------------------------------------
