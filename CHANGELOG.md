@@ -9,6 +9,26 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [0.2.34] — 2026-06-20
+### Fixed
+- Drone-detected notification could describe the *wrong* drone (a previous or
+  stale-retained one) with "unknown nm". Root cause: the example automation
+  triggered on `sensor.airspace_drone_count` but rendered from
+  `sensor.airspace_nearest_drone` — two separate entities. The count includes
+  positionless drones (Basic ID before a Location message); the nearest sensor
+  only carries positioned ones, so the trigger fired while the nearest sensor
+  still held an earlier drone. Reworked to trigger on the nearest sensor's
+  `track_id` attribute, making trigger and message body the same self-consistent
+  entity and firing only once a positioned drone exists (so distance is always
+  present). `self_id` (untrusted operator free-text, e.g. "Spoofing test") is now
+  shown only as a last-resort label, never alongside a resolved make/model.
+
+### Added
+- Service emits a durable `drone_detected` log line once per drone (serial,
+  make/model, self_id, distance, AGL, operator-located), after enrichment. It
+  survives in journald / `docker logs` independent of MQTT retention, so past
+  detections can be audited after the retained topics rotate.
+
 ## [0.2.33] — 2026-06-19
 ### Fixed
 - Predictive AGL alert gate (`max_alt_agl_ft` on an inbound rule) now caps its
@@ -175,4 +195,4 @@ Initial development. Established the full pipeline and contracts:
   optional Prometheus `/metrics`.
 - Pydantic v2 config (strict, fail-fast), structlog logging.
 
-[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.33...HEAD
+[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.34...HEAD

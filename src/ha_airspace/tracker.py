@@ -146,6 +146,11 @@ class AircraftTracker:
         # Last-known flag set per track, for journaling flag transitions.
         # Pruned alongside the track on expiry so it never grows unbounded.
         self._prev_flags: dict[str, frozenset[str]] = {}
+        # Drone track_ids already logged this lifetime, so the detection log
+        # fires once per drone (not per poll). Dropped on purge so a genuine
+        # re-appearance after the track expires logs again. SD-friendly: one
+        # line per detection event, never per 1 Hz poll.
+        self._logged_drones: set[str] = set()
 
     @property
     def _states(self) -> dict[str, AircraftState]:
@@ -301,10 +306,13 @@ class AircraftTracker:
                         self._journal.record_event(track_id, "flag_exit", flag, now)
                 if self._orbit is not None:
                     self._orbit.forget(track_id)
+                if is_drone:
+                    self._logged_drones.discard(track_id)
                 log.debug("track_purged", track_id=track_id)
                 continue
             if is_drone:
                 await self._enrich_drone(state)
+                self._log_drone_detected(state)
                 await self._publisher.publish_drone(state)
             else:
                 await self._publisher.publish_aircraft(state)
@@ -361,6 +369,29 @@ class AircraftTracker:
         info = await self._drone_registry.lookup(state.track_id)
         if info is not None:
             state.db_metadata = info
+
+    def _log_drone_detected(self, state: AircraftState) -> None:
+        """Emit one structured ``drone_detected`` line the first time a drone
+        track is seen (after enrichment, so make/model is resolved). This is the
+        durable detection record — it survives in journald / ``docker logs``
+        independent of MQTT retention, so past detections can be audited even
+        after the retained topics rotate. Re-fires only after the track is
+        purged (a genuine new appearance), not on every poll."""
+        if state.track_id in self._logged_drones:
+            return
+        self._logged_drones.add(state.track_id)
+        drone = state.canonical.drone
+        log.info(
+            "drone_detected",
+            track_id=state.track_id,
+            id_type=drone.id_type if drone else None,
+            make=state.db_metadata.get("make"),
+            model=state.db_metadata.get("model"),
+            self_id=drone.self_id if drone else None,
+            distance_nm=state.distance_to.get(self._primary.name),
+            agl_ft=drone.agl_ft if drone else None,
+            operator_located=bool(drone and drone.operator_lat is not None),
+        )
 
     async def _publish_summary(self) -> None:
         # Aircraft and drones are counted + "nearest"-ranked separately: the
