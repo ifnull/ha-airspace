@@ -377,10 +377,17 @@ views:
 # template:
 #   - sensor:
 #       # Aircraft: ✈️ by default, 🚁 for rotorcraft (emitter category A7).
+#       # NOTE on `availability`: a Map marker only disappears when its entity
+#       # goes `unavailable`. The source sensors clear (go unavailable) once the
+#       # service purges a track, so each template sensor MUST gate availability
+#       # on its source having a live position — otherwise the marker lingers on
+#       # the map at its last coordinates after the aircraft/drone is gone.
 #       - name: Airspace Aircraft Map
 #         unique_id: airspace_aircraft_map
 #         state: "{{ states('sensor.airspace_nearest_aircraft') }}"
-#         availability: "{{ states('sensor.airspace_nearest_aircraft') not in ['unknown','unavailable'] }}"
+#         availability: >-
+#           {{ states('sensor.airspace_nearest_aircraft') not in ['unknown','unavailable']
+#              and state_attr('sensor.airspace_nearest_aircraft','latitude') is not none }}
 #         icon: >-
 #           {{ 'mdi:helicopter' if state_attr('sensor.airspace_nearest_aircraft','category') == 'A7' else 'mdi:airplane' }}
 #         attributes:
@@ -390,15 +397,24 @@ views:
 #       - name: Airspace Drone Map
 #         unique_id: airspace_drone_map
 #         state: "{{ states('sensor.airspace_nearest_drone') }}"
-#         availability: "{{ states('sensor.airspace_nearest_drone') not in ['unknown','unavailable'] }}"
+#         availability: >-
+#           {{ states('sensor.airspace_nearest_drone') not in ['unknown','unavailable']
+#              and state_attr('sensor.airspace_nearest_drone','latitude') is not none }}
 #         icon: mdi:controller-classic
 #         attributes:
 #           latitude: "{{ state_attr('sensor.airspace_nearest_drone','latitude') }}"
 #           longitude: "{{ state_attr('sensor.airspace_nearest_drone','longitude') }}"
-#       # Drone OPERATOR location (the security-relevant marker).
+#       # Drone OPERATOR location (the security-relevant marker). Available only
+#       # when the nearest drone is live AND broadcast an operator position —
+#       # otherwise this pin would persist at stale coordinates (the operator_id
+#       # `or 'operator'` fallback keeps the sensor from going unavailable on its
+#       # own, so the availability gate is what clears the marker).
 #       - name: Airspace Drone Operator
 #         unique_id: airspace_drone_operator_map
 #         state: "{{ state_attr('sensor.airspace_nearest_drone','operator_id') or 'operator' }}"
+#         availability: >-
+#           {{ states('sensor.airspace_nearest_drone') not in ['unknown','unavailable']
+#              and state_attr('sensor.airspace_nearest_drone','operator_lat') is not none }}
 #         icon: mdi:account-alert
 #         attributes:
 #           latitude: "{{ state_attr('sensor.airspace_nearest_drone','operator_lat') }}"
