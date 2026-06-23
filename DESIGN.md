@@ -865,31 +865,103 @@ only a documented feed contract (`FEED.md`, canonical copy in this repo).
   the AGL that Phase 5 wants for aircraft (and is hard to derive there) arrives
   in the feed.
 
-## Deferred: FAA UAS make/model enrichment
+## FAA UAS make/model enrichment — **implemented (0.2.10+)**
 
-Bundled with the deferred drone-history slice (durable drone sightings +
-operator location in the journal). The broadcast serial we already capture
-(`DroneInfo.id_type == "serial"`, ANSI/CTA-2063-A) can be joined against the
-FAA UAS **Declaration of Compliance** registry to add make / model / model
-description / compliance status — the drone analogue of Mictronics for ICAO.
+The broadcast serial we capture (`DroneInfo.id_type == "serial"`,
+ANSI/CTA-2063-A) is joined against the FAA UAS **Declaration of Compliance**
+registry to add make / model / status — the drone analogue of Mictronics for
+ICAO. Shipped as `drone_registry.py`, behind the `enable_drone_registry` toggle.
 
-- **Source.** FAA UAS DOC system at `uasdoc.faa.gov`, public `publicDOCRev` +
-  `serialNumbers` APIs. Reference impl: `github.com/jlrjr/faa-rid-lookup`
-  (Python; pre-builds a ~640 KB SQLite of ~4,150 records, ~37 min bulk build,
-  optional live-API fallback with a 5 s throttle).
-- **What it returns — and what it does NOT.** Make, model, description, status,
-  RID tracking number. It is **compliance/product data, not operator identity**:
-  FAA does not expose registrant/owner publicly. Operator *location* still comes
-  from the Remote ID broadcast itself (`operator_lat/lon`), never from FAA — the
-  two are complementary, not substitutes.
-- **Architectural fit.** A `databases/`-style reference DB + an enrichment join,
-  serial-keyed instead of hex-keyed. Resolvable only for `id_type == "serial"`;
-  `session` / `utm_uuid` / `caa_reg` ids have nothing to look up. Many serials
-  will miss (the DOC set is small and declaration-based) — a miss is normal,
-  enrich what's there and move on.
-- **SD-card posture.** Ship/cache the prebuilt SQLite and refresh on the DB
-  loader's slow cadence; the live API is fallback-only and throttled. No
-  per-detection network calls.
+- **Source.** FAA UAS DOC system at `uasdoc.faa.gov`
+  (`/api/v1/serialNumbers?findBy=serialNumber`). Result lands in
+  `state.db_metadata` as `make` / `model` / `status` / `rid_tracking`.
+- **Deviation from the original plan — live-cached, not prebuilt SQLite.** The
+  deferred write-up called for shipping the jlrjr/faa-rid-lookup prebuilt ~640 KB
+  SQLite. We instead do **live per-serial lookups with a TTL cache** (hits *and*
+  misses cached, fails-soft). For real traffic — a handful of drones, not a
+  firehose — this is simpler and SD-friendlier (no 37-min bulk build, no
+  on-disk DB to refresh) and there are no per-poll calls. Revisit the prebuilt
+  variant only if offline operation is required or drone volume makes live
+  lookups noticeable.
+- **What it returns — and what it does NOT.** Make, model, status, RID tracking
+  number. It is **compliance/product data, not operator identity**: FAA does not
+  expose registrant/owner publicly. Operator *location* comes only from the
+  Remote ID broadcast (`operator_lat/lon`). The two are complementary.
+- Resolvable only for `id_type == "serial"`; `session` / `utm_uuid` / `caa_reg`
+  have nothing to look up, and many serials miss (the DOC set is small) — a miss
+  is normal.
+
+## Deferred: durable drone sightings + spoof detection
+
+The remaining half of the original drone-history slice (FAA enrichment above is
+done). dump3411 **v1.0.0 now persists raw track history itself** — an optional
+SQLite (`--history-db`, `HISTORY_RETENTION_DAYS=30`, `HISTORY_MAX_MB`,
+per-drone debounce) serving per-point tracks (`/history.json?uas_id=&since=&until=`),
+a recent-drones index (`/history/recent.json?since=&limit=`), and a `/map`
+visualization. So ha-airspace must **not** re-store the firehose. It adds the
+enriched, security-relevant layer dump3411 doesn't have.
+
+### Sighting store — hybrid (decided 2026-06)
+
+ha-airspace persists **one enriched summary row per sighting**, and **deep-links
+to dump3411's `/map?uas_id=<id>`** for the full point-by-point track. It owns the
+enriched/security record; the raw track stays in dump3411.
+
+- **Schema.** A `drone_sighting` table in the existing journal (it already owns
+  durable `first_seen`/`last_seen` and the SQLite lifecycle):
+
+  | column | source |
+  |--------|--------|
+  | `track_id` (UAS id), `first_seen`, `last_seen` | merger/journal |
+  | `id_type`, `ua_type`, `self_id` | `DroneInfo` |
+  | `make`, `model`, `status` | `db_metadata` (FAA) |
+  | `operator_lat`, `operator_lon`, `operator_alt_takeoff_ft` | `DroneInfo` |
+  | `min_agl_ft`, `closest_nm`, `closest_bearing` | computed vs primary watchpoint over the sighting |
+  | `rid_source`, `max_rssi_dbfs` | observation |
+  | `flags` (incl. `spoof_suspect`) | enrichment |
+
+- **Write path — off the existing hook.** The `drone_detected` log line
+  (0.2.34, `tracker._log_drone_detected`) is already the once-per-sighting event.
+  This becomes "log **and** journal": insert on first detection, update
+  `last_seen` / `min_agl_ft` / `closest_nm` on a debounce, finalize on purge.
+  One row per sighting, debounced — SD-friendly (matches the journal's batched
+  writes and the Pi-SD posture).
+- **Retention + privacy.** Operator location is the **most sensitive field in the
+  system**. Durable storage of it is an explicit opt-in (a config toggle,
+  default off), with a bounded retention window like the event table's. Never
+  on by default; documented as a deliberate choice.
+- **Surface.** Queryable SQLite + the structured log; a "recent drones" HA
+  surface and the `/map` deep-link are the read side. A full in-app history UI is
+  the separate deferred Web-UI item (do not build here).
+- **Unused feed fields available if needed.** dump3411 `remoteid.json` v1 also
+  carries `message_count`, `self_id_seen`, and `operator.seen`, which the parser
+  currently drops; the spoof signals below may want them.
+
+### `spoof_suspect` flag — behavioral, layered on sightings
+
+Motivated by a real replay test: a spoofer rebroadcasting **previously-seen real
+serials** (which therefore resolve in the FAA registry). **Identity validation is
+useless** against this — RID has no crypto auth and the serials are genuine. So
+the flag must be **behavioral**, comparing live broadcasts against sighting
+history (hence it layers on the store above):
+
+- **Tier 1 — stateless, ship-first (no history needed).**
+  - Malformed/placeholder serial (`id_type == "serial"` but value like `0x00` /
+    not ANSI/CTA-2063-A shaped).
+  - Same `self_id` across multiple distinct serials within a short window.
+- **Tier 2 — needs the sighting store / live cross-track.**
+  - Impossible kinematics: position jump exceeding feasible UA speed between
+    consecutive messages (uses `seen_pos`/timestamps + haversine).
+  - Same serial active in two places at once (duplicate live tracks, or a serial
+    whose history is incompatible with its current geometry).
+  - Implausible operator data (e.g. `operator_alt_takeoff_ft` wildly off, like
+    the `-3251 ft` seen in test samples; operator co-located with many serials).
+
+Emit as an enrichment `flag` (`spoof_suspect`), reusing the existing flag feed /
+alert machinery — **no new alert plumbing**. **Validation corpus exists**: Daniel
+generates replay test traffic himself, so the detector can be tested against
+known spoofs. Ship Tier 1 first (cheap, immediately useful); Tier 2 follows the
+sighting store. See `reference_dump3411_history` notes.
 
 ## Phasing
 
