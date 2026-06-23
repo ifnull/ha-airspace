@@ -50,6 +50,7 @@ from ha_airspace.receivers import (
     ReceiverSource,
     RemoteIdHttpReceiver,
 )
+from ha_airspace.spoof import SPOOF_FLAG, SpoofDetector
 from ha_airspace.tracker import AircraftTracker
 
 if TYPE_CHECKING:
@@ -395,13 +396,17 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
         )
 
     orbit = OrbitDetector(config.orbit) if config.orbit.enabled else None
+    spoof = SpoofDetector(config.spoof) if config.spoof.enabled else None
 
     # Flags that get a per-flag feed sensor: every configured flag, plus the
-    # derived 'orbiting' flag when orbit detection is on. Kept in sync with the
-    # discovery side (build_discovery_payloads enumerates the same set).
+    # derived 'orbiting' / 'spoof_suspect' flags when their detectors are on.
+    # Kept in sync with the discovery side (build_discovery_payloads enumerates
+    # the same set).
     feed_flags = list(config.enrichment.flags)
     if config.orbit.enabled:
         feed_flags.append(ORBIT_FLAG)
+    if config.spoof.enabled:
+        feed_flags.append(SPOOF_FLAG)
 
     tracker = AircraftTracker(
         publisher,
@@ -412,6 +417,7 @@ def build_app(config: Config, *, metrics: MetricsRegistry | None = None) -> App:
         journal=journal,
         photos=photos,
         orbit=orbit,
+        spoof=spoof,
         drone_registry=drone_registry,
         has_drone_source=any(rc.enabled for rc in config.remoteid),
         feed_flags=feed_flags,

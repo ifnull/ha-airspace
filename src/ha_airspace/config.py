@@ -451,6 +451,18 @@ class OrbitConfig(BaseModel):
     360 = a full circle; lower catches partial/loose loiters."""
 
 
+class SpoofConfig(BaseModel):
+    """Remote ID spoof detection (Phase 5), Tier 1. Off by default. When enabled,
+    a drone whose broadcast looks fabricated — a malformed/placeholder serial, or
+    a self_id shared across multiple distinct serials in the air — gets a derived
+    ``spoof_suspect`` flag, usable in alert rules like any other flag. RID has no
+    crypto auth, so this is behavioral, not identity-based. In-memory only."""
+
+    model_config = _STRICT
+
+    enabled: bool = False
+
+
 def _default_inject_into() -> list[Literal["alerts"]]:
     return ["alerts"]
 
@@ -522,6 +534,7 @@ class Config(BaseModel):
     photos: PhotosConfig = Field(default_factory=PhotosConfig)
     """Planespotters photo enrichment for alert payloads. Off by default."""
     orbit: OrbitConfig = Field(default_factory=OrbitConfig)
+    spoof: SpoofConfig = Field(default_factory=SpoofConfig)
     """Orbit / loiter detection -> the derived ``orbiting`` flag. Off by default."""
     drone_registry: DroneRegistryConfig = Field(default_factory=DroneRegistryConfig)
     """FAA UAS make/model enrichment for drones. Off by default."""

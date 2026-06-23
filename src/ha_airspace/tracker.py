@@ -40,6 +40,7 @@ from ha_airspace.mqtt.payloads import FlagAircraft, FlagFeedPayload
 from ha_airspace.mqtt.publisher import Publisher
 from ha_airspace.orbit import OrbitDetector
 from ha_airspace.photos import PhotoEnricher
+from ha_airspace.spoof import SpoofDetector
 
 if TYPE_CHECKING:
     from ha_airspace.mqtt.payloads import PhotoPayload
@@ -112,6 +113,7 @@ class AircraftTracker:
         journal: Journal | None = None,
         photos: PhotoEnricher | None = None,
         orbit: OrbitDetector | None = None,
+        spoof: SpoofDetector | None = None,
         drone_registry: DroneRegistry | None = None,
         has_drone_source: bool = False,
         feed_flags: Iterable[str] = (),
@@ -130,6 +132,7 @@ class AircraftTracker:
         self._journal = journal
         self._photos = photos
         self._orbit = orbit
+        self._spoof = spoof
         self._drone_registry = drone_registry
         # Only publish the drone summary when a Remote ID source is configured,
         # so ADS-B-only installs don't get spurious empty drone topics.
@@ -185,6 +188,10 @@ class AircraftTracker:
             # After enrich (which reassigns flags) so the derived orbiting flag
             # survives; before transition journaling so it's recorded + alertable.
             self._orbit.update(state)
+        if self._spoof is not None:
+            # Same placement rationale as orbit: after enrich, before journaling,
+            # so the derived spoof_suspect flag is published, alertable, recorded.
+            self._spoof.update(state)
         self._record_flag_transitions(state)
 
     def _record_flag_transitions(self, state: AircraftState) -> None:
@@ -306,6 +313,8 @@ class AircraftTracker:
                         self._journal.record_event(track_id, "flag_exit", flag, now)
                 if self._orbit is not None:
                     self._orbit.forget(track_id)
+                if self._spoof is not None:
+                    self._spoof.forget(track_id)
                 if is_drone:
                     self._logged_drones.discard(track_id)
                 log.debug("track_purged", track_id=track_id)
