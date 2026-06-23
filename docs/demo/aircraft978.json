@@ -1,0 +1,48 @@
+{
+  "now": 1730000000.0,
+  "messages": 96000,
+  "aircraft": [
+    {
+      "hex": "a7c4d9",
+      "flight": "N812TG  ",
+      "alt_baro": 3500,
+      "alt_geom": 3560,
+      "lat": 38.945000,
+      "lon": -77.090000,
+      "gs": 132.0,
+      "track": 150.0,
+      "baro_rate": 256,
+      "squawk": "1200",
+      "category": "A1",
+      "nic": 8,
+      "nac_p": 9,
+      "rssi": -19.1,
+      "seen": 0.6,
+      "seen_pos": 0.8,
+      "messages": 410,
+      "type": "adsb_icao",
+      "t": "SR22"
+    },
+    {
+      "hex": "a5e110",
+      "flight": "N236DK  ",
+      "alt_baro": 5500,
+      "alt_geom": 5580,
+      "lat": 38.860000,
+      "lon": -76.970000,
+      "gs": 118.0,
+      "track": 305.0,
+      "baro_rate": 0,
+      "squawk": "1200",
+      "category": "A1",
+      "nic": 8,
+      "nac_p": 9,
+      "rssi": -22.5,
+      "seen": 0.9,
+      "seen_pos": 1.1,
+      "messages": 250,
+      "type": "adsb_icao",
+      "t": "C182"
+    }
+  ]
+}
