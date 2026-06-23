@@ -62,6 +62,12 @@ the underlying flag/alert/database config for you.
   resolves serial-type Remote IDs and only does anything with a **remoteid**
   feed configured; cached in memory, fails soft. Compliance data, not operator
   identity (operator *location* still comes from the broadcast).
+- **enable_spoof_detection** — flag drones whose Remote ID broadcast looks
+  fabricated (`spoof_suspect`): a malformed/placeholder serial, or the same
+  free-text self-ID shared across multiple distinct serials. Behavioral, not
+  identity-based — RID has no authentication and a spoofer can replay genuine
+  serials. Only acts on **remoteid** tracks; with alerts on, a `spoof_suspect`
+  rule fires like any other flag.
 
 ### Optional
 

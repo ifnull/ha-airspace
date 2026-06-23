@@ -32,6 +32,7 @@ from typing import Any
 
 from ha_airspace.config import Config
 from ha_airspace.orbit import ORBIT_FLAG
+from ha_airspace.spoof import SPOOF_FLAG
 
 DISCOVERY_NODE_ID: str = "airspace"
 """Namespace under the discovery prefix; lets multiple ADS-B services
@@ -177,6 +178,8 @@ def build_discovery_payloads(
     feed_flags = list(config.enrichment.flags)
     if config.orbit.enabled:
         feed_flags.append(ORBIT_FLAG)
+    if config.spoof.enabled:
+        feed_flags.append(SPOOF_FLAG)
     for flag in feed_flags:
         payloads.append(
             _entity_config(

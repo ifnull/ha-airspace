@@ -3,7 +3,7 @@
 # Display name is "Airspace" (friendly, matches the MQTT device); the slug,
 # package, repo, and image names stay ha-airspace as the technical identity.
 name: Airspace
-version: "0.2.35"
+version: "0.2.36"
 slug: ha_airspace
 description: >-
   Multi-source ADS-B + drone Remote ID enrichment to MQTT for Home Assistant.
@@ -62,6 +62,7 @@ options:
   orbit_min_turn_deg: 360
   enable_photos: false
   enable_drone_registry: false
+  enable_spoof_detection: false
   enable_metrics: false
   metrics_port: 9090
   extra_config: ""
@@ -97,6 +98,7 @@ schema:
   orbit_min_turn_deg: float?
   enable_photos: bool?
   enable_drone_registry: bool?
+  enable_spoof_detection: bool?
   enable_metrics: bool?
   metrics_port: port?
   extra_config: str?

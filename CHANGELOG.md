@@ -9,6 +9,21 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [0.2.36] — 2026-06-22
+### Added
+- **Remote ID spoof detection (Tier 1).** New `enable_spoof_detection` toggle
+  adds a derived `spoof_suspect` flag to drones whose broadcast looks
+  fabricated: a malformed/placeholder serial (`id_type: serial` not shaped like
+  ANSI/CTA-2063-A, e.g. `0x00`), or the same free-text `self_id` broadcast by
+  multiple distinct serials at once. Behavioral, not identity-based — RID has no
+  authentication and a spoofer can replay genuine serials (which then resolve in
+  the FAA registry), so identity validation can't catch a replay. Composes with
+  the existing flag/alert/feed machinery like `orbiting`. Tier-2 kinematic
+  signals are scoped in DESIGN.md against the future sighting store.
+
+### Docs
+- FEED.md: documented `self_id` + `self_id_seen` (synced with dump3411 v1.0.0).
+
 ## [0.2.35] — 2026-06-22
 ### Docs
 - DESIGN.md: marked FAA UAS make/model enrichment as implemented (noting the
@@ -205,4 +220,4 @@ Initial development. Established the full pipeline and contracts:
   optional Prometheus `/metrics`.
 - Pydantic v2 config (strict, fail-fast), structlog logging.
 
-[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.35...HEAD
+[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.36...HEAD

@@ -174,6 +174,10 @@ def _feature_sections(options: dict[str, Any], default_wp: str) -> dict[str, Any
         # FAA UAS make/model lookup by broadcast serial. Only meaningful with a
         # remoteid feed configured; harmless (never queried) without one.
         sections["drone_registry"] = {"enabled": True}
+    if options.get("enable_spoof_detection"):
+        # Tier-1 Remote ID spoof flag (malformed serial / shared self_id). Only
+        # acts on remoteid tracks; harmless without a feed.
+        sections["spoof"] = {"enabled": True}
 
     return sections
 

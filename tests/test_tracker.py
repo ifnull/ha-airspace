@@ -34,6 +34,7 @@ from ha_airspace.config import (
     JournalConfig,
     MatchBlock,
     OrbitConfig,
+    SpoofConfig,
 )
 from ha_airspace.enrichment import Enricher
 from ha_airspace.journal import Journal
@@ -41,6 +42,7 @@ from ha_airspace.metrics import MetricsRegistry
 from ha_airspace.models import AircraftObservation, AircraftState, DroneInfo, Watchpoint
 from ha_airspace.mqtt.payloads import PhotoPayload
 from ha_airspace.orbit import OrbitDetector
+from ha_airspace.spoof import SPOOF_FLAG, SpoofDetector
 from ha_airspace.tracker import _FLAG_FEED_MAX, AircraftTracker
 
 # ---------------------------------------------------------------------------
@@ -738,6 +740,46 @@ class TestDroneRouting:
         await tracker.process_poll([])
         assert "Drone1" in publisher.drones_purged
         assert "Drone1" not in publisher.purged
+
+
+class TestSpoofFlag:
+    """spoof_suspect, wired like orbit, reaches the published drone state."""
+
+    def _tracker(self, publisher: FakePublisher, clock: Clock) -> AircraftTracker:
+        return AircraftTracker(
+            publisher,  # type: ignore[arg-type]
+            [_HOME],
+            spoof=SpoofDetector(SpoofConfig(enabled=True)),
+            has_drone_source=True,
+            clock=clock,
+        )
+
+    async def test_malformed_serial_flagged_on_publish(
+        self, publisher: FakePublisher, clock: Clock
+    ) -> None:
+        tracker = self._tracker(publisher, clock)
+        # _drone_obs uses id_type="serial"; override the track_id to a placeholder.
+        await tracker.process_poll(
+            [
+                AircraftObservation(
+                    track_id="0x00",
+                    hex=None,
+                    non_icao=True,
+                    observed_at=clock.now,
+                    seen_by="dump3411",
+                    band="remoteid",
+                    lat=30.34,
+                    lon=-75.98,
+                    drone=DroneInfo(id_type="serial"),
+                )
+            ]
+        )
+        assert SPOOF_FLAG in publisher.drones_published[-1].flags
+
+    async def test_clean_drone_not_flagged(self, publisher: FakePublisher, clock: Clock) -> None:
+        tracker = self._tracker(publisher, clock)
+        await tracker.process_poll([_drone_obs("1581F8LQC25810024UXM")])
+        assert SPOOF_FLAG not in publisher.drones_published[-1].flags
 
 
 class TestDroneDetectionLog:
