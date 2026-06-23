@@ -26,15 +26,21 @@ discovery entities). The demo overwrites the live `airspace/*` entities while it
 runs, so stop your production service first (or point the demo at a throwaway HA).
 
 ```bash
-# 1) serve the fixtures (live `now` + climbing `messages` so msg/s is realistic)
-cd docs/demo && python3 serve.py            # http://127.0.0.1:8765
+# 1) make your local config (config.yaml is git-ignored, so creds stay out of git)
+cp docs/demo/config.example.yaml docs/demo/config.yaml
+#    edit docs/demo/config.yaml -> set mqtt.broker / username / password
 
-# 2) edit docs/demo/config.yaml -> set mqtt.broker to your HA/broker host
+# 2) serve the fixtures (live `now` + climbing `messages` so msg/s is realistic)
+cd docs/demo && python3 serve.py            # http://127.0.0.1:8765
 
 # 3) run the service against the demo config (another shell)
 ha-airspace --config docs/demo/config.yaml
 # or: uv run ha-airspace --config docs/demo/config.yaml
 ```
+
+> `docs/demo/config.yaml` is git-ignored (the repo ignores every `config.yaml`),
+> so your broker credentials never get committed. The committed template is
+> `config.example.yaml`.
 
 In Home Assistant:
 
