@@ -47,8 +47,8 @@ already saturates the single core — see "Producer requirements".)
 
 - `schema_version` — integer. Consumers ignore feeds whose major version they
   don't understand rather than mis-parsing.
-- `now` — the reference clock for every `seen`/`seen_pos`/`operator.seen` in the
-  document.
+- `now` — the reference clock for every `seen`/`seen_pos`/`self_id_seen`/
+  `operator.seen` in the document.
   Consumers convert to absolute timestamps at ingest using *their own* receipt
   time anchored to `now` (do **not** trust the producer's absolute clock for
   ordering; only the relative `seen` deltas).
@@ -78,6 +78,8 @@ already saturates the single core — see "Producer requirements".)
 | `seen` | number | s | ✓ | Seconds since the last message from this `id`, relative to `now`. |
 | `seen_pos` | number | s |  | Seconds since the last *positional* message. Omit if never positioned. |
 | `rid_source` | string | — |  | `ble` \| `wifi_beacon` \| `wifi_nan`. Transport the detection arrived on. |
+| `self_id` | string | — |  | Free-text description from the Self-ID message (operator-set flight purpose/intent, e.g. `"inspection"`). **Untrusted, operator-controlled** — never an identity. Omit if no Self-ID message seen. |
+| `self_id_seen` | number | s |  | Seconds since the last Self-ID message, relative to `now` — staleness of `self_id`. Omit if never seen. |
 | `operator` | object | — |  | Present only once a System/Operator-ID message has been seen for this `id`. See below. |
 
 ### `operator` sub-object
@@ -118,8 +120,9 @@ consumer keeps the track (identity is known) and marks position unavailable.
 - **Multi-transport precedence:** a producer that hears the same `id` on more
   than one transport (BLE, WiFi beacon, WiFi NAN) collapses them into one
   detection — the latest message wins for `rid_source`, `rssi`, and every
-  time-varying field (position, velocity, heading, altitude, operator block).
-  Identity fields (`id_type`, `ua_type`) are write-once from the first Basic ID.
+  time-varying field (position, velocity, heading, altitude, `self_id`, operator
+  block). Identity fields (`id_type`, `ua_type`) are write-once from the first
+  Basic ID.
   `message_count` increments on every decoded message regardless of transport.
   The consumer therefore sees a single track per `id` with `rid_source`
   reflecting the most recent hop.
@@ -150,6 +153,8 @@ consumer keeps the track (identity is known) and marks position unavailable.
       "seen": 0.4,
       "seen_pos": 0.6,
       "rid_source": "ble",
+      "self_id": "inspection",
+      "self_id_seen": 1.8,
       "operator": {
         "lat": 40.6900,
         "lon": -74.0100,
@@ -183,7 +188,8 @@ consumer keeps the track (identity is known) and marks position unavailable.
   under the lock, releases the lock, then serializes — nothing else. On a Pi
   Zero W the BLE/802.11 decode is the budget; the HTTP path must be ~free.
 - **Timestamps computed at serialize time:** `seen = now - last_seen[id]`,
-  likewise `seen_pos` and `operator.seen` from their respective timestamps.
+  likewise `seen_pos`, `self_id_seen`, and `operator.seen` from their respective
+  timestamps.
 - **Drop stale ids** from the cache on the producer's own timeout (default 60 s
   with no messages on any transport) so the feed reflects current airspace.
 - **Additive.** Serving this feed must not change existing detector behavior
@@ -211,3 +217,4 @@ and is a coordinated change across both repos. Document every bump here.
 | Version | Date | Change |
 |---|---|---|
 | 1 | (draft) | Initial contract. |
+| 1 | 2026-06 | Added optional `self_id` + `self_id_seen` (Self-ID message). Additive — no major bump; consumers ignore if absent. Matches dump3411 v1.0.0. |
