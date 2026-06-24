@@ -79,7 +79,7 @@ views:
               ## {{ (state_attr(s,'country_flag') ~ ' ') if state_attr(s,'country_flag') else '' }}{{ '[' ~ (state_attr(s,'flight') or state_attr(s,'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(s,'hex') ~ ')' if state_attr(s,'hex') else (state_attr(s,'flight') or '?') }}
               **{{ db.get('model') or state_attr(s,'aircraft_type') or 'unknown type' }}**{{ ' · ' ~ db.get('ownop') if db.get('ownop') }}
 
-              - **Distance:** {{ states(s) }} nm{{ ' · brg ' ~ brg|round(0)|int ~ '°' if brg is not none }}
+              - **Distance:** {{ '%.1f'|format(states(s)|float) }} nm{{ ' · brg ' ~ brg|round(0)|int ~ '°' if brg is not none }}
               - **Altitude:** {{ state_attr(s,'alt_baro_ft') or '—' }} ft
               - **Speed:** {{ gs|round(0)|int if gs is not none else '—' }} kt
               - **Squawk:** {{ state_attr(s,'squawk') or '—' }}
@@ -130,7 +130,7 @@ views:
                           ## {{ state_attr(s,'operator_id') or state_attr(s,'track_id') }}
                           **{{ (db.get('make') ~ ' ' ~ db.get('model')) if db.get('make') else (state_attr(s,'ua_type') or 'drone') }}**
 
-                          - **Distance:** {{ states(s) }} nm{{ ' · brg ' ~ brg|round(0)|int ~ '°' if brg is not none }}
+                          - **Distance:** {{ '%.1f'|format(states(s)|float) }} nm{{ ' · brg ' ~ brg|round(0)|int ~ '°' if brg is not none }}
                           - **Height (AGL):** {{ agl|round(0)|int if agl is not none else '—' }} ft
                           - **ID type:** {{ state_attr(s,'id_type') or '—' }}
                           - **Operator:** {{ 'located' if state_attr(s,'operator_lat') is not none else 'not broadcast' }}
@@ -159,7 +159,7 @@ views:
                           ## {{ (state_attr(s,'country_flag') ~ ' ') if state_attr(s,'country_flag') else '' }}{{ '[' ~ (state_attr(s,'flight') or state_attr(s,'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(s,'hex') ~ ')' if state_attr(s,'hex') else (state_attr(s,'flight') or '?') }}
                           **{{ db.get('model') or state_attr(s,'aircraft_type') or 'unknown type' }}**{{ ' · ' ~ db.get('ownop') if db.get('ownop') }}
 
-                          - **Distance:** {{ states(s) }} nm{{ ' · brg ' ~ brg|round(0)|int ~ '°' if brg is not none }}
+                          - **Distance:** {{ '%.1f'|format(states(s)|float) }} nm{{ ' · brg ' ~ brg|round(0)|int ~ '°' if brg is not none }}
                           - **Altitude:** {{ state_attr(s,'alt_baro_ft') or '—' }} ft
                           - **Speed:** {{ gs|round(0)|int if gs is not none else '—' }} kt
                           - **Squawk:** {{ state_attr(s,'squawk') or '—' }}
