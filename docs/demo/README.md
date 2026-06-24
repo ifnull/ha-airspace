@@ -48,6 +48,26 @@ In Home Assistant:
    [`../dashboard.example.yaml`](../dashboard.example.yaml) to your
    `configuration.yaml`, then **reload template entities** (or restart). Without
    them the map markers won't render.
+
+   **Swap `zone.home` on the map** — the example map lists `zone.home` as the
+   observer marker, which is *your real house*. For screenshots, replace it with a
+   fixed White-House watchpoint pin so nothing personal leaks:
+
+   ```yaml
+   # add alongside the other airspace_*_map template sensors:
+   - name: Airspace Watchpoint
+     unique_id: airspace_watchpoint
+     state: home
+     icon: mdi:home-map-marker
+     attributes:
+       latitude: 38.8977
+       longitude: -77.0365
+   ```
+   ```yaml
+   # in the map card, change the entities entry:
+   - entity: sensor.airspace_watchpoint   # was: zone.home
+     label_mode: icon
+   ```
 2. Add a dashboard from `../dashboard.example.yaml`.
 3. The drone-conflict / spoof cards need `enable_spoof_detection` (already on in
    the demo config).
