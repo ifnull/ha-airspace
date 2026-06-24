@@ -9,6 +9,20 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [1.0.0] — 2026-06-23
+First stable release. The 0.x series built and proved the full pipeline against
+live receivers + a real broker over a quarter of use; 1.0.0 marks the published
+**MQTT payload contract** (`schema_version: 1`) and the config/entity surface as
+stable. No functional change from 0.2.38 — this is the stability milestone.
+
+### Added
+- README dashboard screenshot (rendered from the demo scene; synthetic traffic
+  around the White House, no real location).
+
+### Fixed
+- Example dashboard: nearest-aircraft card rounds the distance to 0.1 nm instead
+  of printing the raw float (`1.50140… nm` → `1.5 nm`).
+
 ## [0.2.38] — 2026-06-23
 ### Added
 - `docs/demo/` — a self-contained demo scene for README screenshots: curated
@@ -245,4 +259,4 @@ Initial development. Established the full pipeline and contracts:
   optional Prometheus `/metrics`.
 - Pydantic v2 config (strict, fail-fast), structlog logging.
 
-[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.38...HEAD
+[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v1.0.0...HEAD

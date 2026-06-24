@@ -17,26 +17,35 @@ other ADS-B Home Assistant project, it ingests **drone Remote ID** as a
 first-class source. See [`DESIGN.md`](DESIGN.md) for architecture, the full
 roadmap, and how it's positioned against the alternatives.
 
+![ha-airspace Home Assistant dashboard — map with nearest aircraft, drone and operator markers; nearest-aircraft card; receiver/feed health; and emergency / military / interesting alert tables](docs/images/dashboard.png)
+
+> The example dashboard ([`docs/dashboard.example.yaml`](docs/dashboard.example.yaml))
+> rendered from the demo scene ([`docs/demo/`](docs/demo/)) — synthetic traffic
+> around the White House, so the shot carries no real location. Nearest traffic
+> (with map markers and a photo), per-flag alert tables, drone + operator
+> location, and receiver/feed health.
+
 > **Why another one?** The popular HA flight integrations are cloud-API
 > (FlightRadar24); the local-receiver ones don't merge multiple sources and
 > none of them detect drones. `ha-airspace` is a standalone MQTT service with a
 > multi-receiver merger (1090 + 978 + Remote ID), two-database enrichment, and
 > a test suite — built to become infrastructure, not a weekend script.
 
-> **Status:** Beta — released (HA add-on + multi-arch Docker image on GHCR),
-> running against live receivers + a real broker. All planned phases are
-> shipped: multi-receiver **1090 + 978** merge, **drone Remote ID** as a
-> first-class source, reference-DB enrichment (Mictronics + ADSBexchange),
-> declarative **flags** + stateful **alerts** (including history-aware
-> "first-time/returning", **orbit/loiter** detection, and **predictive inbound**
-> closest-approach), HA MQTT-discovery entities, an optional SQLite **journal**
-> for durable history, Planespotters **photos** on alerts, and optional
-> Prometheus metrics.
+> **Status:** **v1.0.0 — stable.** Released as an HA add-on + multi-arch Docker
+> image on GHCR, running against live receivers + a real broker; the published
+> MQTT payload contract is versioned (`schema_version`). Shipped: multi-receiver
+> **1090 + 978** merge, **drone Remote ID** as a first-class source, reference-DB
+> enrichment (Mictronics + ADSBexchange), **FAA UAS make/model** for drones,
+> declarative **flags** + stateful **alerts** (history-aware "first-time/
+> returning", **orbit/loiter** detection, **predictive inbound** closest-approach,
+> and behavioral **Remote ID spoof detection**), HA MQTT-discovery entities, an
+> optional SQLite **journal** for durable history, Planespotters **photos** on
+> alerts, and optional Prometheus metrics.
 >
-> **Deferred / not yet built** (none required): drone make/model FAA lookup,
-> true AGL via DEM, a custom Lovelace "radar" card, a web status UI, and PyPI /
-> armv7 / Docker-Hub distribution. See [`DESIGN.md`](DESIGN.md) for the full
-> roadmap and rationale.
+> **Deferred / not yet built** (none required): durable drone sighting history,
+> Tier-2 (kinematic) spoof detection, true AGL via DEM, a custom Lovelace "radar"
+> card, a web status UI, and PyPI / armv7 / Docker-Hub distribution. See
+> [`DESIGN.md`](DESIGN.md) for the full roadmap and rationale.
 
 **Keywords:** Home Assistant, ADS-B, dump1090, dump978, readsb, tar1090,
 PiAware, FlightAware, Remote ID, ASTM F3411, drone detection, dump3411, MQTT,
