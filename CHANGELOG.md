@@ -9,6 +9,20 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [0.2.38] — 2026-06-23
+### Added
+- `docs/demo/` — a self-contained demo scene for README screenshots: curated
+  aircraft/drone fixtures positioned around the White House (no personal data), a
+  stdlib `serve.py` that feeds them over HTTP with a live `now` + climbing
+  `messages` (realistic msg/s), and a `config.yaml` that turns on every feature.
+  Exercises country flags, military/interesting/emergency flags + alerts, the
+  helicopter map icon, drone + operator + FAA make/model, and the new
+  `spoof_suspect` flag. See `docs/demo/README.md`.
+
+### Changed
+- Example dashboard: added a "Suspected spoofed drones" card (the
+  `spoof_suspect` flag feed) so the spoof-detection feature is visible.
+
 ## [0.2.37] — 2026-06-23
 ### Fixed
 - Example dashboard: drone/operator map markers lingered at stale coordinates
@@ -231,4 +245,4 @@ Initial development. Established the full pipeline and contracts:
   optional Prometheus `/metrics`.
 - Pydantic v2 config (strict, fail-fast), structlog logging.
 
-[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.37...HEAD
+[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v0.2.38...HEAD

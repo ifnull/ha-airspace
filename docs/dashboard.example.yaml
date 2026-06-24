@@ -356,6 +356,24 @@ views:
               {% else -%}
               None right now.
               {% endif -%}
+          # Suspected spoofed drones (requires enable_spoof_detection). The
+          # spoof_suspect flag is behavioral: a malformed/placeholder serial, or
+          # one self_id broadcast across several serials. Make/Model is the FAA
+          # lookup (blank for a bogus serial like 0x00 — itself a tell).
+          - type: markdown
+            title: Suspected spoofed drones
+            content: |
+              {% set s = 'sensor.airspace_flag_spoof_suspect' -%}
+              {% set rows = state_attr(s,'aircraft') or [] -%}
+              {% if rows -%}
+              | UAS ID | Make / Model | Dist (nm) | Brg |
+              |---|---|--:|--:|
+              {% for a in rows -%}
+              | `{{ a.track_id }}` | {{ (a.db_metadata.get('make') ~ ' ' ~ a.db_metadata.get('model')) if a.db_metadata.get('make') else '—' }} | {{ '%.1f'|format(a.distance_nm) if a.distance_nm is not none else '—' }} | {{ a.bearing_deg|round(0)|int if a.bearing_deg is not none else '—' }} |
+              {% endfor -%}
+              {% else -%}
+              None right now.
+              {% endif -%}
           # Quick links to your receiver + drone web UIs. REPLACE the URLs.
           - type: shortcut
             label: Flight Map (1090/978)

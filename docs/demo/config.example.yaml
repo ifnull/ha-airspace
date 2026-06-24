@@ -1,0 +1,103 @@
+# ha-airspace — DEMO configuration TEMPLATE (for README screenshots)
+#
+# Copy this to `config.yaml` (which is git-ignored, so your broker creds never
+# get committed) and edit `mqtt`:
+#
+#   cp docs/demo/config.example.yaml docs/demo/config.yaml
+#   # edit docs/demo/config.yaml -> set mqtt.broker / username / password
+#
+# Drives the whole pipeline from the curated fixtures in this directory, served
+# over HTTP by serve.py, so every feature lights up with NO personal data:
+# the watchpoint is the White House and all aircraft/drones are synthetic.
+#
+#   cd docs/demo && python3 serve.py           # serves the fixtures on :8765
+#   ha-airspace --config docs/demo/config.yaml # in another shell
+#
+# Two features make a one-time PUBLIC lookup (no personal data): photos
+# (Planespotters, by the nearest aircraft's hex) and drone_registry (FAA UAS, by
+# the real DJI serials in remoteid.json). Everything else is fully local.
+#
+# Point `mqtt.broker` at your Home Assistant / broker, then load
+# docs/dashboard.example.yaml as a dashboard to capture the screenshots.
+
+service:
+  poll_interval_s: 1.0
+  log_level: info
+
+watchpoints:
+  - name: home
+    lat: 38.8977          # The White House — stand-in observer, never your real location
+    lon: -77.0365
+    elevation_m: 18       # ~Washington DC ground; enables AGL-based alert gates
+
+mqtt:
+  broker: homeassistant.local   # <-- EDIT: your broker / HA host
+  port: 1883
+  # username: mqtt_user         # uncomment if your broker requires auth
+  # password: mqtt_pass
+  base_topic: airspace
+  discovery_prefix: homeassistant
+  discovery_enabled: true
+
+# Receiver/feed names match the entity ids docs/dashboard.example.yaml expects
+# (rx-1090 -> sensor.airspace_receiver_rx_1090_*, etc.). Two bands so the
+# "Receivers & feeds" card is fully populated.
+receivers:
+  - name: rx-1090
+    url: http://127.0.0.1:8765/aircraft.json
+    band: "1090"
+    enabled: true
+  - name: rx-978
+    url: http://127.0.0.1:8765/aircraft978.json
+    band: "978"
+    enabled: true
+
+remoteid:
+  - name: dump3411
+    url: http://127.0.0.1:8765/remoteid.json
+    enabled: true
+
+# Flags named to match docs/dashboard.example.yaml (emergency / military /
+# interesting). Matched here by squawk / callsign / type so the demo needs NO
+# reference-DB download — the cards look identical to the DB-backed setup (only
+# the "Notes" column, which surfaces db_metadata, stays blank).
+enrichment:
+  flags:
+    emergency:
+      squawks: ["7500", "7600", "7700"]
+    military:
+      patterns: ["RCH", "EVAC", "GAF", "RRR", "SAM", "REACH"]
+    interesting:
+      types: ["GLEX", "GLF6", "E55P", "C750", "GL7T"]
+  alerts:
+    cooldown_s: 60
+    rules:
+      - name: emergency
+        match:
+          flags: ["emergency"]
+      - name: military_close   # binary_sensor.airspace_alert_military_close (dashboard banner)
+        match:
+          flags: ["military"]
+          max_distance_nm: 30
+          watchpoint: home
+      - name: interesting
+        match:
+          flags: ["interesting"]
+          max_distance_nm: 30
+          watchpoint: home
+      - name: drone_conflict
+        match:
+          max_closest_approach_nm: 5
+          max_alt_agl_ft: 1000
+          watchpoint: home
+
+# Public lookups (no personal data) — see header.
+photos:
+  enabled: true
+drone_registry:
+  enabled: true
+
+# Tier-1 Remote ID spoof flag — lights up `spoof_suspect` on the 0x00 serial and
+# the two drones sharing self_id "Spoofing test".
+spoof:
+  enabled: true
