@@ -9,6 +9,24 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [1.0.1] — 2026-08-21
+Docs only — no functional or schema change.
+
+### Added
+- Example `drone_nearby` alert rule (`config.example.yaml`,
+  `docs/automations.example.yaml`): `drone_conflict`'s predictive
+  `max_closest_approach_nm`/`within_eta_s` gate never fires for a
+  hovering/loitering drone (no sustained closing vector → no projected ETA);
+  `drone_nearby` is a pure-presence companion rule for that case.
+
+### Fixed
+- `docs/dashboard.example.yaml`: the top-of-file note only mentioned the
+  drone-operator marker as needing a manual template sensor, implying the
+  aircraft/drone map markers worked out of the box via discovery. All three
+  (`_aircraft_map`, `_drone_map`, `_drone_operator_map`) require the
+  `configuration.yaml` template block — omitting it leaves the Map card
+  showing nothing but the home zone.
+
 ## [1.0.0] — 2026-06-23
 First stable release. The 0.x series built and proved the full pipeline against
 live receivers + a real broker over a quarter of use; 1.0.0 marks the published
