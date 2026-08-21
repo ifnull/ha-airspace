@@ -91,7 +91,10 @@ class Publisher:
         # json-decode state_topic payloads before the value_template runs.
         # We only need to send the clearing empty payload once, on the
         # transition into "empty" — not on every subsequent tick while it
-        # stays empty.
+        # stays empty. Cleared on (re)connect, same reasoning as
+        # _last_receiver_status: a broker that dropped its retained state
+        # needs the clearing payload re-sent even though our in-process view
+        # never changed.
         self._nearest_was_empty: bool = False
         self._nearest_drone_was_empty: bool = False
 
@@ -111,9 +114,12 @@ class Publisher:
 
         The merger wires this into ``MqttClient.on_connect`` at startup.
         """
-        # Forget per-receiver status so the next poll republishes it — the
+        # Forget per-receiver status, and whether nearest/nearest_drone were
+        # already latched empty, so the next poll republishes them — the
         # broker may have lost its retained state across this (re)connect.
         self._last_receiver_status.clear()
+        self._nearest_was_empty = False
+        self._nearest_drone_was_empty = False
         await self._client.publish(
             f"{self._base}/status",
             b"online",
