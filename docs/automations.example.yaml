@@ -194,6 +194,14 @@
 #
 #    (b) This automation fires when the rule turns on. The alert info carries
 #        alt_baro_ft, distance/bearing, predicted closest approach + ETA.
+#
+#    NOTE: drone_conflict's max_closest_approach_nm/within_eta_s require a
+#    sustained closing vector (ground_speed_kt + track_deg projecting toward
+#    the watchpoint). A hovering or loitering drone — the common case, not a
+#    plane on approach — has near-zero speed or no consistent heading, so it
+#    never gets a projected ETA and this rule never fires for it, no matter
+#    how close/low it actually is. Pair it with drone_nearby (#6 below), a
+#    pure-presence rule with no inbound requirement.
 # ---------------------------------------------------------------------------
 - id: airspace_drone_conflict_notify
   alias: "Airspace · drone conflict · notify"
@@ -216,6 +224,61 @@
           {% set cpa = state_attr(a,'predicted_closest_approach_nm') -%}
           {% set eta = state_attr(a,'predicted_eta_to_home_s') -%}
           {% if cpa is not none %}· within {{ '%.1f'|format(cpa) }} nm{% endif %}{% if eta is not none %} in ~{{ (eta/60)|round(0)|int }} min{% endif %}
+        data:
+          push:
+            interruption-level: time-sensitive   # iOS: bypass focus/silent
+
+# ---------------------------------------------------------------------------
+# 6. Drone nearby — push when a drone is close and low RIGHT NOW, regardless of
+#    whether it's on a closing vector. Catches the hovering/loitering case
+#    drone_conflict's predictive gate misses (see the NOTE on #5).
+#
+#    (a) Add this rule alongside drone_conflict in the add-on's extra_config:
+#
+#          - name: drone_nearby
+#            match:
+#              max_alt_agl_ft: 1640        # ~500 m: typical DJI max-altitude ceiling
+#              max_distance_nm: 0.34       # ~630 m: tight — this is presence, not
+#                                          #   early warning, so keep it close
+#              watchpoint: home
+#
+#    (b) Message content pulls from sensor.airspace_nearest_drone (ua_type,
+#        self_id, agl_ft, operator_lat, db_metadata make/model), NOT from the
+#        alert entity's own attributes — the alert `info` topic is generic
+#        AircraftPayload-shaped (flight/hex/registration/squawk/...) and
+#        carries none of the drone-specific fields. See the code TODO next to
+#        `_alert_info` in mqtt/publisher.py for the known gap this creates
+#        with multiple simultaneous drones.
+# ---------------------------------------------------------------------------
+- id: airspace_drone_nearby_notify
+  alias: "Airspace · drone nearby · notify"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.airspace_alert_drone_nearby
+      to: "on"
+  action:
+    - service: notify.mobile_app_phone
+      data:
+        title: "🛸 Drone nearby"
+        # Same identity-degradation + distance/AGL rendering as #4 — pulled
+        # from sensor.airspace_nearest_drone, not the alert entity (see NOTE
+        # above). Known limitation: if a SECOND, farther drone is what
+        # actually tripped this rule, the message still describes the
+        # nearest one, not the triggering track.
+        message: >-
+          {% set s = 'sensor.airspace_nearest_drone' %}
+          {% set db = state_attr(s, 'db_metadata') or {} %}
+          {% set make = db.get('make') %}
+          {% set ua = state_attr(s, 'ua_type') %}
+          {% set sid = state_attr(s, 'self_id') %}
+          {% set nm = (state_attr(s, 'distance_to') or {}).get('home') %}
+          {%- if make %}{{ make }} {{ db.get('model') }}
+          {%- elif ua %}{{ ua | capitalize }}
+          {%- elif sid %}Drone (self-ID “{{ sid }}”)
+          {%- else %}Drone{% endif %}
+          {%- if nm is not none %} · {{ nm | round(1) }} nm{% endif %}
+          {%- if state_attr(s, 'agl_ft') is not none %} · {{ state_attr(s, 'agl_ft') | round }} ft AGL{% endif %}
+          {%- if state_attr(s, 'operator_lat') is not none %} · operator located{% endif %}
         data:
           push:
             interruption-level: time-sensitive   # iOS: bypass focus/silent
