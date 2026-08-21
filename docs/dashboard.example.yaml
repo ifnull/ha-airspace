@@ -14,8 +14,13 @@
 # Notes:
 #   - Tile / marker popups need the HACS `browser_mod` add-on. Without it the
 #     tiles still show counts; tap just opens the default more-info.
-#   - The map's drone-operator marker needs a template sensor — see the
-#     "configuration.yaml" block at the very bottom.
+#   - REQUIRED for the map to show anything but your home zone: sensor.airspace
+#     _aircraft_map / _drone_map / _drone_operator_map are NOT created by
+#     ha-airspace or MQTT discovery — they're plain HA template sensors you add
+#     yourself. See the "configuration.yaml" block at the very bottom of this
+#     file, paste it into your actual configuration.yaml (not the dashboard
+#     editor), and restart HA. Skipping this is the #1 reason people report an
+#     empty map.
 #   - Flight/hex link to globe.adsbexchange.com; flags render as country emoji.
 
 title: Airspace
