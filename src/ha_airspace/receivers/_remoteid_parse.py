@@ -12,7 +12,8 @@ merger / enrichment / publish pipeline as ``band="remoteid"`` tracks:
   converts, per FEED.md).
 * ``rssi`` -> ``rssi_dbfs``; ``seen``/``seen_pos`` -> the staleness fields.
 * drone-only data (``id_type``, ``ua_type``, ``agl_ft``, ``rid_source``, and
-  the whole ``operator`` block) -> a ``DroneInfo`` on ``obs.drone``.
+  the whole ``operator`` block incl. ``operator.location_type``) -> a
+  ``DroneInfo`` on ``obs.drone``.
 
 The feed envelope mirrors dump1090's idioms (``now``, ``messages``, a polled
 array) on purpose, so the same ``MessageRateTracker`` derives messages/sec.
@@ -127,6 +128,7 @@ def _parse_one(
         rid_source=_get_str(raw, "rid_source"),
         operator_lat=_get_float(operator, "lat"),
         operator_lon=_get_float(operator, "lon"),
+        operator_location_type=_get_str(operator, "location_type"),
         operator_id=_get_str(operator, "id"),
         operator_alt_takeoff_ft=_get_float(operator, "alt_takeoff_ft"),
     )

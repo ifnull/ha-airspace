@@ -101,6 +101,14 @@ class DroneInfo:
     # --- Operator (present once a System/Operator-ID message is seen) ----
     operator_lat: float | None = None
     operator_lon: float | None = None
+    operator_location_type: str | None = None
+    """``takeoff`` | ``live_gnss`` | ``fixed`` (dump3411 FEED.md). What
+    ``operator_lat``/``operator_lon`` actually represent — **not always a live
+    operator position**. ``takeoff`` is the drone's own launch point; some
+    transmitters toggle this across messages, which otherwise looks like the
+    operator coordinates randomly jumping between the drone's start point and
+    its actual position. ``None`` on older/non-conforming producers that don't
+    send it (treat as unknown, not as "live")."""
     operator_id: str | None = None
     operator_alt_takeoff_ft: float | None = None
 

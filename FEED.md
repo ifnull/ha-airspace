@@ -88,6 +88,7 @@ already saturates the single core — see "Producer requirements".)
 |---|---|---|:--:|---|
 | `lat` | number | deg |  | Operator (pilot/ground-station) latitude. The novel, security-relevant field. |
 | `lon` | number | deg |  | Operator longitude. |
+| `location_type` | string | — |  | `takeoff` \| `live_gnss` \| `fixed` — what `lat`/`lon` actually represent (System msg byte 1, bits 0-1). **`takeoff` is the drone's own launch point, not a live operator position.** Some transmitters toggle this across messages, so a consumer that always treats `lat`/`lon` as "where the operator is standing right now" will see it jump between the drone's launch point and the operator's actual position. Omit if the producer doesn't decode it — a consumer MUST NOT assume omitted means `live_gnss`; treat unknown as unknown. |
 | `id` | string | — |  | Operator ID (often a CAA operator registration). |
 | `alt_takeoff_ft` | number | ft |  | Takeoff altitude, geometric. |
 | `seen` | number | s |  | Seconds since the last System/Operator-ID message, relative to `now` — staleness of this whole block. |
@@ -158,6 +159,7 @@ consumer keeps the track (identity is known) and marks position unavailable.
       "operator": {
         "lat": 40.6900,
         "lon": -74.0100,
+        "location_type": "live_gnss",
         "id": "FA3OPERATOR123",
         "alt_takeoff_ft": 50,
         "seen": 2.3

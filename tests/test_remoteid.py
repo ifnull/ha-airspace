@@ -99,7 +99,23 @@ class TestFieldMapping:
         assert d.drone is not None
         assert d.drone.operator_lat == 40.7165
         assert d.drone.operator_lon == -73.9990
+        assert d.drone.operator_location_type == "live_gnss"
         assert d.drone.operator_alt_takeoff_ft == -3251.3
+
+    def test_operator_location_type_takeoff(self) -> None:
+        # Some transmitters report the drone's own launch point under the same
+        # operator.lat/lon field, distinguished only by location_type — must not
+        # be mistaken for a live operator fix.
+        obs, _ = parse_remoteid_json(_BASIC, receiver_name="dump3411", observed_at=_now())
+        d = next(o for o in obs if o.track_id == "Spoofed_Serial_40456")
+        assert d.drone is not None
+        assert d.drone.operator_location_type == "takeoff"
+
+    def test_operator_location_type_absent_when_no_operator_block(self) -> None:
+        obs, _ = parse_remoteid_json(_BASIC, receiver_name="dump3411", observed_at=_now())
+        d = next(o for o in obs if o.track_id == "BASICID-NO-POS")
+        assert d.drone is not None
+        assert d.drone.operator_location_type is None
 
     def test_positionless_drone_kept(self) -> None:
         # Basic ID heard before any Location: valid, identity known, no position.

@@ -915,7 +915,7 @@ enriched/security record; the raw track stays in dump3411.
   | `track_id` (UAS id), `first_seen`, `last_seen` | merger/journal |
   | `id_type`, `ua_type`, `self_id` | `DroneInfo` |
   | `make`, `model`, `status` | `db_metadata` (FAA) |
-  | `operator_lat`, `operator_lon`, `operator_alt_takeoff_ft` | `DroneInfo` |
+  | `operator_lat`, `operator_lon`, `operator_location_type`, `operator_alt_takeoff_ft` | `DroneInfo` |
   | `min_agl_ft`, `closest_nm`, `closest_bearing` | computed vs primary watchpoint over the sighting |
   | `rid_source`, `max_rssi_dbfs` | observation |
   | `flags` (incl. `spoof_suspect`) | enrichment |
