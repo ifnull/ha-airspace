@@ -552,6 +552,7 @@ def _make_drone_state(track_id: str = "Spoofed_Serial_1") -> AircraftState:
             rid_source="wifi_beacon",
             operator_lat=40.7165,
             operator_lon=-73.9990,
+            operator_location_type="live_gnss",
             operator_id="OP123",
             operator_alt_takeoff_ft=50.0,
         ),
@@ -580,6 +581,7 @@ class TestPublishDrone:
         assert body["agl_ft"] == 246.1
         assert body["operator_lat"] == 40.7165
         assert body["operator_lon"] == -73.9990
+        assert body["operator_location_type"] == "live_gnss"
         assert body["operator_id"] == "OP123"
         assert body["id_type"] == "serial"
         assert body["rid_source"] == "wifi_beacon"

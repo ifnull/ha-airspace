@@ -691,7 +691,13 @@ def _drone_obs(track_id: str = "Drone1", *, at: datetime = _T0) -> AircraftObser
         lat=30.34,
         lon=-75.98,
         alt_geom_ft=400,
-        drone=DroneInfo(id_type="serial", agl_ft=300.0, operator_lat=30.33, operator_lon=-75.99),
+        drone=DroneInfo(
+            id_type="serial",
+            agl_ft=300.0,
+            operator_lat=30.33,
+            operator_lon=-75.99,
+            operator_location_type="live_gnss",
+        ),
     )
 
 
@@ -820,6 +826,7 @@ class TestDroneDetectionLog:
         assert entry["id_type"] == "serial"
         assert entry["agl_ft"] == 300.0
         assert entry["operator_located"] is True
+        assert entry["operator_location_type"] == "live_gnss"
         assert entry["distance_nm"] is not None  # positioned -> distance to home
 
     async def test_relogs_after_purge(self, publisher: FakePublisher, clock: Clock) -> None:

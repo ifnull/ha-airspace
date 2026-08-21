@@ -400,6 +400,7 @@ class AircraftTracker:
             distance_nm=state.distance_to.get(self._primary.name),
             agl_ft=drone.agl_ft if drone else None,
             operator_located=bool(drone and drone.operator_lat is not None),
+            operator_location_type=drone.operator_location_type if drone else None,
         )
 
     async def _publish_summary(self) -> None:

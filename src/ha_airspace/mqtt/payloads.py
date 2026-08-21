@@ -199,7 +199,10 @@ class DronePayload(BaseModel):
     type, native AGL, transport, and — the security-relevant part — operator
     location) that have no place on ``AircraftPayload``. Distance/bearing are
     the drone's own; operator distance/bearing are computed by the consumer
-    from ``operator_lat``/``operator_lon`` if wanted.
+    from ``operator_lat``/``operator_lon`` if wanted. Check
+    ``operator_location_type`` before treating that pair as a live operator
+    fix — some producers report the drone's own takeoff point under the same
+    field.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -234,6 +237,11 @@ class DronePayload(BaseModel):
     # --- Operator (the novel, security-relevant entity) ---------------
     operator_lat: float | None = None
     operator_lon: float | None = None
+    operator_location_type: str | None = None
+    """``takeoff`` | ``live_gnss`` | ``fixed`` — what ``operator_lat/lon``
+    actually is; ``takeoff`` is the drone's own launch point, not a live
+    operator fix. See ``DroneInfo.operator_location_type``. ``None`` on
+    producers that don't send it — treat as unknown, not as "live"."""
     operator_id: str | None = None
     operator_alt_takeoff_ft: float | None = None
 
@@ -275,6 +283,7 @@ class DronePayload(BaseModel):
             vertical_rate_fpm=canonical.vertical_rate_fpm,
             operator_lat=drone.operator_lat if drone else None,
             operator_lon=drone.operator_lon if drone else None,
+            operator_location_type=drone.operator_location_type if drone else None,
             operator_id=drone.operator_id if drone else None,
             operator_alt_takeoff_ft=drone.operator_alt_takeoff_ft if drone else None,
             rid_source=drone.rid_source if drone else None,

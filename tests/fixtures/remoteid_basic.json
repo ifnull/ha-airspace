@@ -23,6 +23,7 @@
       "operator": {
         "lat": 47.3771016,
         "lon": 8.5304485,
+        "location_type": "takeoff",
         "alt_takeoff_ft": -3251.3,
         "seen": 0.5
       }
@@ -46,6 +47,7 @@
       "operator": {
         "lat": 40.7165,
         "lon": -73.9990,
+        "location_type": "live_gnss",
         "alt_takeoff_ft": -3251.3,
         "seen": 2.0
       }

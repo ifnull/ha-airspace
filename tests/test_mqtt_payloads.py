@@ -396,6 +396,25 @@ class TestDroneSelfId:
     def test_self_id_none_by_default(self) -> None:
         assert DronePayload.from_state(_make_drone_state()).self_id is None
 
+
+class TestDroneOperatorLocationType:
+    def test_none_by_default(self) -> None:
+        # _make_drone_state's DroneInfo doesn't set operator_location_type.
+        assert DronePayload.from_state(_make_drone_state()).operator_location_type is None
+
+    def test_carried_through_from_drone_info(self) -> None:
+        obs = AircraftObservation(
+            track_id="Drone1",
+            hex=None,
+            non_icao=True,
+            observed_at=_now(),
+            seen_by="dump3411",
+            band="remoteid",
+            drone=DroneInfo(id_type="serial", operator_location_type="takeoff"),
+        )
+        state = AircraftState.from_first_observation(obs)
+        assert DronePayload.from_state(state).operator_location_type == "takeoff"
+
     def test_self_id_flows_through(self) -> None:
         obs = AircraftObservation(
             track_id="1581F5BK000000000001",

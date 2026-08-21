@@ -147,7 +147,11 @@
         # UNTRUSTED and only shown as a last-resort label when nothing else
         # identifies the drone — so a resolved DJI never gets tagged with it.
         # Distance comes from the distance_to attribute (rounded, guarded), not
-        # states(), so it never renders "unknown nm".
+        # states(), so it never renders "unknown nm". operator_location_type:
+        # dump3411 flags when operator_lat/lon is actually the drone's own
+        # takeoff point, not a live operator fix (some transmitters toggle
+        # this across messages) — surface that distinction, don't blanket-
+        # label every reading "operator located".
         message: >-
           {% set s = 'sensor.airspace_nearest_drone' %}
           {% set db = state_attr(s, 'db_metadata') or {} %}
@@ -155,13 +159,14 @@
           {% set ua = state_attr(s, 'ua_type') %}
           {% set sid = state_attr(s, 'self_id') %}
           {% set nm = (state_attr(s, 'distance_to') or {}).get('home') %}
+          {% set loc_type = state_attr(s, 'operator_location_type') %}
           {%- if make %}{{ make }} {{ db.get('model') }}
           {%- elif ua %}{{ ua | capitalize }}
           {%- elif sid %}Drone (self-ID “{{ sid }}”)
           {%- else %}Drone{% endif %}
           {%- if nm is not none %} · {{ nm | round(1) }} nm{% endif %}
           {%- if state_attr(s, 'agl_ft') is not none %} · {{ state_attr(s, 'agl_ft') | round }} ft AGL{% endif %}
-          {%- if state_attr(s, 'operator_lat') is not none %} · operator located{% endif %}
+          {%- if state_attr(s, 'operator_lat') is not none %} · {{ 'operator takeoff point' if loc_type == 'takeoff' else 'operator located' }}{% endif %}
 
 # ---------------------------------------------------------------------------
 # 5. Drone conflict — push when a LOW aircraft is projected to pass within your
@@ -272,13 +277,14 @@
           {% set ua = state_attr(s, 'ua_type') %}
           {% set sid = state_attr(s, 'self_id') %}
           {% set nm = (state_attr(s, 'distance_to') or {}).get('home') %}
+          {% set loc_type = state_attr(s, 'operator_location_type') %}
           {%- if make %}{{ make }} {{ db.get('model') }}
           {%- elif ua %}{{ ua | capitalize }}
           {%- elif sid %}Drone (self-ID “{{ sid }}”)
           {%- else %}Drone{% endif %}
           {%- if nm is not none %} · {{ nm | round(1) }} nm{% endif %}
           {%- if state_attr(s, 'agl_ft') is not none %} · {{ state_attr(s, 'agl_ft') | round }} ft AGL{% endif %}
-          {%- if state_attr(s, 'operator_lat') is not none %} · operator located{% endif %}
+          {%- if state_attr(s, 'operator_lat') is not none %} · {{ 'operator takeoff point' if loc_type == 'takeoff' else 'operator located' }}{% endif %}
         data:
           push:
             interruption-level: time-sensitive   # iOS: bypass focus/silent

@@ -138,7 +138,8 @@ views:
                           - **Distance:** {{ '%.1f'|format(states(s)|float) }} nm{{ ' · brg ' ~ brg|round(0)|int ~ '°' if brg is not none }}
                           - **Height (AGL):** {{ agl|round(0)|int if agl is not none else '—' }} ft
                           - **ID type:** {{ state_attr(s,'id_type') or '—' }}
-                          - **Operator:** {{ 'located' if state_attr(s,'operator_lat') is not none else 'not broadcast' }}
+                          {% set loc_type = state_attr(s,'operator_location_type') -%}
+                          - **Operator:** {{ 'takeoff point (not live)' if loc_type == 'takeoff' else 'located' if state_attr(s,'operator_lat') is not none else 'not broadcast' }}
                           - **FAA status:** {{ db.get('status') or '—' }}
                           {% endif -%}
               - entity: sensor.airspace_nearest_aircraft
@@ -432,16 +433,25 @@ views:
 #       # otherwise this pin would persist at stale coordinates (the operator_id
 #       # `or 'operator'` fallback keeps the sensor from going unavailable on its
 #       # own, so the availability gate is what clears the marker).
+#       #
+#       # CAUTION: operator_lat/lon is not always a live operator fix — some
+#       # transmitters report the drone's own TAKEOFF point under the same
+#       # field (dump3411 FEED.md `operator.location_type`). The icon below
+#       # flags that case (mdi:map-marker-radius) instead of pinning it as
+#       # mdi:account-alert like a genuine live operator position — don't drop
+#       # this check, or a takeoff-point reading reads as "operator is here."
 #       - name: Airspace Drone Operator
 #         unique_id: airspace_drone_operator_map
 #         state: "{{ state_attr('sensor.airspace_nearest_drone','operator_id') or 'operator' }}"
 #         availability: >-
 #           {{ states('sensor.airspace_nearest_drone') not in ['unknown','unavailable']
 #              and state_attr('sensor.airspace_nearest_drone','operator_lat') is not none }}
-#         icon: mdi:account-alert
+#         icon: >-
+#           {{ 'mdi:map-marker-radius' if state_attr('sensor.airspace_nearest_drone','operator_location_type') == 'takeoff' else 'mdi:account-alert' }}
 #         attributes:
 #           latitude: "{{ state_attr('sensor.airspace_nearest_drone','operator_lat') }}"
 #           longitude: "{{ state_attr('sensor.airspace_nearest_drone','operator_lon') }}"
+#           location_type: "{{ state_attr('sensor.airspace_nearest_drone','operator_location_type') }}"
 #
 # Note: the flag markers (sensor.airspace_flag_military / _interesting) are
 # plotted directly and show their own icon (mdi:airplane-alert) via label_mode.
