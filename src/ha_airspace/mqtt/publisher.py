@@ -414,6 +414,16 @@ def _alert_info(state: AircraftState, photo: PhotoPayload | None) -> dict[str, A
     """Compact summary of an alert's triggering track, for the per-rule
     ``info`` topic that the HA binary_sensor exposes as attributes. ``photo``
     maps to ``entity_picture`` so a picture/glance card renders the thumbnail."""
+    # TODO(alert-info-drone-fields): this is AircraftPayload-shaped only — no
+    # ua_type / self_id / agl_ft / operator_lat / db_metadata (make/model) for
+    # a band="remoteid" trigger. A drone-triggered alert (e.g. drone_conflict,
+    # drone_nearby) currently can't render its own identity/AGL/operator
+    # detail from this topic; docs/automations.example.yaml works around it by
+    # having the automation cross-reference sensor.airspace_nearest_drone
+    # instead, which silently mismatches when a second, non-nearest drone is
+    # the one that actually triggered the rule. Fix: branch on state.canonical
+    # .drone here (mirroring DronePayload.from_state) and merge the RID fields
+    # in, so the alert info is self-sufficient for drone tracks.
     canonical = state.canonical
     info: dict[str, Any] = {
         "flight": canonical.flight,

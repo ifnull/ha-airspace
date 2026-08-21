@@ -178,6 +178,25 @@ receivers:
 #           max_alt_agl_ft: 10000          # ...and low (compose to cut cruise traffic)
 #           # predictive: relative to the primary watchpoint; only fires while the
 #           # track is approaching. Near an airport, tighten alt/distance to taste.
+#       - name: drone_conflict            # early warning: a track flying INBOUND
+#         match:                          # toward home, low and close (see FEED.md)
+#           max_closest_approach_nm: 0.5
+#           max_alt_agl_ft: 1000
+#           within_eta_s: 300
+#           watchpoint: home
+#       - name: drone_nearby              # catches a hovering/loitering drone that
+#         match:                          # drone_conflict's predictive gate misses:
+#           max_alt_agl_ft: 1000          # max_closest_approach_nm/within_eta_s need a
+#           max_distance_nm: 0.5          # sustained closing vector (ground_speed_kt +
+#           watchpoint: home              # track_deg); a drone with near-zero speed or
+#                                          # no consistent heading toward the watchpoint
+#                                          # never gets a projected ETA, so it can be
+#                                          # arbitrarily close/low and still never match
+#                                          # drone_conflict alone. This rule is pure
+#                                          # presence — no inbound requirement — so pair
+#                                          # the two: drone_conflict for early warning on
+#                                          # a genuine approach, drone_nearby for "one's
+#                                          # just sitting there right now."
 
 # --------------------------------------------------------------------------
 # journal — SQLite history (Phase 2b). Optional; OMIT to disable persistence,
