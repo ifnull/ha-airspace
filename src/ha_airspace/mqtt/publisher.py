@@ -84,6 +84,20 @@ class Publisher:
         # broker that dropped its retained state gets a fresh republish.
         self._last_receiver_status: dict[str, str] = {}
 
+        # Whether the last "nearest" publish was the empty-retained sentinel
+        # (no aircraft/drone in range). Re-publishing empty bytes every tick
+        # is both wasteful and spams HA's MQTT integration with "Erroneous
+        # JSON" warnings once per publish interval, since it tries to
+        # json-decode state_topic payloads before the value_template runs.
+        # We only need to send the clearing empty payload once, on the
+        # transition into "empty" — not on every subsequent tick while it
+        # stays empty. Cleared on (re)connect, same reasoning as
+        # _last_receiver_status: a broker that dropped its retained state
+        # needs the clearing payload re-sent even though our in-process view
+        # never changed.
+        self._nearest_was_empty: bool = False
+        self._nearest_drone_was_empty: bool = False
+
     # ------------------------------------------------------------------
     # On-connect hook (status:online + discovery republish)
     # ------------------------------------------------------------------
@@ -100,9 +114,12 @@ class Publisher:
 
         The merger wires this into ``MqttClient.on_connect`` at startup.
         """
-        # Forget per-receiver status so the next poll republishes it — the
+        # Forget per-receiver status, and whether nearest/nearest_drone were
+        # already latched empty, so the next poll republishes them — the
         # broker may have lost its retained state across this (re)connect.
         self._last_receiver_status.clear()
+        self._nearest_was_empty = False
+        self._nearest_drone_was_empty = False
         await self._client.publish(
             f"{self._base}/status",
             b"online",
@@ -272,14 +289,24 @@ class Publisher:
             retain=True,
             topic_class="summary",
         )
-        nearest_payload: bytes | str
-        nearest_payload = DronePayload.from_state(nearest).model_dump_json() if nearest else b""
-        await self._client.publish(
-            f"{self._base}/summary/nearest_drone",
-            nearest_payload,
-            retain=True,
-            topic_class="summary",
-        )
+        if nearest is not None:
+            nearest_payload: bytes | str = DronePayload.from_state(nearest).model_dump_json()
+            self._nearest_drone_was_empty = False
+            await self._client.publish(
+                f"{self._base}/summary/nearest_drone",
+                nearest_payload,
+                retain=True,
+                topic_class="summary",
+            )
+        elif not self._nearest_drone_was_empty:
+            # First tick with no drone in range: clear the retained topic once.
+            self._nearest_drone_was_empty = True
+            await self._client.publish(
+                f"{self._base}/summary/nearest_drone",
+                b"",
+                retain=True,
+                topic_class="summary",
+            )
         return True
 
     # ------------------------------------------------------------------
@@ -326,17 +353,29 @@ class Publisher:
             topic_class="summary",
         )
 
-        nearest_payload: bytes | str
         if nearest is not None:
-            nearest_payload = AircraftPayload.from_state(nearest, nearest_photo).model_dump_json()
-        else:
-            nearest_payload = b""
-        await self._client.publish(
-            f"{self._base}/summary/nearest",
-            nearest_payload,
-            retain=True,
-            topic_class="summary",
-        )
+            nearest_payload: bytes | str = AircraftPayload.from_state(
+                nearest, nearest_photo
+            ).model_dump_json()
+            self._nearest_was_empty = False
+            await self._client.publish(
+                f"{self._base}/summary/nearest",
+                nearest_payload,
+                retain=True,
+                topic_class="summary",
+            )
+        elif not self._nearest_was_empty:
+            # First tick with no aircraft in range: clear the retained topic
+            # once. Republishing b"" every tick made HA's MQTT integration
+            # log "Erroneous JSON" once per publish interval, since it tries
+            # to json-decode state_topic payloads before value_template runs.
+            self._nearest_was_empty = True
+            await self._client.publish(
+                f"{self._base}/summary/nearest",
+                b"",
+                retain=True,
+                topic_class="summary",
+            )
 
         flags = count_by_flag if count_by_flag is not None else {}
         await self._client.publish(

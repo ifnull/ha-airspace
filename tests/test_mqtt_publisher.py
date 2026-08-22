@@ -462,6 +462,38 @@ class TestPublishSummary:
         clock.advance(1.0)
         assert await pub.publish_summary(count=2, nearest=None) is True
 
+    async def test_nearest_empty_republished_only_once_across_ticks(
+        self, fake_client: FakeMqttClient, clock: FakeClock
+    ) -> None:
+        # Republishing b"" every tick makes HA's MQTT integration try to
+        # json-decode it (the nearest sensor's value_template reads
+        # value_json) and log "Erroneous JSON" continuously while the
+        # airspace is empty. Only the transition into empty should publish.
+        pub = _make_publisher(fake_client, clock=clock)
+        await pub.publish_summary(count=0, nearest=None)
+        clock.advance(1.0)  # clear the summary throttle between ticks
+        await pub.publish_summary(count=0, nearest=None)
+        nearest_calls = [
+            c for c in fake_client.publishes if c["topic"] == "airspace/summary/nearest"
+        ]
+        assert len(nearest_calls) == 1
+
+    async def test_nearest_empty_republishes_after_reconnect(
+        self, fake_client: FakeMqttClient, clock: FakeClock
+    ) -> None:
+        # A broker restart can drop retained state even though our
+        # in-process "already sent empty" latch didn't change — on_connect
+        # must reset it so the clearing payload gets re-sent.
+        pub = _make_publisher(fake_client, clock=clock)
+        await pub.publish_summary(count=0, nearest=None)
+        await pub.on_connect()  # reconnect
+        clock.advance(1.0)
+        await pub.publish_summary(count=0, nearest=None)
+        nearest_calls = [
+            c for c in fake_client.publishes if c["topic"] == "airspace/summary/nearest"
+        ]
+        assert len(nearest_calls) == 2
+
 
 # ---------------------------------------------------------------------------
 # Receiver topics
@@ -611,6 +643,33 @@ class TestPublishDrone:
         call = next(c for c in fake_client.publishes if c["topic"].endswith("nearest_drone"))
         assert call["payload"] == b""
         assert call["retain"] is True
+
+    async def test_drone_nearest_empty_republished_only_once_across_ticks(
+        self, fake_client: FakeMqttClient, clock: FakeClock
+    ) -> None:
+        # Same "Erroneous JSON" spam as the aircraft nearest topic — only the
+        # transition into empty should publish.
+        pub = _make_publisher(fake_client, clock=clock)
+        await pub.publish_drone_summary(count=0, nearest=None)
+        clock.advance(1.0)  # clear the summary throttle between ticks
+        await pub.publish_drone_summary(count=0, nearest=None)
+        nearest_calls = [
+            c for c in fake_client.publishes if c["topic"] == "airspace/summary/nearest_drone"
+        ]
+        assert len(nearest_calls) == 1
+
+    async def test_drone_nearest_empty_republishes_after_reconnect(
+        self, fake_client: FakeMqttClient, clock: FakeClock
+    ) -> None:
+        pub = _make_publisher(fake_client, clock=clock)
+        await pub.publish_drone_summary(count=0, nearest=None)
+        await pub.on_connect()  # reconnect
+        clock.advance(1.0)
+        await pub.publish_drone_summary(count=0, nearest=None)
+        nearest_calls = [
+            c for c in fake_client.publishes if c["topic"] == "airspace/summary/nearest_drone"
+        ]
+        assert len(nearest_calls) == 2
 
 
 # ---------------------------------------------------------------------------
