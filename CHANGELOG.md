@@ -9,6 +9,20 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [1.1.2] — 2026-08-30
+Docs only — no functional or schema change.
+
+### Fixed
+- `docs/automations.example.yaml`: `drone_detected` (#4) fired on the same
+  poll as `drone_conflict`/`drone_nearby` (#5/#6) for essentially every
+  close-in drone, reading as a duplicate push. `tracker.tick()` evaluates
+  alerts before publishing the summary, so the alert `binary_sensor`s are
+  already updated by the time `drone_detected`'s trigger fires on the same
+  tick — and a drone flying near the operator's own watchpoint typically
+  satisfies the other rules' thresholds the moment it's positioned. Added a
+  condition so `drone_detected` only fires for drones not already covered by
+  `drone_conflict`/`drone_nearby`.
+
 ## [1.1.1] — 2026-08-30
 ### Added
 - `faulthandler` is enabled at startup, and `SIGUSR1` dumps every thread's
@@ -328,4 +342,4 @@ Initial development. Established the full pipeline and contracts:
   optional Prometheus `/metrics`.
 - Pydantic v2 config (strict, fail-fast), structlog logging.
 
-[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v1.1.1...HEAD
