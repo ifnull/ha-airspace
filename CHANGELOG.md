@@ -9,10 +9,17 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
-## [1.0.1] — 2026-08-21
-Docs only — no functional or schema change.
-
+## [1.1.0] — 2026-08-22
 ### Added
+- `DroneInfo.operator_location_type` / `DronePayload.operator_location_type`
+  (`airspace/drone/<id>`, `sensor.airspace_nearest_drone`): dump3411 now
+  decodes what a System message's operator `lat`/`lon` actually represents —
+  `takeoff` (the drone's own launch point) | `live_gnss` | `fixed`. Some
+  transmitters (reported: Potensic RID-916) toggle this across messages, so
+  operator coordinates aren't always a live operator fix. Additive field, no
+  `schema_version` bump. `FEED.md` and the example automations/dashboard
+  updated to mirror dump3411's own dashboard fix: annotate a takeoff-point
+  reading instead of labelling it "operator located" like a live fix.
 - Example `drone_nearby` alert rule (`config.example.yaml`,
   `docs/automations.example.yaml`): `drone_conflict`'s predictive
   `max_closest_approach_nm`/`within_eta_s` gate never fires for a
@@ -20,6 +27,16 @@ Docs only — no functional or schema change.
   `drone_nearby` is a pure-presence companion rule for that case.
 
 ### Fixed
+- MQTT: `airspace/summary/nearest` and `nearest_drone` no longer republish an
+  empty-retained payload on every tick while the airspace is empty — only on
+  the transition into empty. HA's MQTT integration tries to JSON-decode every
+  `state_topic` payload before running `value_template` (both sensors read
+  `value_json`), so the previous behavior logged "Erroneous JSON" + a template
+  warning once per publish interval, continuously, for as long as the airspace
+  was empty — most of the time for a lot of installs. Also resets the new
+  latch on MQTT reconnect, matching the existing `_last_receiver_status`
+  precedent, so a broker that loses retained state still gets the clearing
+  payload re-sent. (#56, external contribution — thanks richmobile!)
 - `docs/dashboard.example.yaml`: the top-of-file note only mentioned the
   drone-operator marker as needing a manual template sensor, implying the
   aircraft/drone map markers worked out of the box via discovery. All three
@@ -277,4 +294,4 @@ Initial development. Established the full pipeline and contracts:
   optional Prometheus `/metrics`.
 - Pydantic v2 config (strict, fail-fast), structlog logging.
 
-[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/ifnull/ha-airspace/compare/v1.1.0...HEAD
