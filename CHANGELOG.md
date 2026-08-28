@@ -10,6 +10,14 @@ Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
 ## [Unreleased]
+### Added
+- `faulthandler` is enabled at startup, and `SIGUSR1` dumps every thread's
+  stack (`kill -USR1 <pid>`). A hard crash in a C extension and a kernel
+  SIGKILL previously left identical evidence — an add-on log that just starts
+  over with no shutdown line, no traceback, nothing. Now only the SIGKILL is
+  silent, which makes the absence of a dump a useful signal in itself
+  (check `ha host logs | grep -i oom`).
+
 ### Fixed
 - Reference DBs: the loader no longer holds three copies of the ~620k-row
   merged database at once. Each source was parsed into its own dict, copied
