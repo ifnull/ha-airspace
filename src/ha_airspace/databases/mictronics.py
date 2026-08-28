@@ -41,14 +41,33 @@ import io
 _DBFLAG_KEYS: tuple[str, ...] = ("mil", "interesting", "pia", "ladd")
 
 
-def parse_mictronics(raw_gzip: bytes) -> dict[str, dict[str, object]]:
+def parse_mictronics(
+    raw_gzip: bytes,
+    into: dict[str, dict[str, object]] | None = None,
+) -> dict[str, dict[str, object]]:
     """Parse the gzip'd Mictronics CSV into ``{hex_lower: {fields}}``.
 
     Permissive: rows with too few columns or an unparseable hex are
     skipped, not fatal — a few malformed rows in a 620k-row community DB
     should never abort the whole load.
+
+    ``into`` merges the rows straight into a caller-owned accumulator
+    (per-key ``dict.update``, so a later source overwrites an earlier one's
+    fields and leaves the rest) instead of allocating a second full dict.
+    The loader uses it to keep peak RSS to one copy of the merged DB rather
+    than three — a 620k-row parse costs ~220 MB, and holding parsed +
+    merged + the next source's parsed simultaneously OOM-killed the add-on
+    on a 2 GB Pi. The default (``None``) allocates a fresh dict, which is
+    what the standalone/pure-function callers and tests expect.
     """
-    result: dict[str, dict[str, object]] = {}
+    result: dict[str, dict[str, object]] = {} if into is None else into
+    # Type designators repeat heavily across 620k rows (a few thousand
+    # distinct values). Reusing one str object per distinct value is worth
+    # ~30 MB. Local rather than sys.intern so the dedup table is freed with
+    # the parse and nothing lands in the interpreter-wide intern dict.
+    # `reg` is deliberately not deduped: tail numbers are ~unique, so a
+    # dedup table for them is pure overhead.
+    seen_types: dict[str, str] = {}
     with gzip.open(io.BytesIO(raw_gzip), mode="rt", encoding="utf-8", errors="replace") as fh:
         for line in fh:
             row = line.rstrip("\n").split(";")
@@ -63,10 +82,14 @@ def parse_mictronics(raw_gzip: bytes) -> dict[str, dict[str, object]]:
                 entry["reg"] = reg
             type_code = row[2].strip()
             if type_code:
-                entry["type"] = type_code
+                entry["type"] = seen_types.setdefault(type_code, type_code)
             entry.update(_parse_dbflags(row[3]))
             if entry:
-                result[hex_code] = entry
+                existing = result.get(hex_code)
+                if existing is None:
+                    result[hex_code] = entry
+                else:
+                    existing.update(entry)
     return result
 
 

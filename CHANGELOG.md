@@ -9,6 +9,22 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [Unreleased]
+### Fixed
+- Reference DBs: the loader no longer holds three copies of the ~620k-row
+  merged database at once. Each source was parsed into its own dict, copied
+  entry-by-entry into a third, and the next source was then parsed while both
+  were still live — ~610 MB anon-RSS at peak on aarch64. On a 2 GB Raspberry Pi
+  that is enough to trigger a **global** OOM kill (the add-on is the largest
+  process, and Supervisor sets the container `mem_limit` to total system RAM,
+  so the cgroup limit never trips first): the service was killed with SIGKILL
+  ~10-60s after `db_refreshed`, restarted by Supervisor, and killed again, with
+  no shutdown or crash log to explain it. Sources now parse in ascending
+  priority directly into one shared dict, and the repeated string fields
+  (`type`, `model`, `ownop`) reuse one object per distinct value. Peak drops to
+  ~240 MB. Merge precedence (ADSBex over Mictronics, per-key) is unchanged, and
+  a mid-stream source failure still leaves the previous good copy in place.
+
 ## [1.1.0] — 2026-08-22
 ### Added
 - `DroneInfo.operator_location_type` / `DronePayload.operator_location_type`

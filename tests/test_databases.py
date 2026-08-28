@@ -107,6 +107,46 @@ class TestAdsbexchangeParser:
 
 
 # ---------------------------------------------------------------------------
+# Accumulator merging (the shape the loader uses to keep peak RSS to one copy)
+# ---------------------------------------------------------------------------
+
+
+class TestParseIntoAccumulator:
+    def test_mictronics_merges_into_caller_dict(self) -> None:
+        acc: dict[str, dict[str, object]] = {}
+        returned = parse_mictronics(_MIC, acc)
+        assert returned is acc  # merged in place, not a copy
+        assert acc["004002"]["reg"] == "Z-WPA"
+
+    def test_adsbex_overwrites_per_key_leaving_others(self) -> None:
+        acc: dict[str, dict[str, object]] = {}
+        parse_mictronics(gzip.compress(b"ae0001;N1;OLD;10;Old;;;\n"), acc)
+        parse_adsbexchange(
+            gzip.compress(
+                json.dumps({"icao": "ae0001", "icaotype": "NEW", "model": "New"}).encode() + b"\n"
+            ),
+            acc,
+        )
+        # ADSBex's type wins; Mictronics' mil (absent from ADSBex) falls through.
+        assert acc["ae0001"] == {"reg": "N1", "type": "NEW", "mil": True, "model": "New"}
+
+    def test_repeated_string_values_share_one_object(self) -> None:
+        # The dedup that keeps 620k rows at ~220 MB instead of ~250 MB. Two rows
+        # with the same type designator must reference the identical str object.
+        db = parse_mictronics(gzip.compress(b"ae0001;N1;B738;00;x;;;\nae0002;N2;B738;00;x;;;\n"))
+        assert db["ae0001"]["type"] is db["ae0002"]["type"]
+
+    def test_adsbex_dedups_model_and_ownop(self) -> None:
+        rows = b"".join(
+            json.dumps({"icao": h, "model": "737-800", "ownop": "ACME AIR"}).encode() + b"\n"
+            for h in ("ae0001", "ae0002")
+        )
+        db = parse_adsbexchange(gzip.compress(rows))
+        assert db["ae0001"]["model"] is db["ae0002"]["model"]
+        assert db["ae0001"]["ownop"] is db["ae0002"]["ownop"]
+
+
+# ---------------------------------------------------------------------------
 # DatabaseStore
 # ---------------------------------------------------------------------------
 
@@ -222,6 +262,31 @@ class TestDatabaseLoader:
         # Nothing enabled -> no successful source -> previous (empty) kept.
         assert ok is False
         assert store.current == {}
+
+    async def test_parse_failure_does_not_swap_partial_merge(self) -> None:
+        # ADSBex parses fine, Mictronics is corrupt. The store must still get
+        # the ADSBex rows (one source succeeded) and never a torn dict.
+        store = DatabaseStore()
+        loader = DatabaseLoader(
+            _config(("mictronics", "m://"), ("adsbexchange", "a://")),
+            store,
+            fetcher=_fetcher_from({"m://": b"not gzip at all", "a://": _ADSBEX}),
+        )
+        ok = await loader.refresh_once()
+        assert ok is True
+        assert store.lookup("ae292b")["model"] == "E-6B Mercury"
+        assert store.lookup("004002") == {}  # Mictronics-only row never landed
+
+    async def test_all_sources_failing_keeps_previous(self) -> None:
+        store = DatabaseStore()
+        store.swap({"ae292b": {"mil": True}})
+        loader = DatabaseLoader(
+            _config(("mictronics", "m://"), ("adsbexchange", "a://")),
+            store,
+            fetcher=_fetcher_from({"m://": b"garbage", "a://": b"garbage"}),
+        )
+        assert await loader.refresh_once() is False
+        assert store.lookup("ae292b") == {"mil": True}
 
     async def test_unknown_source_skipped(self) -> None:
         store = DatabaseStore()

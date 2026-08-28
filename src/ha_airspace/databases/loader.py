@@ -5,18 +5,24 @@ single attribute. Refresh builds a brand-new dict and rebinds the attribute in
 one assignment — Python attribute rebinding is atomic, so a concurrent reader
 holding the old reference is never torn (DESIGN §2 snapshot-on-enrich). No lock.
 
-``DatabaseLoader`` orchestrates: for each enabled source, download the gzip'd
-file over HTTP, parse it in a thread executor (CPU-bound; ~620k rows must not
-block the event loop), merge with ADSBex winning on conflict, then swap the
-store. A failed refresh **never wipes a good copy** — on any error the existing
-dict stays and we log. Disk caching (write-then-rename) lets a restart serve
-the last-good DB before the first network refresh completes; that is a small
-addition deferred to keep this slice focused — see TODO.
+``DatabaseLoader`` orchestrates: for each enabled source in ascending priority,
+download the gzip'd file over HTTP and parse it in a thread executor (CPU-bound;
+~620k rows must not block the event loop) **directly into one shared dict**,
+then swap that dict into the store. A failed refresh **never wipes a good copy**
+— on any error the existing dict stays and we log. Disk caching
+(write-then-rename) lets a restart serve the last-good DB before the first
+network refresh completes; that is a small addition deferred to keep this slice
+focused — see TODO.
 
 Merge priority (DESIGN §4): ADSBex's flags win over Mictronics. Because both
-parsers emit sparse dicts, the merge is ``merged[hex] = {**mictronics_entry,
-**adsbexchange_entry}`` — ADSBex keys overwrite, absent keys fall through to
-Mictronics (e.g. Mictronics ``type`` survives when ADSBex has none).
+parsers emit sparse dicts and merge per-key (``existing.update(entry)``), ADSBex
+keys overwrite while absent keys fall through to Mictronics (e.g. Mictronics
+``type`` survives when ADSBex has none).
+
+Memory matters here more than it looks. Parsing each source into its own dict
+and then copying into a third held ~610 MB RSS at peak on aarch64 — enough for
+the kernel OOM-killer to take the process out on a 2 GB Raspberry Pi mid-refresh
+(observed 2026-08-28). Merging in place holds one copy, ~220 MB.
 """
 
 from __future__ import annotations
@@ -33,10 +39,14 @@ from ha_airspace.databases.mictronics import parse_mictronics
 
 log = structlog.get_logger(__name__)
 
+_Parser = Callable[[bytes, dict[str, dict[str, object]]], dict[str, dict[str, object]]]
+"""``(raw_gzip, accumulator) -> accumulator``. Both parsers merge in place so a
+refresh holds exactly one copy of the merged DB (see ``refresh_once``)."""
+
 # Parser dispatch by source name. A source whose name is not here is skipped
 # with a warning (config validation does not constrain names to these, so a
 # typo surfaces at load rather than silently doing nothing).
-_PARSERS: dict[str, Callable[[bytes], dict[str, dict[str, object]]]] = {
+_PARSERS: dict[str, _Parser] = {
     "mictronics": parse_mictronics,
     "adsbexchange": parse_adsbexchange,
 }
@@ -104,27 +114,30 @@ class DatabaseLoader:
         and the previous dict was kept. Never raises for an expected failure
         (network, parse) — those are logged and swallowed so the background
         refresh loop keeps running.
+
+        Sources are parsed **straight into one shared dict**, low priority
+        first, so a higher-priority source's fields overwrite in place. The
+        earlier build-then-copy-then-merge shape held up to three full copies
+        of a 620k-row DB at once (~610 MB RSS measured on aarch64), which the
+        kernel OOM-killer reliably picked off on a 2 GB Pi. One dict is ~220 MB.
+
+        The merged dict is built off to the side and only swapped in on
+        success, so a mid-stream source failure still leaves the previous
+        good copy in place.
         """
         merged: dict[str, dict[str, object]] = {}
         any_ok = False
         # Process low-to-high priority so a higher-priority source's keys
-        # overwrite via plain dict.update — no per-entry bookkeeping, and the
-        # merged dict carries only real metadata keys (nothing internal leaks
-        # into the published db_metadata).
+        # overwrite the earlier ones — the parsers merge per-key into `merged`,
+        # so absent keys fall through (e.g. Mictronics `type` survives when
+        # ADSBex has none).
         ordered = sorted(
             (s for s in self._config.sources if s.enabled),
             key=lambda s: _PRIORITY.get(s.name, 0),
         )
         for source in ordered:
-            parsed = await self._load_source(source)
-            if parsed is None:
-                continue
-            any_ok = True
-            for hex_code, entry in parsed.items():
-                if hex_code in merged:
-                    merged[hex_code].update(entry)
-                else:
-                    merged[hex_code] = dict(entry)
+            if await self._load_source(source, merged):
+                any_ok = True
 
         if not any_ok:
             log.warning("db_refresh_failed_all_sources", keeping_previous=True)
@@ -134,23 +147,33 @@ class DatabaseLoader:
         return True
 
     async def _load_source(
-        self, source: DatabaseSourceConfig
-    ) -> dict[str, dict[str, object]] | None:
+        self, source: DatabaseSourceConfig, merged: dict[str, dict[str, object]]
+    ) -> bool:
+        """Download one source and merge it into ``merged`` in place. Returns
+        True on success. A download/parse failure is logged and swallowed —
+        one bad source must not fail the whole refresh.
+
+        A parse that raises partway through leaves whatever it already merged
+        in ``merged``. That is intentional: the rows it did write are valid,
+        and ``refresh_once`` only swaps the result in if at least one source
+        succeeded outright.
+        """
         parser = _PARSERS.get(source.name)
         if parser is None:
             log.warning("db_unknown_source", source=source.name)
-            return None
+            return False
         try:
             raw = await self._fetcher(source.url)
         except Exception as exc:  # noqa: BLE001 — any download failure is non-fatal
             log.warning("db_download_failed", source=source.name, error=str(exc))
-            return None
+            return False
         try:
             # CPU-bound parse of a large file -> executor, never the loop.
-            return await asyncio.to_thread(parser, raw)
+            await asyncio.to_thread(parser, raw, merged)
         except Exception as exc:  # noqa: BLE001 — a corrupt file is non-fatal
             log.warning("db_parse_failed", source=source.name, error=str(exc))
-            return None
+            return False
+        return True
 
     async def run(self) -> None:
         """Background refresh loop: refresh now, then every ``refresh_interval_h``
