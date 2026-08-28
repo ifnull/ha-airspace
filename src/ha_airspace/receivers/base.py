@@ -62,6 +62,13 @@ class ReceiverSource(ABC):
     blip does not page the user, few enough that a really-down receiver
     surfaces within ~3 seconds at 1 Hz."""
 
+    MAX_FAILURE_LOG_STRIDE: int = 1200
+    """Cap on the geometric backoff of ``receiver_fetch_failed`` logging. At a
+    3s poll that is roughly one line per hour for a receiver that stays down —
+    enough to show it is still trying, few enough that a permanently
+    misconfigured URL can flood the add-on log (observed: 22159 identical lines
+    over 18h, every one of them written to a Pi's SD card via journald)."""
+
     def __init__(
         self,
         name: str,
@@ -88,6 +95,11 @@ class ReceiverSource(ABC):
         # Health-tracking state.
         self._consecutive_failures: int = 0
         self._last_success: datetime | None = None
+        # Failure count at which the next receiver_fetch_failed line is emitted,
+        # and how many we swallowed since the last one. Count-based rather than
+        # time-based so it needs no clock injection to stay testable.
+        self._next_failure_log_at: int = 1
+        self._suppressed_failure_logs: int = 0
         self._last_aircraft_count: int = 0
         self._last_messages_per_sec: float = 0.0
 
@@ -169,6 +181,17 @@ class ReceiverSource(ABC):
         observations: list[AircraftObservation],
         messages_per_sec: float | None,
     ) -> list[AircraftObservation]:
+        if self._consecutive_failures:
+            # Recovery is the line an operator actually wants; without it a
+            # receiver coming back is indistinguishable from one that simply
+            # stopped being logged by the failure throttle.
+            log.info(
+                "receiver_recovered",
+                receiver=self.name,
+                after_failures=self._consecutive_failures,
+            )
+            self._next_failure_log_at = 1
+            self._suppressed_failure_logs = 0
         self._consecutive_failures = 0
         self._last_success = datetime.now(UTC)
         self._last_aircraft_count = len(observations)
@@ -186,15 +209,30 @@ class ReceiverSource(ABC):
 
     def _record_failure(self, exc: FetchError) -> list[AircraftObservation]:
         self._consecutive_failures += 1
-        cause = exc.__cause__ or exc
-        log.warning(
-            "receiver_fetch_failed",
-            receiver=self.name,
-            error_class=type(cause).__name__,
-            error_msg=str(exc),
-            consecutive_failures=self._consecutive_failures,
-            unhealthy=self._consecutive_failures >= self.UNHEALTHY_AFTER_FAILURES,
-        )
+        if self._consecutive_failures >= self._next_failure_log_at:
+            cause = exc.__cause__ or exc
+            log.warning(
+                "receiver_fetch_failed",
+                receiver=self.name,
+                error_class=type(cause).__name__,
+                error_msg=str(exc),
+                consecutive_failures=self._consecutive_failures,
+                unhealthy=self._consecutive_failures >= self.UNHEALTHY_AFTER_FAILURES,
+                suppressed_since_last=self._suppressed_failure_logs,
+            )
+            self._suppressed_failure_logs = 0
+            # Every failure is logged up to the unhealthy threshold — those are
+            # the ones that diagnose a transient blip. After that the receiver's
+            # state is established and repetition adds nothing, so back off
+            # geometrically to a fixed stride.
+            if self._consecutive_failures < self.UNHEALTHY_AFTER_FAILURES:
+                self._next_failure_log_at = self._consecutive_failures + 1
+            else:
+                self._next_failure_log_at = self._consecutive_failures + min(
+                    self._consecutive_failures, self.MAX_FAILURE_LOG_STRIDE
+                )
+        else:
+            self._suppressed_failure_logs += 1
         if self._metrics is not None:
             self._metrics.receiver_polls.labels(receiver=self.name, status="fail").inc()
             self._metrics.receiver_consecutive_failures.labels(receiver=self.name).set(

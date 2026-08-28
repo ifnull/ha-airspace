@@ -18,6 +18,16 @@ the major version; a removed/renamed/retyped field does.
   silent, which makes the absence of a dump a useful signal in itself
   (check `ha host logs | grep -i oom`).
 
+### Changed
+- Receivers: `receiver_fetch_failed` now backs off instead of logging every
+  poll. Every failure up to the unhealthy threshold is still logged (that is
+  the window that diagnoses a blip); after that the interval doubles up to one
+  line per ~1200 failures, each carrying `suppressed_since_last`. A receiver
+  coming back now logs `receiver_recovered` with the failure count it endured —
+  previously recovery was silent. A single misconfigured receiver URL was
+  otherwise good for 22159 identical warning lines in 18 hours, all of them
+  journald writes on an SD card.
+
 ### Fixed
 - Reference DBs: the loader no longer holds three copies of the ~620k-row
   merged database at once. Each source was parsed into its own dict, copied

@@ -8,10 +8,12 @@ parsing — those live in test_receivers_parse.
 
 from __future__ import annotations
 
+import itertools
 from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+import structlog
 from prometheus_client import CollectorRegistry
 
 from ha_airspace.metrics import MetricsRegistry
@@ -271,3 +273,69 @@ def _counter_value(counter: Any) -> float:
 
 def _gauge_value(gauge: Any) -> float:
     return float(gauge._value.get())
+
+
+class TestFailureLogThrottle:
+    """A permanently-down receiver must not flood the log. Observed in the
+    field: 22159 identical `receiver_fetch_failed` lines over 18 hours, every
+    one of them an SD-card write on a HAOS Pi."""
+
+    @staticmethod
+    async def _fail_n(receiver: StubReceiver, n: int) -> list[dict[str, Any]]:
+        with structlog.testing.capture_logs() as logs:
+            for _ in range(n):
+                receiver.queue_failure(FetchError("down"))
+                await receiver.fetch()
+        return [entry for entry in logs if entry["event"] == "receiver_fetch_failed"]
+
+    async def test_every_failure_logged_up_to_unhealthy(self) -> None:
+        receiver = StubReceiver()
+        logged = await self._fail_n(receiver, ReceiverSource.UNHEALTHY_AFTER_FAILURES)
+        # The blip window is fully logged — that is what diagnoses a transient.
+        assert len(logged) == ReceiverSource.UNHEALTHY_AFTER_FAILURES
+        assert logged[-1]["unhealthy"] is True
+
+    async def test_backs_off_geometrically_once_unhealthy(self) -> None:
+        receiver = StubReceiver()
+        logged = await self._fail_n(receiver, 1000)
+        counts = [entry["consecutive_failures"] for entry in logged]
+        # 1,2,3 then doubling: 6, 12, 24, ... Never one line per poll.
+        assert counts[:6] == [1, 2, 3, 6, 12, 24]
+        assert len(logged) < 20
+
+    async def test_stride_is_capped(self) -> None:
+        receiver = StubReceiver()
+        logged = await self._fail_n(receiver, 20_000)
+        counts = [entry["consecutive_failures"] for entry in logged]
+        gaps = [b - a for a, b in itertools.pairwise(counts)]
+        # Geometric growth stops at the cap, so a long outage keeps producing
+        # the occasional "yes, still down" line instead of going fully quiet.
+        assert max(gaps) == ReceiverSource.MAX_FAILURE_LOG_STRIDE
+        assert counts[-1] > 20_000 - ReceiverSource.MAX_FAILURE_LOG_STRIDE
+
+    async def test_suppressed_count_is_reported(self) -> None:
+        receiver = StubReceiver()
+        logged = await self._fail_n(receiver, 30)
+        # The line at failure 6 accounts for the two it swallowed (4 and 5).
+        at_six = next(e for e in logged if e["consecutive_failures"] == 6)
+        assert at_six["suppressed_since_last"] == 2
+
+    async def test_recovery_logs_and_resets_throttle(self) -> None:
+        receiver = StubReceiver()
+        await self._fail_n(receiver, 50)
+        with structlog.testing.capture_logs() as logs:
+            receiver.queue_success()
+            await receiver.fetch()
+        recovered = [e for e in logs if e["event"] == "receiver_recovered"]
+        assert len(recovered) == 1
+        assert recovered[0]["after_failures"] == 50
+        # Throttle is rearmed, so the next outage logs from the first failure.
+        logged = await self._fail_n(receiver, 1)
+        assert [e["consecutive_failures"] for e in logged] == [1]
+
+    async def test_no_recovery_log_when_never_failed(self) -> None:
+        receiver = StubReceiver()
+        with structlog.testing.capture_logs() as logs:
+            receiver.queue_success()
+            await receiver.fetch()
+        assert [e for e in logs if e["event"] == "receiver_recovered"] == []
