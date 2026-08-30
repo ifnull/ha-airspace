@@ -13,12 +13,20 @@ Exit codes:
 ``configure_logging`` runs as early as possible, but config errors can occur
 before logging is set up (we don't know the level yet), so the config-error
 path prints to stderr directly with a clear message and the field path.
+
+``faulthandler`` is enabled first of all, before anything can fail. A hard
+crash (segfault in sqlite3 / pydantic-core / paho) otherwise produces exactly
+the same evidence as a SIGKILL — nothing at all — and the two have very
+different fixes. See ``_enable_faulthandler``.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
+import faulthandler
+import signal
 import sys
 from collections.abc import Sequence
 
@@ -35,6 +43,32 @@ log = structlog.get_logger(__name__)
 EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_CONFIG = 2
+
+
+def _enable_faulthandler() -> None:
+    """Dump a Python traceback on a fatal signal (SIGSEGV/SIGBUS/SIGFPE/SIGABRT).
+
+    Cheap insurance for a class of failure that is otherwise undiagnosable from
+    a container log. When the process dies without running any of our exit paths
+    — no ``service_stopping``, no ``service_crashed``, no traceback — the log
+    looks identical whether the kernel SIGKILL'd us (OOM) or a C extension
+    faulted. faulthandler makes the second case say so.
+
+    It cannot catch SIGKILL; nothing can. That case is diagnosed from the host
+    side (``ha host logs | grep -i oom``), and the *absence* of a faulthandler
+    dump is itself the signal that points there.
+
+    Best-effort: a sandbox with a non-dupable stderr raises, and losing the
+    diagnostic is never worth failing startup over.
+    """
+    with contextlib.suppress(Exception):
+        faulthandler.enable()
+    # SIGTERM is handled by the event loop for graceful shutdown, so it is
+    # deliberately not registered here. SIGUSR1 is free: `kill -USR1 <pid>`
+    # dumps every thread's stack, which is how you catch a wedged poll loop
+    # or a deadlocked executor thread without attaching a debugger.
+    with contextlib.suppress(AttributeError, ValueError, OSError):
+        faulthandler.register(signal.SIGUSR1, all_threads=True, chain=True)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -59,6 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Parse args, load config, run the service. Returns an exit code."""
+    _enable_faulthandler()
     parser = build_parser()
     args = parser.parse_args(argv)
 

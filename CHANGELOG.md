@@ -9,6 +9,40 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [1.1.1] — 2026-08-30
+### Added
+- `faulthandler` is enabled at startup, and `SIGUSR1` dumps every thread's
+  stack (`kill -USR1 <pid>`). A hard crash in a C extension and a kernel
+  SIGKILL previously left identical evidence — an add-on log that just starts
+  over with no shutdown line, no traceback, nothing. Now only the SIGKILL is
+  silent, which makes the absence of a dump a useful signal in itself
+  (check `ha host logs | grep -i oom`).
+
+### Changed
+- Receivers: `receiver_fetch_failed` now backs off instead of logging every
+  poll. Every failure up to the unhealthy threshold is still logged (that is
+  the window that diagnoses a blip); after that the interval doubles up to one
+  line per ~1200 failures, each carrying `suppressed_since_last`. A receiver
+  coming back now logs `receiver_recovered` with the failure count it endured —
+  previously recovery was silent. A single misconfigured receiver URL was
+  otherwise good for 22159 identical warning lines in 18 hours, all of them
+  journald writes on an SD card.
+
+### Fixed
+- Reference DBs: the loader no longer holds three copies of the ~620k-row
+  merged database at once. Each source was parsed into its own dict, copied
+  entry-by-entry into a third, and the next source was then parsed while both
+  were still live — ~610 MB anon-RSS at peak on aarch64. On a 2 GB Raspberry Pi
+  that is enough to trigger a **global** OOM kill (the add-on is the largest
+  process, and Supervisor sets the container `mem_limit` to total system RAM,
+  so the cgroup limit never trips first): the service was killed with SIGKILL
+  ~10-60s after `db_refreshed`, restarted by Supervisor, and killed again, with
+  no shutdown or crash log to explain it. Sources now parse in ascending
+  priority directly into one shared dict, and the repeated string fields
+  (`type`, `model`, `ownop`) reuse one object per distinct value. Peak drops to
+  ~240 MB. Merge precedence (ADSBex over Mictronics, per-key) is unchanged, and
+  a mid-stream source failure still leaves the previous good copy in place.
+
 ## [1.1.0] — 2026-08-22
 ### Added
 - `DroneInfo.operator_location_type` / `DronePayload.operator_location_type`

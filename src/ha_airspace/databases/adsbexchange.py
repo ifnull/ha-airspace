@@ -48,13 +48,24 @@ _BOOL_FIELDS: tuple[tuple[str, str], ...] = (
 )
 
 
-def parse_adsbexchange(raw_gzip: bytes) -> dict[str, dict[str, object]]:
+def parse_adsbexchange(
+    raw_gzip: bytes,
+    into: dict[str, dict[str, object]] | None = None,
+) -> dict[str, dict[str, object]]:
     """Parse the gzip'd newline-delimited JSON into ``{hex_lower: {fields}}``.
 
     Permissive: a line that is not valid JSON, or lacks an ``icao``, is
     skipped — one bad line should not abort a 600k-row load.
+
+    ``into`` merges straight into a caller-owned accumulator instead of
+    allocating a second full dict; see ``parse_mictronics`` for why the
+    loader needs it.
     """
-    result: dict[str, dict[str, object]] = {}
+    result: dict[str, dict[str, object]] = {} if into is None else into
+    # Dedup the repeating string fields (see parse_mictronics). `model` and
+    # `ownop` are the expensive ones — long strings, heavily shared across
+    # airline fleets. `reg` stays undeduped: ~unique per row.
+    seen: dict[str, str] = {}
     with gzip.open(io.BytesIO(raw_gzip), mode="rt", encoding="utf-8", errors="replace") as fh:
         for line in fh:
             stripped = line.strip()
@@ -73,12 +84,17 @@ def parse_adsbexchange(raw_gzip: bytes) -> dict[str, dict[str, object]]:
             for src, key in _STR_FIELDS:
                 val = record.get(src)
                 if isinstance(val, str) and val:
-                    entry[key] = val
+                    entry[key] = val if key == "reg" else seen.setdefault(val, val)
             for src, key in _BOOL_FIELDS:
                 if record.get(src) is True:
                     entry[key] = True
             if entry:
-                result[icao.lower()] = entry
+                hex_code = icao.lower()
+                existing = result.get(hex_code)
+                if existing is None:
+                    result[hex_code] = entry
+                else:
+                    existing.update(entry)
     return result
 
 

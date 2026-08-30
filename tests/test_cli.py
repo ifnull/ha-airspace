@@ -8,6 +8,7 @@ all covered.
 
 from __future__ import annotations
 
+import faulthandler
 import json
 import logging
 from pathlib import Path
@@ -237,3 +238,25 @@ class TestLogging:
 def test_main_module_exposes_entry() -> None:
     # `python -m ha_airspace` imports this; ensure the entry point is wired.
     assert main_module.main is cli.main
+
+
+class TestFaultHandler:
+    """The diagnostic that separates "kernel SIGKILL'd us" from "we faulted"."""
+
+    def test_enable_turns_it_on(self) -> None:
+        faulthandler.disable()
+        try:
+            cli._enable_faulthandler()
+            assert faulthandler.is_enabled()
+        finally:
+            faulthandler.enable()
+
+    def test_failure_to_enable_does_not_break_startup(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A sandbox with an unusable stderr must not take the service down.
+        def boom() -> None:
+            raise RuntimeError("no dupable stderr here")
+
+        monkeypatch.setattr("ha_airspace.cli.faulthandler.enable", boom)
+        cli._enable_faulthandler()  # must not raise
