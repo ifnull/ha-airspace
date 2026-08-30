@@ -126,6 +126,19 @@
 #    nearest drone; a second, FARTHER drone appearing while a nearer one is
 #    already tracked won't re-fire. For a "drone near me" alert that's the right
 #    scope — switch back to a count trigger if you want every drone.
+#
+#    If you've also set up #5/#6 (drone_conflict / drone_nearby below), add
+#    the second condition line: per-poll, alerts are evaluated BEFORE the
+#    summary is published (tracker.tick() runs _evaluate_alerts() then
+#    _publish_summary()), so binary_sensor.airspace_alert_drone_conflict/
+#    _nearby are already updated in HA by the time this trigger's condition
+#    runs on the same tick. For a drone that flies close to your own
+#    watchpoint (the common case), its first position fix is often ALREADY
+#    inside drone_conflict's/drone_nearby's thresholds — so without this
+#    condition, "drone detected" and "drone conflict"/"drone nearby" fire
+#    together on every close-in drone, which reads as a duplicate push. The
+#    condition below leaves this automation for drones NOT already covered by
+#    those — farther out or higher up — while #5/#6 own the close-in case.
 # ---------------------------------------------------------------------------
 - id: airspace_drone_detected_notify
   alias: "Airspace · drone detected · notify"
@@ -137,6 +150,11 @@
     # Ignore the drone clearing (track_id -> None / entity unavailable).
     - "{{ state_attr('sensor.airspace_nearest_drone', 'track_id') is not none
           and states('sensor.airspace_nearest_drone') not in ['unknown', 'unavailable'] }}"
+    # Skip if drone_conflict/drone_nearby (below) already covers this drone —
+    # avoids a duplicate push for the common close-in case. Remove this line
+    # if you haven't set up those rules.
+    - "{{ is_state('binary_sensor.airspace_alert_drone_conflict', 'off')
+          and is_state('binary_sensor.airspace_alert_drone_nearby', 'off') }}"
   action:
     - service: notify.mobile_app_phone
       data:
