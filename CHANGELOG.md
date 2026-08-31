@@ -9,6 +9,22 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [1.1.5] — 2026-08-31
+### Fixed
+- Photos: a **failed** Planespotters lookup is no longer cached as a confirmed
+  absence. Both outcomes returned `None` and got the same `cache_ttl_days`
+  (30 by default), so one transient upstream error — observed in the field as
+  Cloudflare `525` from `api.planespotters.net` — left that aircraft with no
+  photo for the next month, long after the outage cleared. Failures now cache
+  for `FAILURE_CACHE_TTL_S` (5 minutes): short enough to recover on its own,
+  long enough not to re-request on every alert while upstream is struggling.
+  An answered "no photo for this hex" still gets the full TTL.
+- Photos: `photo_lookup_failed` logs `error_class` and `retry_in_s`. httpx's
+  timeout/connect/protocol errors all stringify to `""` when raised without a
+  message, so the warning could read `{"hex": "...", "error": ""}` — a failure
+  report containing no indication of what failed. Matches the shape
+  `receiver_fetch_failed` already uses.
+
 ## [1.1.4] — 2026-08-30
 ### Fixed
 - Alert attributes are now **self-sufficient for drone triggers**. The per-rule
