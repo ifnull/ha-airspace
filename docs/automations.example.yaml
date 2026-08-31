@@ -10,8 +10,18 @@
 #   and (when photos are enabled) entity_picture + photographer.
 #
 # So "setting up the actual alerts" on the HA side is just: trigger on the
-# binary_sensor going on, then notify. No templates required for a basic push;
-# the richer examples below pull detail from the attributes.
+# binary_sensor going on, then notify.
+#
+# ---------------------------------------------------------------------------
+# FOR A PLAIN "notify me when <rule> fires", USE THE BLUEPRINT INSTEAD:
+#   blueprints/automation/ha-airspace/alert_notification.yaml
+# Import it once, then add one instance per rule from the UI — no YAML, no
+# entity ids to keep in sync inside templates, and it reads only the triggering
+# alert's own attributes so it can't describe the wrong aircraft.
+#
+# The examples below are the cases the blueprint deliberately does NOT cover,
+# because each needs something a per-rule notification can't express.
+# ---------------------------------------------------------------------------
 #
 # Paste into Settings -> Automations -> (⋮) Edit in YAML, or add under
 # `automation:` in configuration.yaml. Replace:
@@ -24,58 +34,15 @@
 # an `id` across automations.
 
 # ---------------------------------------------------------------------------
-# 1. Minimal — push the moment a rule fires. No templating.
+# 1-2. Simple + rich per-rule notification -> REPLACED BY THE BLUEPRINT.
+#
+# These were two near-identical automations differing only in entity, notify
+# target, and title — the exact shape a blueprint exists for. Import
+# blueprints/automation/ha-airspace/alert_notification.yaml and create one
+# instance per rule (military_close, interesting_nearby, new_military,
+# mil_callsign_close, helicopter_low, ...). The blueprint includes the photo
+# handling the "rich" variant demonstrated.
 # ---------------------------------------------------------------------------
-- id: airspace_military_close_notify
-  alias: "Airspace · military close · notify"
-  description: "Push when the military_close rule turns on."
-  trigger:
-    - platform: state
-      entity_id: binary_sensor.airspace_alert_military_close
-      to: "on"
-  action:
-    - service: notify.mobile_app_phone
-      data:
-        title: "🛩️ Military aircraft nearby"
-        message: >-
-          {{ state_attr('binary_sensor.airspace_alert_military_close', 'flight')
-             or state_attr('binary_sensor.airspace_alert_military_close', 'hex') }}
-
-# ---------------------------------------------------------------------------
-# 2. Rich — flight, type, distance + altitude in the body; Planespotters photo
-#    as the notification image (needs `photos.enabled: true`). Tapping the
-#    notification opens the Airspace dashboard view.
-# ---------------------------------------------------------------------------
-- id: airspace_military_close_rich_notify
-  alias: "Airspace · military close · rich notify"
-  trigger:
-    - platform: state
-      entity_id: binary_sensor.airspace_alert_military_close
-      to: "on"
-  # No automation-level `variables:` — the HA UI editor drops them on save/
-  # round-trip. Each template inlines `{% set a = ... %}` instead (robust).
-  action:
-    - service: notify.mobile_app_phone
-      data:
-        title: >-
-          {% set a = 'binary_sensor.airspace_alert_military_close' -%}
-          🚨 {{ state_attr(a, 'flight') or state_attr(a, 'hex') }}{{ ' · ' ~ state_attr(a, 'aircraft_type') if state_attr(a, 'aircraft_type') }}
-        message: >-
-          {% set a = 'binary_sensor.airspace_alert_military_close' -%}
-          {% set d = (state_attr(a, 'distance_to') or {}).get('home') -%}
-          {% set b = (state_attr(a, 'bearing_to') or {}).get('home') -%}
-          {{ '%.1f nm'|format(d) if d is not none else '? nm' }}
-          {{ 'brg %d°'|format(b|round(0)|int) if b is not none else '' }}
-          · {{ state_attr(a, 'alt_baro_ft') or '?' }} ft
-          {% if state_attr(a, 'squawk') %}· squawk {{ state_attr(a, 'squawk') }}{% endif %}
-        data:
-          # entity_picture is a relative URL; prefix your HA base_url for mobile.
-          image: "{{ state_attr('binary_sensor.airspace_alert_military_close', 'entity_picture') }}"
-          # Tap-to-open (Android: clickAction / iOS: url). Point at your view.
-          clickAction: "/lovelace/airspace"
-          url: "/lovelace/airspace"
-          push:
-            interruption-level: time-sensitive  # iOS: bypass focus modes
 
 # ---------------------------------------------------------------------------
 # 3. Persistent notification (no mobile app) — stays in the HA sidebar until

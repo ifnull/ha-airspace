@@ -179,9 +179,21 @@ showing stale values.
 A ready-to-adapt Lovelace dashboard (map of nearest traffic, overview glance,
 nearest-aircraft detail, per-flag "watched aircraft" tables, receiver health,
 alert badges) built from these entities with stock cards is in
-[`docs/dashboard.example.yaml`](docs/dashboard.example.yaml). Example HA
-**automations** that turn the alert binary sensors into mobile/persistent
-notifications (with photo + flight detail) are in
+[`docs/dashboard.example.yaml`](docs/dashboard.example.yaml).
+
+For **notifications**, import the blueprint — one instance per alert rule, no
+YAML and no entity ids to keep in sync:
+
+[![Open your Home Assistant instance and show the blueprint import dialog.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fifnull%2Fha-airspace%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fha-airspace%2Falert_notification.yaml)
+
+`blueprints/automation/ha-airspace/alert_notification.yaml` — pick the alert,
+pick where to send it, done. It reads only the triggering alert's own
+attributes, so the notification always describes the aircraft that actually
+fired the rule.
+
+The cases a per-rule notification can't express — the stateful emergency-squawk
+pair, and the drone automations that need Remote ID detail from
+`sensor.airspace_nearest_drone` — remain as copy-paste examples in
 [`docs/automations.example.yaml`](docs/automations.example.yaml).
 
 ---
