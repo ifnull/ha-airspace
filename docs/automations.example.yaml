@@ -5,9 +5,18 @@
 # (ENTER) and `off` when none do (EXIT). It also exposes the triggering aircraft
 # on that entity's attributes (json_attributes_topic = airspace/alert/<rule>/info):
 #
-#   flight, hex, registration, aircraft_type, squawk, alt_baro_ft,
-#   distance_to{<watchpoint>}, bearing_to{<watchpoint>}, flags, db_metadata,
-#   and (when photos are enabled) entity_picture + photographer.
+#   is_drone, flight, hex, track_id, registration, aircraft_type, country,
+#   country_flag, squawk, alt_baro_ft, vertical_rate_fpm,
+#   distance_to{<watchpoint>}, bearing_to{<watchpoint>},
+#   predicted_closest_approach_nm, predicted_eta_to_home_s, flags, db_metadata,
+#   and (when photos are enabled) entity_picture + photographer + photo_link.
+#
+# When `is_drone` is true the SAME entity additionally carries the Remote ID
+# fields for the triggering drone — id_type, ua_type, self_id, agl_ft,
+# alt_geom_ft, ground_speed_kt, track_deg, rid_source, operator_lat,
+# operator_lon, operator_location_type, operator_id, operator_alt_takeoff_ft.
+# The aircraft-shaped keys are still present on a drone track, just null, so a
+# template only ever has to guard for null — never for a missing attribute.
 #
 # So "setting up the actual alerts" on the HA side is just: trigger on the
 # binary_sensor going on, then notify.
@@ -232,13 +241,10 @@
 #                                          #   early warning, so keep it close
 #              watchpoint: home
 #
-#    (b) Message content pulls from sensor.airspace_nearest_drone (ua_type,
-#        self_id, agl_ft, operator_lat, db_metadata make/model), NOT from the
-#        alert entity's own attributes — the alert `info` topic is generic
-#        AircraftPayload-shaped (flight/hex/registration/squawk/...) and
-#        carries none of the drone-specific fields. See the code TODO next to
-#        `_alert_info` in mqtt/publisher.py for the known gap this creates
-#        with multiple simultaneous drones.
+#    (b) Message content reads the alert entity's OWN attributes. The alert
+#        `info` topic carries the Remote ID fields for the triggering drone,
+#        so this always describes the drone that actually tripped the rule —
+#        including when a second, nearer drone is also up.
 # ---------------------------------------------------------------------------
 - id: airspace_drone_nearby_notify
   alias: "Airspace · drone nearby · notify"
@@ -250,13 +256,11 @@
     - service: notify.mobile_app_phone
       data:
         title: "🛸 Drone nearby"
-        # Same identity-degradation + distance/AGL rendering as #4 — pulled
-        # from sensor.airspace_nearest_drone, not the alert entity (see NOTE
-        # above). Known limitation: if a SECOND, farther drone is what
-        # actually tripped this rule, the message still describes the
-        # nearest one, not the triggering track.
+        # Same identity-degradation + distance/AGL rendering as #4, but read
+        # from the ALERT entity — so it describes the triggering drone even
+        # when a second, nearer drone is also airborne.
         message: >-
-          {% set s = 'sensor.airspace_nearest_drone' %}
+          {% set s = 'binary_sensor.airspace_alert_drone_nearby' %}
           {% set db = state_attr(s, 'db_metadata') or {} %}
           {% set make = db.get('make') %}
           {% set ua = state_attr(s, 'ua_type') %}
