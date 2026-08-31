@@ -452,19 +452,25 @@ class Publisher:
 def _alert_info(state: AircraftState, photo: PhotoPayload | None) -> dict[str, Any]:
     """Compact summary of an alert's triggering track, for the per-rule
     ``info`` topic that the HA binary_sensor exposes as attributes. ``photo``
-    maps to ``entity_picture`` so a picture/glance card renders the thumbnail."""
-    # TODO(alert-info-drone-fields): this is AircraftPayload-shaped only — no
-    # ua_type / self_id / agl_ft / operator_lat / db_metadata (make/model) for
-    # a band="remoteid" trigger. A drone-triggered alert (e.g. drone_conflict,
-    # drone_nearby) currently can't render its own identity/AGL/operator
-    # detail from this topic; docs/automations.example.yaml works around it by
-    # having the automation cross-reference sensor.airspace_nearest_drone
-    # instead, which silently mismatches when a second, non-nearest drone is
-    # the one that actually triggered the rule. Fix: branch on state.canonical
-    # .drone here (mirroring DronePayload.from_state) and merge the RID fields
-    # in, so the alert info is self-sufficient for drone tracks.
+    maps to ``entity_picture`` so a picture/glance card renders the thumbnail.
+
+    Self-sufficient for **both** bands. A drone-triggered rule
+    (``drone_conflict``, ``drone_nearby``) additionally carries the Remote-ID
+    fields, so a consumer never has to cross-reference
+    ``sensor.airspace_nearest_drone`` to describe what fired — which silently
+    described the *wrong* drone whenever a second, non-nearest drone was the
+    one that actually tripped the rule.
+
+    Aircraft keys stay present on a drone track rather than being branched
+    away: they are all ``None`` there (a drone observation carries ``hex=None``,
+    so ``country_for`` yields ``None`` rather than a bogus registry hit), and a
+    stable key set means a consumer template never has to guard for a *missing*
+    attribute, only a null one. ``is_drone`` is the discriminator.
+    """
     canonical = state.canonical
+    drone = canonical.drone
     info: dict[str, Any] = {
+        "is_drone": drone is not None,
         "flight": canonical.flight,
         "hex": state.hex,
         "track_id": state.track_id,
@@ -480,7 +486,32 @@ def _alert_info(state: AircraftState, photo: PhotoPayload | None) -> dict[str, A
         "predicted_closest_approach_nm": state.predicted_closest_approach_nm,
         "predicted_eta_to_home_s": state.predicted_eta_to_home_s,
         "flags": sorted(state.flags),
+        # Reference-DB join for aircraft; FAA UAS make/model for drones. The
+        # documented attribute set has always listed this; it was missing.
+        "db_metadata": dict(state.db_metadata),
     }
+    if drone is not None:
+        # Mirrors the RID-only half of DronePayload.from_state. Kept in sync by
+        # test_alert_info_covers_every_rid_field_dronepayload_publishes.
+        info.update(
+            {
+                "id_type": drone.id_type,
+                "ua_type": drone.ua_type,
+                "self_id": drone.self_id,
+                "agl_ft": drone.agl_ft,
+                "alt_geom_ft": canonical.alt_geom_ft,
+                "ground_speed_kt": canonical.ground_speed_kt,
+                "track_deg": canonical.track_deg,
+                "rid_source": drone.rid_source,
+                "operator_lat": drone.operator_lat,
+                "operator_lon": drone.operator_lon,
+                # Check this before treating operator_lat/lon as a live fix:
+                # `takeoff` is the drone's own launch point.
+                "operator_location_type": drone.operator_location_type,
+                "operator_id": drone.operator_id,
+                "operator_alt_takeoff_ft": drone.operator_alt_takeoff_ft,
+            }
+        )
     if photo is not None:
         info["entity_picture"] = photo.thumbnail_url
         info["photographer"] = photo.photographer

@@ -6,8 +6,13 @@ blueprint:
 
     Pick one alert `binary_sensor` per automation — create as many instances as
     you have rules. Every field in the message comes from the alert entity's own
-    attributes, so the notification always describes *the aircraft that actually
+    attributes, so the notification always describes *the track that actually
     triggered this rule*.
+
+
+    Works for aircraft and drone rules alike: a Remote ID trigger renders its
+    make/model, height above ground, and whether the operator location is a
+    live fix or the drone's own takeoff point.
 
 
     Requires the [ha-airspace](https://github.com/ifnull/ha-airspace) add-on with
@@ -84,6 +89,8 @@ variables:
   watchpoint: !input watchpoint
   include_photo: !input include_photo
   notification_group: !input notification_group
+  is_drone: "{{ state_attr(alert_entity, 'is_drone') | default(false, true) }}"
+  db_metadata: "{{ state_attr(alert_entity, 'db_metadata') or {} }}"
   flight: >-
     {{ state_attr(alert_entity, 'flight') or state_attr(alert_entity, 'hex') or 'unknown' }}
   registration: "{{ state_attr(alert_entity, 'registration') }}"
@@ -94,6 +101,15 @@ variables:
   distance: "{{ (state_attr(alert_entity, 'distance_to') or {}).get(watchpoint) }}"
   bearing: "{{ (state_attr(alert_entity, 'bearing_to') or {}).get(watchpoint) }}"
   photo_url: "{{ state_attr(alert_entity, 'entity_picture') }}"
+  # Remote ID — present (non-null) only when is_drone. Identity degrades:
+  # FAA registry make/model -> UA category -> Self-ID -> the bare word "Drone".
+  # self_id is operator-supplied free text and UNTRUSTED, so it is a last
+  # resort label only, never allowed to override a resolved registry hit.
+  ua_type: "{{ state_attr(alert_entity, 'ua_type') }}"
+  self_id: "{{ state_attr(alert_entity, 'self_id') }}"
+  agl_ft: "{{ state_attr(alert_entity, 'agl_ft') }}"
+  operator_lat: "{{ state_attr(alert_entity, 'operator_lat') }}"
+  operator_location_type: "{{ state_attr(alert_entity, 'operator_location_type') }}"
 
 trigger:
   - platform: state
@@ -105,12 +121,24 @@ action:
     data:
       title: !input title
       message: >-
+        {%- if is_drone -%}
+        {%- if db_metadata.get('make') %}{{ db_metadata.get('make') }} {{ db_metadata.get('model') }}
+        {%- elif ua_type %}{{ ua_type | capitalize }}
+        {%- elif self_id %}Drone (self-ID “{{ self_id }}”)
+        {%- else %}Drone{% endif %}
+        {%- if distance is not none %} · {{ distance | round(1) }} nm{% endif %}
+        {%- if bearing is not none %} at {{ bearing | round(0) | int }}°{% endif %}
+        {%- if agl_ft is not none %} · {{ agl_ft | round | int }} ft AGL{% endif %}
+        {%- if operator_lat is not none %} · {{ 'operator takeoff point'
+           if operator_location_type == 'takeoff' else 'operator located' }}{% endif %}
+        {%- else -%}
         {{ country_flag ~ ' ' if country_flag }}{{ flight }}
         {%- if aircraft_type %} · {{ aircraft_type }}{% endif %}
         {%- if registration %} ({{ registration }}){% endif %}
         {%- if distance is not none %} · {{ distance | round(1) }} nm{% endif %}
         {%- if bearing is not none %} at {{ bearing | round(0) | int }}°{% endif %}
         {%- if altitude is not none %} · {{ altitude | int }} ft{% endif %}
+        {%- endif -%}
       # Built with a namespace + dict() merge rather than `dict(**a, **b)`:
       # Jinja has no `**` unpacking (raises "invalid syntax for function call
       # expression"), and `{% set %}` inside `{% if %}` does not escape the

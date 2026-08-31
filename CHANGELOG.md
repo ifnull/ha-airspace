@@ -9,6 +9,32 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [1.1.4] — 2026-08-30
+### Fixed
+- Alert attributes are now **self-sufficient for drone triggers**. The per-rule
+  `info` topic (which feeds `binary_sensor.airspace_alert_<rule>`'s attributes)
+  was `AircraftPayload`-shaped only, so a drone-triggered rule
+  (`drone_nearby`) could not describe what fired it. The documented workaround
+  was to cross-reference `sensor.airspace_nearest_drone` — which silently
+  described the **wrong drone** whenever a second, nearer drone was also
+  airborne. A drone trigger now carries `is_drone`, `id_type`, `ua_type`,
+  `self_id`, `agl_ft`, `alt_geom_ft`, `ground_speed_kt`, `track_deg`,
+  `rid_source`, and the full `operator_*` set including
+  `operator_location_type`. `docs/automations.example.yaml`'s `drone_nearby`
+  example now reads the alert entity instead. Additive fields only — no
+  `schema_version` bump.
+- `db_metadata` is published on alert attributes. It has been listed in the
+  documented attribute set since the alert topic shipped but was never actually
+  emitted; for a drone it carries the FAA UAS make/model, which is the entire
+  point of `enable_drone_registry`.
+
+### Changed
+- The alert notification blueprint renders drone triggers: FAA make/model →
+  UA category → Self-ID → "Drone", plus height above ground and whether the
+  operator coordinates are a live fix or the drone's own takeoff point.
+  Aircraft-shaped keys stay present (as null) on a drone track, so consumer
+  templates only ever guard for null, never for a missing attribute.
+
 ## [1.1.3] — 2026-08-30
 ### Added
 - **HA automation blueprint** —

@@ -32,8 +32,8 @@ from ha_airspace.models import (
     DroneInfo,
     ReceiverLocation,
 )
-from ha_airspace.mqtt.payloads import FlagFeedPayload, PhotoPayload
-from ha_airspace.mqtt.publisher import Publisher
+from ha_airspace.mqtt.payloads import DronePayload, FlagFeedPayload, PhotoPayload
+from ha_airspace.mqtt.publisher import Publisher, _alert_info
 
 # ---------------------------------------------------------------------------
 # Fakes
@@ -781,3 +781,84 @@ class TestAlertInfo:
         pub = _make_publisher(fake_client)
         await pub.publish_alert_active("mil", active=True)
         assert _info_publishes(fake_client) == []  # active on -> info left intact
+
+
+# ---------------------------------------------------------------------------
+# Alert info — self-sufficient for both bands
+# ---------------------------------------------------------------------------
+
+
+class TestAlertInfoFieldSet:
+    """The per-rule `info` topic feeds the alert binary_sensor's attributes,
+    which is the only thing an automation sees when a rule fires. It has to
+    describe the track that actually triggered — not the nearest one."""
+
+    def test_drone_trigger_carries_rid_identity_and_operator(self) -> None:
+        info = _alert_info(_make_drone_state(), None)
+        assert info["is_drone"] is True
+        assert info["id_type"] == "serial"
+        assert info["ua_type"] == "multirotor"
+        assert info["agl_ft"] == 246.1
+        assert info["rid_source"] == "wifi_beacon"
+        assert info["operator_lat"] == 40.7165
+        assert info["operator_lon"] == -73.9990
+        assert info["operator_location_type"] == "live_gnss"
+        assert info["operator_id"] == "OP123"
+        assert info["operator_alt_takeoff_ft"] == 50.0
+
+    def test_aircraft_trigger_is_not_flagged_as_a_drone(self) -> None:
+        info = _alert_info(_make_state(), None)
+        assert info["is_drone"] is False
+        # RID-only keys are absent entirely, not None, for an aircraft.
+        for key in ("id_type", "ua_type", "agl_ft", "operator_lat"):
+            assert key not in info
+
+    def test_aircraft_keys_present_but_null_on_a_drone(self) -> None:
+        """A stable key set means a consumer template guards for null, never
+        for a missing attribute."""
+        info = _alert_info(_make_drone_state(), None)
+        for key in ("flight", "hex", "registration", "aircraft_type", "squawk"):
+            assert key in info
+            assert info[key] is None
+
+    def test_drone_hex_does_not_produce_a_bogus_country(self) -> None:
+        """A drone observation has hex=None; country_for must not hallucinate a
+        registry hit from the UAS serial."""
+        info = _alert_info(_make_drone_state(), None)
+        assert info["country"] is None
+        assert info["country_flag"] is None
+
+    def test_db_metadata_is_published(self) -> None:
+        """docs/automations.example.yaml has always documented db_metadata as an
+        alert attribute; it was never actually emitted. For a drone this is the
+        FAA UAS make/model, which is the whole point of drone_registry."""
+        state = _make_drone_state()
+        state.db_metadata = {"make": "DJI", "model": "Mavic 3"}
+        info = _alert_info(state, None)
+        assert info["db_metadata"] == {"make": "DJI", "model": "Mavic 3"}
+
+    def test_covers_every_rid_field_dronepayload_publishes(self) -> None:
+        """Drift guard against DronePayload. If a RID field is added there and
+        not here, a drone-triggered alert silently cannot describe it — the
+        exact gap this change closed."""
+        state = _make_drone_state()
+        payload = DronePayload.from_state(state).model_dump()
+        info = _alert_info(state, None)
+        # Contract-level and aircraft-shaped keys DronePayload carries that the
+        # alert info deliberately names differently or omits.
+        exempt = {
+            "schema_version",  # payload-only contract field
+            "lat",
+            "lon",
+            "latitude",
+            "longitude",  # alert info has no position
+            "seen_by",
+            "first_seen",
+            "last_seen",  # provenance, on the aircraft topic
+            "vertical_rate_fpm",  # already an aircraft-shaped key above
+        }
+        missing = set(payload) - set(info) - exempt
+        assert not missing, (
+            f"DronePayload publishes RID fields the alert info does not: {sorted(missing)}. "
+            "Add them to _alert_info or justify them in `exempt`."
+        )
