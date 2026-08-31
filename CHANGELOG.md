@@ -9,7 +9,7 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
-## [Unreleased]
+## [1.1.3] — 2026-08-30
 ### Added
 - **HA automation blueprint** —
   `blueprints/automation/ha-airspace/alert_notification.yaml`. Import once,
