@@ -24,7 +24,7 @@ import jinja2
 import pytest
 import yaml
 
-from ha_airspace.models import AircraftObservation, AircraftState
+from ha_airspace.models import AircraftObservation, AircraftState, DroneInfo
 from ha_airspace.mqtt.payloads import PhotoPayload
 from ha_airspace.mqtt.publisher import _alert_info
 
@@ -48,7 +48,17 @@ def _load(path: Path) -> dict[str, Any]:
 
 def _published_alert_attributes() -> set[str]:
     """Every attribute key the alert `info` topic can carry, from the real
-    producer — photo included, since the blueprint offers a photo option."""
+    producer — the union across both bands, since one blueprint handles both.
+
+    Aircraft *and* drone: the RID keys (ua_type, agl_ft, operator_*) exist only
+    on a drone-triggered alert, so a reference set built from an aircraft state
+    alone would wrongly flag the blueprint's drone branch. Photo included, since
+    the blueprint offers a photo option.
+    """
+    return _aircraft_alert_keys() | _drone_alert_keys()
+
+
+def _aircraft_alert_keys() -> set[str]:
     obs = AircraftObservation(
         hex="ae0001",
         observed_at=datetime(2026, 8, 30, 12, 0, tzinfo=UTC),
@@ -59,13 +69,34 @@ def _published_alert_attributes() -> set[str]:
         lon=-75.99,
         alt_baro_ft=35000,
     )
-    state = AircraftState.from_first_observation(obs)
     photo = PhotoPayload(
         thumbnail_url="https://example.invalid/t.jpg",
         photographer="A Photographer",
         link="https://example.invalid/p",
     )
-    return set(_alert_info(state, photo))
+    return set(_alert_info(AircraftState.from_first_observation(obs), photo))
+
+
+def _drone_alert_keys() -> set[str]:
+    obs = AircraftObservation(
+        track_id="S1",
+        hex=None,
+        non_icao=True,
+        observed_at=datetime(2026, 8, 30, 12, 0, tzinfo=UTC),
+        seen_by="dump3411",
+        band="remoteid",
+        lat=40.7,
+        lon=-74.0,
+        drone=DroneInfo(
+            id_type="serial",
+            ua_type="multirotor",
+            agl_ft=246.1,
+            operator_lat=40.71,
+            operator_lon=-73.99,
+            operator_location_type="live_gnss",
+        ),
+    )
+    return set(_alert_info(AircraftState.from_first_observation(obs), None))
 
 
 def _referenced_attributes(path: Path) -> set[str]:
@@ -233,3 +264,50 @@ def test_message_template_renders_with_everything_present() -> None:
     )
     for fragment in ("RCH171", "C17", "00-0171", "12.3 nm", "272", "35000 ft"):
         assert fragment in rendered, f"{fragment!r} missing from: {rendered}"
+
+
+def test_blueprint_drone_branch_reads_only_drone_published_keys() -> None:
+    """The drone half of the message must read keys a *drone* alert publishes —
+    an aircraft-only reference set would let a typo through here."""
+    drone_only = {"ua_type", "self_id", "agl_ft", "operator_lat", "operator_location_type"}
+    published_for_drones = _drone_alert_keys()
+    assert drone_only <= published_for_drones, sorted(drone_only - published_for_drones)
+    # And is_drone, the discriminator the branch pivots on, is on both.
+    assert "is_drone" in _aircraft_alert_keys() & published_for_drones
+
+
+def test_drone_message_renders() -> None:
+    env = jinja2.Environment()
+    message = _load(_ALERT_BLUEPRINT)["action"][0]["data"]["message"]
+    rendered = env.from_string(message).render(
+        is_drone=True,
+        db_metadata={"make": "DJI", "model": "Mavic 3"},
+        ua_type="multirotor",
+        self_id=None,
+        distance=0.4,
+        bearing=88.0,
+        agl_ft=246.1,
+        operator_lat=40.71,
+        operator_location_type="takeoff",
+    )
+    assert "DJI Mavic 3" in rendered
+    assert "246 ft AGL" in rendered
+    assert "operator takeoff point" in rendered
+    assert "None" not in rendered
+
+
+def test_drone_message_degrades_to_bare_drone() -> None:
+    env = jinja2.Environment()
+    message = _load(_ALERT_BLUEPRINT)["action"][0]["data"]["message"]
+    rendered = env.from_string(message).render(
+        is_drone=True,
+        db_metadata={},
+        ua_type=None,
+        self_id=None,
+        distance=None,
+        bearing=None,
+        agl_ft=None,
+        operator_lat=None,
+        operator_location_type=None,
+    )
+    assert rendered.strip() == "Drone"
