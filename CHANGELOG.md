@@ -9,6 +9,29 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [Unreleased]
+### Added
+- **HA automation blueprint** —
+  `blueprints/automation/ha-airspace/alert_notification.yaml`. Import once,
+  add one instance per alert rule from the UI: pick the alert, pick a notify
+  service, done. Replaces the two near-identical per-rule notification
+  examples, which differed only in entity, notify target, and title. It reads
+  **only the triggering alert's own attributes**, so it cannot describe a
+  different aircraft than the one that fired the rule — the class of bug that
+  #62 had to patch by hand in the copy-paste examples.
+  `docs/automations.example.yaml` keeps the cases a per-rule notification
+  can't express: the stateful emergency-squawk pair, and the drone
+  automations that need Remote ID detail the alert `info` topic doesn't carry
+  (see the `alert-info-drone-fields` TODO in `mqtt/publisher.py`).
+
+### Changed
+- `tests/test_blueprints.py` guards the blueprint against drift: every
+  attribute it reads must be one `publisher._alert_info` actually publishes,
+  and every Jinja template must compile. A blueprint is a public compat
+  surface with no `schema_version` equivalent — a renamed attribute silently
+  renders an empty notification, and nothing in HA validates it. Adds a
+  test-only `jinja2` dev dependency; the runtime never renders templates.
+
 ## [1.1.2] — 2026-08-30
 Docs only — no functional or schema change.
 

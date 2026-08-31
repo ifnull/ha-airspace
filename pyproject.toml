@@ -58,6 +58,10 @@ dev = [
   "freezegun>=1.5",
   "testcontainers>=4.8",
   "types-pyyaml>=6.0",
+  # Test-only: compiles the shipped blueprint's Jinja so a template that HA
+  # would reject at runtime fails in CI instead. Not a runtime dependency —
+  # the service never renders templates.
+  "jinja2>=3.1",
 ]
 
 [build-system]

@@ -1,0 +1,126 @@
+blueprint:
+  name: "Airspace · alert notification"
+  description: >-
+    Notify when an Airspace alert rule turns on.
+
+
+    Pick one alert `binary_sensor` per automation — create as many instances as
+    you have rules. Every field in the message comes from the alert entity's own
+    attributes, so the notification always describes *the aircraft that actually
+    triggered this rule*.
+
+
+    Requires the [ha-airspace](https://github.com/ifnull/ha-airspace) add-on with
+    `enable_alerts` on. The photo option additionally needs `enable_photos`.
+  domain: automation
+  source_url: https://github.com/ifnull/ha-airspace/blob/main/blueprints/automation/ha-airspace/alert_notification.yaml
+  author: ifnull
+  input:
+    alert_entity:
+      name: Alert
+      description: >-
+        The alert to watch. One per automation. These appear as
+        "Alert <rule name>" for each rule in your add-on config.
+      selector:
+        entity:
+          filter:
+            - domain: binary_sensor
+              integration: mqtt
+
+    notify_service:
+      name: Notification service
+      description: >-
+        Where to send it, e.g. `notify.mobile_app_pixel`. Leave the default to
+        post to Home Assistant's notification drawer instead of a device.
+      default: notify.persistent_notification
+      selector:
+        text:
+
+    title:
+      name: Title
+      description: Notification title. Supports emoji.
+      default: "🛩️ Airspace alert"
+      selector:
+        text:
+
+    watchpoint:
+      name: Watchpoint
+      description: >-
+        Which watchpoint the distance is measured from — must match a name in
+        your add-on's `watchpoints` config.
+      default: home
+      selector:
+        text:
+
+    include_photo:
+      name: Include aircraft photo
+      description: >-
+        Attach the Planespotters thumbnail when one is available. Needs
+        `enable_photos` in the add-on config; silently sends a plain
+        notification when there is no photo for the airframe.
+      default: true
+      selector:
+        boolean:
+
+    notification_group:
+      name: Notification group
+      description: >-
+        Android/iOS notification group tag. Alerts sharing a tag collapse
+        together rather than stacking. Blank disables grouping.
+      default: airspace
+      selector:
+        text:
+
+mode: single
+max_exceeded: silent
+
+# Blueprint `variables:` are safe here in a way they are not in a hand-written
+# automation: the stored automation is only `use_blueprint: {path, input}`, so
+# the HA UI editor never round-trips this body and cannot drop them. That is
+# why this reads as normal templating while docs/automations.example.yaml has
+# to inline `{% set %}` in every field.
+variables:
+  alert_entity: !input alert_entity
+  watchpoint: !input watchpoint
+  include_photo: !input include_photo
+  notification_group: !input notification_group
+  flight: >-
+    {{ state_attr(alert_entity, 'flight') or state_attr(alert_entity, 'hex') or 'unknown' }}
+  registration: "{{ state_attr(alert_entity, 'registration') }}"
+  aircraft_type: "{{ state_attr(alert_entity, 'aircraft_type') }}"
+  country_flag: "{{ state_attr(alert_entity, 'country_flag') }}"
+  altitude: "{{ state_attr(alert_entity, 'alt_baro_ft') }}"
+  # distance_to / bearing_to are dicts keyed by watchpoint name.
+  distance: "{{ (state_attr(alert_entity, 'distance_to') or {}).get(watchpoint) }}"
+  bearing: "{{ (state_attr(alert_entity, 'bearing_to') or {}).get(watchpoint) }}"
+  photo_url: "{{ state_attr(alert_entity, 'entity_picture') }}"
+
+trigger:
+  - platform: state
+    entity_id: !input alert_entity
+    to: "on"
+
+action:
+  - service: !input notify_service
+    data:
+      title: !input title
+      message: >-
+        {{ country_flag ~ ' ' if country_flag }}{{ flight }}
+        {%- if aircraft_type %} · {{ aircraft_type }}{% endif %}
+        {%- if registration %} ({{ registration }}){% endif %}
+        {%- if distance is not none %} · {{ distance | round(1) }} nm{% endif %}
+        {%- if bearing is not none %} at {{ bearing | round(0) | int }}°{% endif %}
+        {%- if altitude is not none %} · {{ altitude | int }} ft{% endif %}
+      # Built with a namespace + dict() merge rather than `dict(**a, **b)`:
+      # Jinja has no `**` unpacking (raises "invalid syntax for function call
+      # expression"), and `{% set %}` inside `{% if %}` does not escape the
+      # block scope without a namespace.
+      data: >-
+        {% set d = namespace(v={}) %}
+        {%- if include_photo and photo_url %}
+        {%- set d.v = dict(d.v, image=photo_url) %}
+        {%- endif %}
+        {%- if notification_group %}
+        {%- set d.v = dict(d.v, tag=notification_group, group=notification_group) %}
+        {%- endif %}
+        {{- d.v }}
