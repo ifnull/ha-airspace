@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
+import structlog
 
 from ha_airspace.photos import PhotoEnricher
 
@@ -38,11 +39,18 @@ class _Clock:
 
 
 def _enricher(
-    handler: object, *, cache_ttl_s: float = 60.0, clock: _Clock | None = None
+    handler: object,
+    *,
+    cache_ttl_s: float = 60.0,
+    failure_ttl_s: float = 10.0,
+    clock: _Clock | None = None,
 ) -> tuple[PhotoEnricher, _Clock]:
     clk = clock or _Clock()
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))  # type: ignore[arg-type]
-    return PhotoEnricher(client, cache_ttl_s=cache_ttl_s, clock=clk), clk
+    return (
+        PhotoEnricher(client, cache_ttl_s=cache_ttl_s, failure_ttl_s=failure_ttl_s, clock=clk),
+        clk,
+    )
 
 
 class TestFetch:
@@ -147,3 +155,90 @@ async def test_photo_for_never_raises(status: int) -> None:
     # Defensive: even a bizarre body shape yields None, not an exception.
     enr, _ = _enricher(lambda req: httpx.Response(status, json={"unexpected": True}))
     assert await enr.photo_for(_HEX) is None
+
+
+class TestFailureIsNotAnAbsence:
+    """A 525 from Cloudflare says nothing about whether the airframe has a
+    photo. Caching that for `cache_ttl_days` (30 by default) blanked an
+    aircraft's photo for a month over a transient upstream blip — observed in
+    the field 2026-08-31 against api.planespotters.net."""
+
+    async def test_failed_lookup_retries_after_short_ttl(self) -> None:
+        calls: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(str(request.url))
+            # Fail once (Cloudflare 525), then succeed.
+            if len(calls) == 1:
+                return httpx.Response(525)
+            return httpx.Response(200, json=_PHOTO_JSON)
+
+        enricher, clk = _enricher(handler, cache_ttl_s=60.0, failure_ttl_s=10.0)
+        assert await enricher.photo_for(_HEX) is None
+        # Within the failure TTL: served from cache, no second request.
+        clk.advance(5.0)
+        assert await enricher.photo_for(_HEX) is None
+        assert len(calls) == 1
+        # Past it: refetched, and the photo appears.
+        clk.advance(6.0)
+        result = await enricher.photo_for(_HEX)
+        assert result is not None
+        assert len(calls) == 2
+
+    async def test_failure_does_not_get_the_success_ttl(self) -> None:
+        """The regression itself: a failure must not be remembered as long as
+        an answered lookup."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(525)
+
+        enricher, _ = _enricher(handler, cache_ttl_s=2_592_000.0, failure_ttl_s=10.0)
+        await enricher.photo_for(_HEX)
+        # The 30-day success TTL must not be what a failed lookup gets.
+        _, _, ttl = enricher._cache[_HEX]
+        assert ttl == 10.0
+
+    async def test_confirmed_absence_keeps_the_long_ttl(self) -> None:
+        """An answered "no photos for this hex" is still good for weeks — that
+        caching must not regress while fixing the failure case."""
+        calls: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(str(request.url))
+            return httpx.Response(200, json={"photos": []})
+
+        enricher, clk = _enricher(handler, cache_ttl_s=60.0, failure_ttl_s=10.0)
+        assert await enricher.photo_for(_HEX) is None
+        clk.advance(30.0)  # past the failure TTL, inside the success TTL
+        assert await enricher.photo_for(_HEX) is None
+        assert len(calls) == 1, "a confirmed absence was refetched too early"
+
+    async def test_missing_thumbnail_counts_as_answered(self) -> None:
+        """A 200 with a photo entry but no thumbnail src is a real answer, not
+        a failure — upstream told us there is nothing usable."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"photos": [{"link": "https://x/1"}]})
+
+        enricher, _ = _enricher(handler, cache_ttl_s=60.0, failure_ttl_s=10.0)
+        await enricher.photo_for(_HEX)
+        _, _, ttl = enricher._cache[_HEX]
+        assert ttl == 60.0
+
+
+class TestFailureLogging:
+    async def test_logs_error_class_when_the_exception_stringifies_empty(self) -> None:
+        """httpx's timeout/connect/protocol errors all `str()` to "" when raised
+        without a message, which produced `"error": ""` log lines carrying no
+        information at all."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ReadTimeout("")
+
+        enricher, _ = _enricher(handler)
+        with structlog.testing.capture_logs() as logs:
+            assert await enricher.photo_for(_HEX) is None
+        failures = [entry for entry in logs if entry["event"] == "photo_lookup_failed"]
+        assert len(failures) == 1
+        assert failures[0]["error_class"] == "ReadTimeout"
+        assert failures[0]["retry_in_s"] == 10.0
