@@ -60,3 +60,5 @@ config.yaml
 *.db-journal
 *.db-wal
 *.db-shm
+config.dev.yaml
+.devdata/
