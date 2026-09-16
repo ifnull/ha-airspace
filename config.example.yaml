@@ -178,16 +178,23 @@ receivers:
 #           max_alt_agl_ft: 10000          # ...and low (compose to cut cruise traffic)
 #           # predictive: relative to the primary watchpoint; only fires while the
 #           # track is approaching. Near an airport, tighten alt/distance to taste.
+#       # SIZING THESE: a too-tight threshold fails SILENTLY — the rule simply
+#       # never matches, which is indistinguishable from "no drone was there".
+#       # Start wide, watch what you actually receive, then tighten. Remote ID
+#       # reception range (a few hundred m to ~2 km over wifi_beacon/BLE) already
+#       # caps how far out these can ever fire, so a generous distance costs
+#       # little. `uv run scripts/watch_rid.py` prints each drone's real distance
+#       # and AGL — size against that, not against the numbers below.
 #       - name: drone_conflict            # early warning: a track flying INBOUND
 #         match:                          # toward home, low and close (see FEED.md)
 #           max_closest_approach_nm: 0.5
-#           max_alt_agl_ft: 1000
+#           max_alt_agl_ft: 1640          # ~500 m: typical consumer max-altitude ceiling
 #           within_eta_s: 300
 #           watchpoint: home
 #       - name: drone_nearby              # catches a hovering/loitering drone that
 #         match:                          # drone_conflict's predictive gate misses:
-#           max_alt_agl_ft: 1000          # max_closest_approach_nm/within_eta_s need a
-#           max_distance_nm: 0.5          # sustained closing vector (ground_speed_kt +
+#           max_alt_agl_ft: 1640          # max_closest_approach_nm/within_eta_s need a
+#           max_distance_nm: 1.5          # sustained closing vector (ground_speed_kt +
 #           watchpoint: home              # track_deg); a drone with near-zero speed or
 #                                          # no consistent heading toward the watchpoint
 #                                          # never gets a projected ETA, so it can be

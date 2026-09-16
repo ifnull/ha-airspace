@@ -62,6 +62,46 @@ def _default_clock() -> datetime:
 _AGL_PREDICTION_HORIZON_S = 120.0
 
 
+def _agl_ft(
+    state: AircraftState,
+    elevation_m_for: Callable[[str], float | None],
+    wp_name: str,
+) -> float | None:
+    """Height above ground in feet, or None when the track carries no usable
+    altitude.
+
+    Two sources, most-direct first:
+
+    * **Remote ID drones broadcast true AGL** (``drone.agl_ft``, height above
+      the takeoff point) — use it verbatim. It beats the MSL-minus-elevation
+      approximation, and it is the *only* option here: Remote ID has no
+      barometric altimeter, so a drone track's ``alt_baro_ft`` is always None.
+      Reading only baro (the pre-fix behavior) made every ``max_alt_agl_ft``
+      rule unsatisfiable for drones, so the documented drone_nearby /
+      drone_conflict rules could only ever trip on manned aircraft.
+      Height-above-takeoff differs from height-above-watchpoint when the drone
+      launched from a different elevation, but for the close-in ranges these
+      rules use, the two are the same number within the noise of a
+      hand-entered ``elevation_m``.
+    * Otherwise MSL minus the watchpoint ground elevation (the v1
+      approximation; ``elevation_m`` is config-validated to exist when used).
+      ``alt_geom_ft`` backs up a drone whose Location message carried no AGL —
+      manned aircraft stay strictly baro-only so existing tuned thresholds keep
+      their current behavior.
+
+    1 m = 3.28084 ft.
+    """
+    drone = state.canonical.drone
+    if drone is not None and drone.agl_ft is not None:
+        return drone.agl_ft
+    alt_msl = state.canonical.alt_baro_ft
+    if alt_msl is None and drone is not None:
+        alt_msl = state.canonical.alt_geom_ft
+    if alt_msl is None:
+        return None
+    return alt_msl - (elevation_m_for(wp_name) or 0.0) * 3.28084
+
+
 def _passes_alt_agl(
     state: AircraftState,
     max_alt_agl_ft: float,
@@ -70,9 +110,8 @@ def _passes_alt_agl(
     *,
     predictive: bool = False,
 ) -> bool:
-    """At or below ``max_alt_agl_ft`` above the watchpoint. v1 AGL is MSL minus
-    the watchpoint ground elevation (config-validated to exist when used).
-    Missing altitude can't satisfy it. 1 m = 3.28084 ft.
+    """At or below ``max_alt_agl_ft`` above the watchpoint. AGL is resolved by
+    ``_agl_ft``; a track with no usable altitude can't satisfy the condition.
 
     For a ``predictive`` (inbound) rule, also extrapolate the altitude the track
     will have at closest approach — current AGL plus vertical rate over the ETA,
@@ -83,11 +122,9 @@ def _passes_alt_agl(
     sustained descent rate from projecting a still-high, far-out track below the
     threshold minutes early. Falls back to the current snapshot when vertical rate
     or ETA is unknown."""
-    alt_msl = state.canonical.alt_baro_ft
-    if alt_msl is None:
+    agl = _agl_ft(state, elevation_m_for, wp_name)
+    if agl is None:
         return False
-    ground_ft = (elevation_m_for(wp_name) or 0.0) * 3.28084
-    agl = alt_msl - ground_ft
     if predictive:
         vr = state.canonical.vertical_rate_fpm
         eta = state.predicted_eta_to_home_s
