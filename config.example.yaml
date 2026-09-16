@@ -185,25 +185,42 @@ receivers:
 #       # caps how far out these can ever fire, so a generous distance costs
 #       # little. `uv run scripts/watch_rid.py` prints each drone's real distance
 #       # and AGL — size against that, not against the numbers below.
-#       - name: drone_conflict            # early warning: a track flying INBOUND
-#         match:                          # toward home, low and close (see FEED.md)
-#           max_closest_approach_nm: 0.5
+#       # MIND THE SUBJECT — these two rules watch for OPPOSITE things, and the
+#       # shared "drone" prefix hides it:
+#       #
+#       #   drone_conflict — a MANNED AIRCRAFT inbound over the area YOUR drone
+#       #     might be flying in, so you can land it. The subject is the plane;
+#       #     the drone is yours and is not being tracked at all. Do NOT add
+#       #     flags: ["drone"] here — it would match only drones and never warn
+#       #     you about the traffic it exists to warn you about.
+#       #   drone_nearby — SOMEONE ELSE'S drone physically near your watchpoint.
+#       #     The subject is the drone, so flags: ["drone"] belongs here and is
+#       #     the only thing keeping low aircraft and helicopters out of it.
+#       #
+#       # `drone` is derived automatically for any Remote ID track; you never
+#       # declare it under `flags:` above.
+#       - name: drone_conflict            # low MANNED traffic inbound over your
+#         match:                          # drone's operating area (see FEED.md)
+#           max_closest_approach_nm: 10.8 # ~20 km: optimistic consumer-drone radio
+#                                          #   range — the volume you might be in
 #           max_alt_agl_ft: 1640          # ~500 m: typical consumer max-altitude ceiling
-#           within_eta_s: 300
+#           within_eta_s: 600             # only if arriving within 10 min
 #           watchpoint: home
-#       - name: drone_nearby              # catches a hovering/loitering drone that
-#         match:                          # drone_conflict's predictive gate misses:
-#           max_alt_agl_ft: 1640          # max_closest_approach_nm/within_eta_s need a
-#           max_distance_nm: 1.5          # sustained closing vector (ground_speed_kt +
-#           watchpoint: home              # track_deg); a drone with near-zero speed or
-#                                          # no consistent heading toward the watchpoint
-#                                          # never gets a projected ETA, so it can be
-#                                          # arbitrarily close/low and still never match
-#                                          # drone_conflict alone. This rule is pure
-#                                          # presence — no inbound requirement — so pair
-#                                          # the two: drone_conflict for early warning on
-#                                          # a genuine approach, drone_nearby for "one's
-#                                          # just sitting there right now."
+#       - name: drone_nearby              # someone else's drone, close and low
+#         match:                          # RIGHT NOW. Pure presence: no inbound
+#           flags: ["drone"]              # requirement, because a hovering or
+#           max_alt_agl_ft: 1640          # loitering drone is the common case and
+#           max_distance_nm: 1.5          # has near-zero speed or no consistent
+#           watchpoint: home              # heading, so it never gets a projected
+#                                          # ETA and no predictive rule can ever
+#                                          # catch it however close it gets.
+#                                          #
+#                                          # This is NOT "the half of drone_conflict
+#                                          # that drone_conflict misses" — the two
+#                                          # watch different subjects (see above).
+#                                          # Run both: drone_conflict warns you to
+#                                          # land yours, drone_nearby tells you
+#                                          # someone else's is overhead.
 
 # --------------------------------------------------------------------------
 # journal — SQLite history (Phase 2b). Optional; OMIT to disable persistence,

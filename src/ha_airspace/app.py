@@ -199,7 +199,10 @@ class App:
         """Republish the full retained set so a broker that lost its
         retained state (restart) is brought back to truth: service status
         + discovery, then each receiver's location and current status."""
-        await self._publisher.on_connect(sw_version=__version__)
+        await self._publisher.on_connect(
+            sw_version=__version__,
+            alert_states=self._tracker.alert_states(),
+        )
         for receiver in self._receivers:
             location = self._locations.get(receiver.name)
             if location is not None:

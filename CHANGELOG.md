@@ -9,6 +9,37 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [1.1.7] — 2026-09-16
+### Added
+- Enrichment: a derived **`drone`** flag on every Remote ID track, usable in
+  alert rules like any other flag (`match: { flags: ["drone"] }`). Alert
+  `MatchBlock` keys are otherwise **purely geometric** — distance, altitude,
+  closing vector — so a rule named `drone_nearby` assembled from only those
+  matched *any* low, close track and pushed light aircraft and helicopters as
+  drones. Compose `flags: ["drone"]` to make such a rule actually drone-only.
+  The flag is automatic; it is not declared under `enrichment.flags`.
+  Backwards-compatible: existing rules keep their current behavior until the
+  flag is added to them.
+
+  **Not every drone-named rule wants it.** `drone_nearby` tracks someone
+  else's drone, so it does. `drone_conflict` tracks a low *manned* aircraft
+  inbound over the area your own drone is flying in, so that you can land —
+  the drone there is yours and is never tracked. Adding the flag to
+  `drone_conflict` would silence exactly the traffic it exists to warn about.
+  The example config now spells out which subject each rule watches.
+
+### Fixed
+- Alerts: a restart no longer replays the last alert as a new one. Retained
+  `alert/<rule>/active` outlives the process — a rule that was `on` when the
+  service exited stayed retained `on` — and `on_connect` published
+  `status: online` before any evaluation had run. Home Assistant therefore
+  flipped the `binary_sensor` `unavailable -> on` off a stale value and fired
+  the notification automation for a detection that never happened. The connect
+  hook now asserts the genuine current state of **every configured rule** while
+  still marked offline, before availability flips. It publishes the real active
+  set rather than a blanket clear, so a mid-run broker reconnect (where rules
+  are legitimately active) does not flap them off and straight back on.
+
 ## [1.1.6] — 2026-09-15
 ### Fixed
 - Alerts: `max_alt_agl_ft` now resolves height above ground from a drone's

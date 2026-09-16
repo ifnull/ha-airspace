@@ -357,6 +357,13 @@ class AircraftTracker:
         for rule in touched_rules:
             await self._publisher.publish_alert_active(rule, active=rule in active)
 
+    def alert_states(self) -> dict[str, bool]:
+        """Configured rule name -> currently active. Empty when no evaluator is
+        configured. Synchronous by design: the caller (the on-connect hook) runs
+        on the MQTT loop, and taking the tracker lock there could deadlock
+        against a tick that is blocked enqueueing a publish."""
+        return {} if self._alerts is None else self._alerts.alert_states()
+
     async def _photo_for(self, state: AircraftState) -> PhotoPayload | None:
         """Aircraft photo for an alerting track, when photo enrichment is
         configured and the track has an ICAO hex (Planespotters is ICAO-keyed;

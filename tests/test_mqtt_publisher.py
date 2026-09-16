@@ -159,6 +159,66 @@ def _make_publisher(
 # ---------------------------------------------------------------------------
 
 
+class TestOnConnectAlertState:
+    """Retained alert state outlives the process, so on reconnect it must be
+    overwritten with the truth BEFORE availability flips — otherwise HA replays
+    a stale ``on`` as a fresh ENTER and fires the notification automation for a
+    detection that never happened."""
+
+    @staticmethod
+    def _topics(fake_client: FakeMqttClient) -> list[str]:
+        return [c["topic"] for c in fake_client.publishes]
+
+    async def test_alert_state_published_before_status_online(
+        self, fake_client: FakeMqttClient
+    ) -> None:
+        pub = _make_publisher(fake_client)
+        await pub.on_connect(alert_states={"drone_nearby": False})
+
+        topics = self._topics(fake_client)
+        assert topics.index("airspace/alert/drone_nearby/active") < topics.index(
+            "airspace/status"
+        ), "alert truth must land while still offline, or HA replays the stale value"
+
+    async def test_inactive_rule_overwrites_stale_retained_on(
+        self, fake_client: FakeMqttClient
+    ) -> None:
+        pub = _make_publisher(fake_client)
+        await pub.on_connect(alert_states={"drone_nearby": False})
+
+        active = next(
+            c for c in fake_client.publishes if c["topic"] == "airspace/alert/drone_nearby/active"
+        )
+        assert active["payload"] == b"off"
+        assert active["retain"] is True
+        # The attribute topic is cleared too, so a departed aircraft's details
+        # don't linger on the entity.
+        info = next(
+            c for c in fake_client.publishes if c["topic"] == "airspace/alert/drone_nearby/info"
+        )
+        assert info["payload"] == b""
+
+    async def test_active_rule_is_reasserted_not_cleared(self, fake_client: FakeMqttClient) -> None:
+        # Mid-run broker reconnect: the rule is genuinely active. Blanket-
+        # clearing here would flap the binary_sensor off and straight back on,
+        # which is the very duplicate-notification bug this fixes.
+        pub = _make_publisher(fake_client)
+        await pub.on_connect(alert_states={"drone_nearby": True})
+
+        active = next(
+            c for c in fake_client.publishes if c["topic"] == "airspace/alert/drone_nearby/active"
+        )
+        assert active["payload"] == b"on"
+        assert "airspace/alert/drone_nearby/info" not in self._topics(fake_client)
+
+    async def test_omitted_alert_states_changes_nothing(self, fake_client: FakeMqttClient) -> None:
+        pub = _make_publisher(fake_client)
+        await pub.on_connect()
+
+        assert not [t for t in self._topics(fake_client) if "/alert/" in t]
+        assert fake_client.publishes[0]["topic"] == "airspace/status"
+
+
 class TestOnConnect:
     async def test_publishes_status_online_first(self, fake_client: FakeMqttClient) -> None:
         pub = _make_publisher(fake_client)

@@ -6,8 +6,8 @@ from datetime import UTC, datetime
 
 from ha_airspace.config import EnrichmentConfig, FlagConfig
 from ha_airspace.databases import DatabaseStore
-from ha_airspace.enrichment import Enricher
-from ha_airspace.models import AircraftObservation, AircraftState
+from ha_airspace.enrichment import DRONE_FLAG, Enricher
+from ha_airspace.models import AircraftObservation, AircraftState, DroneInfo
 
 _T0 = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
 
@@ -138,3 +138,52 @@ def test_db_metadata_reassigned_each_pass() -> None:
     store.swap({})
     enricher.enrich(state)
     assert state.db_metadata == {}
+
+
+# ---------------------------------------------------------------------------
+# Derived `drone` flag
+# ---------------------------------------------------------------------------
+
+
+def _drone_state() -> AircraftState:
+    obs = AircraftObservation(
+        track_id="Sim_Serial_0001",
+        hex=None,
+        non_icao=True,
+        observed_at=_T0,
+        seen_by="dump3411",
+        band="remoteid",
+        drone=DroneInfo(id_type="serial", ua_type="multirotor", agl_ft=250.0),
+    )
+    return AircraftState.from_first_observation(obs)
+
+
+def test_remoteid_track_gets_drone_flag() -> None:
+    enricher = Enricher(EnrichmentConfig())
+    state = _drone_state()
+    enricher.enrich(state)
+    assert DRONE_FLAG in state.flags
+
+
+def test_adsb_track_does_not_get_drone_flag() -> None:
+    enricher = Enricher(EnrichmentConfig())
+    state = _state()
+    enricher.enrich(state)
+    assert DRONE_FLAG not in state.flags
+
+
+def test_drone_flag_survives_configured_flag_evaluation() -> None:
+    # evaluate_flags reassigns state.flags wholesale, so the derived flag has to
+    # be applied after it — this pins that ordering.
+    enricher = Enricher(EnrichmentConfig(flags={"emergency": FlagConfig(squawks=["7700"])}))
+    state = _drone_state()
+    enricher.enrich(state)
+    assert DRONE_FLAG in state.flags
+
+
+def test_drone_flag_is_reapplied_each_pass() -> None:
+    enricher = Enricher(EnrichmentConfig())
+    state = _drone_state()
+    enricher.enrich(state)
+    enricher.enrich(state)
+    assert state.flags == {DRONE_FLAG}

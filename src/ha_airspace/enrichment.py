@@ -22,6 +22,18 @@ from typing import TYPE_CHECKING
 
 from ha_airspace.flags import evaluate_flags
 
+DRONE_FLAG = "drone"
+"""Derived flag marking a Remote ID track. Planned in the Phase-3 notes
+("Flag rules can still apply (e.g. a ``drone`` flag)") and mirroring
+``ORBIT_FLAG`` / ``SPOOF_FLAG``: a derived flag composes with the existing
+grammar for free, so no new ``MatchBlock`` key is needed.
+
+This exists because ``MatchBlock`` is otherwise **purely geometric** —
+distance, altitude, closing vector. A rule named ``drone_nearby`` built from
+only those keys matches *any* low, close track: light aircraft and
+helicopters trip it exactly as readily as a quadcopter. Compose
+``flags: ["drone"]`` into such a rule to make the name true."""
+
 if TYPE_CHECKING:
     from ha_airspace.config import EnrichmentConfig
     from ha_airspace.databases import DatabaseStore
@@ -68,6 +80,13 @@ class Enricher:
             if isinstance(db_type, str) and db_type and state.canonical.aircraft_type is None:
                 state.canonical = replace(state.canonical, aircraft_type=db_type)
         state.flags = evaluate_flags(state, self._config.flags)
+        # Intrinsic, not rule-driven: a Remote ID track *is* a drone. Applied
+        # here because this is the single owner of the flags assignment
+        # (evaluate_flags reassigns wholesale, so anything added earlier would be
+        # dropped), and it needs neither history nor a config toggle — unlike the
+        # orbit/spoof detectors, which are stateful and opt-in.
+        if "remoteid" in state.bands:
+            state.flags.add(DRONE_FLAG)
 
 
-__all__ = ["Enricher"]
+__all__ = ["DRONE_FLAG", "Enricher"]
