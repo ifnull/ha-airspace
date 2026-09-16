@@ -237,8 +237,13 @@
 #          - name: drone_nearby
 #            match:
 #              max_alt_agl_ft: 1640        # ~500 m: typical DJI max-altitude ceiling
-#              max_distance_nm: 0.34       # ~630 m: tight — this is presence, not
-#                                          #   early warning, so keep it close
+#              max_distance_nm: 1.5        # ~2.8 km. Deliberately generous: Remote ID
+#                                          #   reception already caps the real range,
+#                                          #   and a too-tight bound fails SILENTLY —
+#                                          #   the rule never matches and it looks
+#                                          #   like nothing was there. Measure with
+#                                          #   `uv run scripts/watch_rid.py` and
+#                                          #   tighten to what you actually receive.
 #              watchpoint: home
 #
 #    (b) Message content reads the alert entity's OWN attributes. The alert
