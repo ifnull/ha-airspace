@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from ha_airspace.alerts import AlertEvaluator, AlertTransition, rule_matches
 from ha_airspace.config import AlertRule, AlertsConfig, MatchBlock
-from ha_airspace.models import AircraftObservation, AircraftState
+from ha_airspace.models import AircraftObservation, AircraftState, DroneInfo
 
 _T0 = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
 
@@ -58,6 +58,38 @@ def _no_elevation(_name: str) -> float | None:
     return None
 
 
+def _drone_state(
+    track_id: str = "Sim_Serial_0001",
+    *,
+    agl_ft: float | None = None,
+    alt_geom_ft: int | None = None,
+    distance_home: float | None = None,
+    vertical_rate_fpm: int | None = None,
+    cpa_nm: float | None = None,
+    eta_s: float | None = None,
+) -> AircraftState:
+    """A Remote ID track as the remoteid parser builds it: no hex, no
+    alt_baro_ft (Remote ID carries no barometric altitude), AGL broadcast
+    natively on the DroneInfo."""
+    obs = AircraftObservation(
+        track_id=track_id,
+        hex=None,
+        non_icao=True,
+        observed_at=_T0,
+        seen_by="dump3411",
+        band="remoteid",
+        alt_geom_ft=alt_geom_ft,
+        vertical_rate_fpm=vertical_rate_fpm,
+        drone=DroneInfo(id_type="serial", ua_type="multirotor", agl_ft=agl_ft),
+    )
+    state = AircraftState.from_first_observation(obs)
+    if distance_home is not None:
+        state.distance_to["home"] = distance_home
+    state.predicted_closest_approach_nm = cpa_nm
+    state.predicted_eta_to_home_s = eta_s
+    return state
+
+
 # ---------------------------------------------------------------------------
 # rule_matches — pure AND/OR semantics
 # ---------------------------------------------------------------------------
@@ -105,6 +137,60 @@ class TestRuleMatches:
     def test_max_alt_agl_missing_altitude_no_match(self) -> None:
         match = MatchBlock(max_alt_agl_ft=2000, watchpoint="home")
         assert not rule_matches(_state(alt_baro_ft=None), match, elevation_m_for=lambda _n: 200.0)
+
+
+class TestDroneAltitudeGate:
+    """A Remote ID track has no barometric altitude, so an AGL-gated rule must
+    read the natively broadcast AGL. Regression: drone_nearby / drone_conflict
+    (both documented with max_alt_agl_ft) matched no drone at all — the gate
+    read alt_baro_ft only, which is always None for Remote ID."""
+
+    # The documented drone_nearby rule, verbatim from config.example.yaml.
+    _NEARBY = MatchBlock(max_alt_agl_ft=1000, max_distance_nm=0.5, watchpoint="home")
+
+    def test_drone_broadcast_agl_matches(self) -> None:
+        low = _drone_state(agl_ft=362.5, alt_geom_ft=312, distance_home=0.05)
+        assert rule_matches(low, self._NEARBY, elevation_m_for=lambda _n: 200.0)
+
+    def test_drone_above_threshold_no_match(self) -> None:
+        high = _drone_state(agl_ft=2400.0, alt_geom_ft=3100, distance_home=0.05)
+        assert not rule_matches(high, self._NEARBY, elevation_m_for=lambda _n: 200.0)
+
+    def test_drone_falls_back_to_geometric_altitude(self) -> None:
+        # Location message without height-above-takeoff: geom MSL minus the
+        # watchpoint elevation (200 m ~ 656 ft) -> ~344 ft AGL.
+        no_agl = _drone_state(agl_ft=None, alt_geom_ft=1000, distance_home=0.05)
+        assert rule_matches(no_agl, self._NEARBY, elevation_m_for=lambda _n: 200.0)
+
+    def test_drone_without_any_altitude_no_match(self) -> None:
+        bare = _drone_state(agl_ft=None, alt_geom_ft=None, distance_home=0.05)
+        assert not rule_matches(bare, self._NEARBY, elevation_m_for=lambda _n: 200.0)
+
+    def test_inbound_drone_rule_matches(self) -> None:
+        # The documented drone_conflict rule: predictive + AGL-gated.
+        conflict = MatchBlock(
+            max_closest_approach_nm=0.5,
+            max_alt_agl_ft=1000,
+            within_eta_s=300,
+            watchpoint="home",
+        )
+        inbound = _drone_state(agl_ft=400.0, distance_home=0.4, cpa_nm=0.1, eta_s=60.0)
+        assert rule_matches(inbound, conflict, elevation_m_for=lambda _n: 200.0)
+
+    def test_manned_aircraft_geometric_altitude_still_ignored(self) -> None:
+        # Unchanged for ADS-B: baro-only, so tuned thresholds keep behaving
+        # exactly as before this fix.
+        obs = AircraftObservation(
+            hex="ae0001",
+            observed_at=_T0,
+            seen_by="rx",
+            band="1090",
+            alt_baro_ft=None,
+            alt_geom_ft=800,
+        )
+        state = AircraftState.from_first_observation(obs)
+        state.distance_to["home"] = 0.05
+        assert not rule_matches(state, self._NEARBY, elevation_m_for=lambda _n: 200.0)
 
 
 class TestPredictiveAltitude:
