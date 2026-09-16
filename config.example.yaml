@@ -185,17 +185,24 @@ receivers:
 #       # caps how far out these can ever fire, so a generous distance costs
 #       # little. `uv run scripts/watch_rid.py` prints each drone's real distance
 #       # and AGL — size against that, not against the numbers below.
+#       # `flags: ["drone"]` is what makes these rules drone-only. Every other
+#       # match key is GEOMETRIC — distance, altitude, closing vector — so
+#       # without it a rule named drone_nearby fires just as happily on a light
+#       # aircraft or a helicopter flying low over the house. `drone` is derived
+#       # automatically for any Remote ID track; you don't declare it under
+#       # `flags:` above.
 #       - name: drone_conflict            # early warning: a track flying INBOUND
 #         match:                          # toward home, low and close (see FEED.md)
+#           flags: ["drone"]
 #           max_closest_approach_nm: 0.5
 #           max_alt_agl_ft: 1640          # ~500 m: typical consumer max-altitude ceiling
 #           within_eta_s: 300
 #           watchpoint: home
 #       - name: drone_nearby              # catches a hovering/loitering drone that
 #         match:                          # drone_conflict's predictive gate misses:
-#           max_alt_agl_ft: 1640          # max_closest_approach_nm/within_eta_s need a
-#           max_distance_nm: 1.5          # sustained closing vector (ground_speed_kt +
-#           watchpoint: home              # track_deg); a drone with near-zero speed or
+#           flags: ["drone"]              # max_closest_approach_nm/within_eta_s need a
+#           max_alt_agl_ft: 1640          # sustained closing vector (ground_speed_kt +
+#           max_distance_nm: 1.5          # track_deg); a drone with near-zero speed or
 #                                          # no consistent heading toward the watchpoint
 #                                          # never gets a projected ETA, so it can be
 #                                          # arbitrarily close/low and still never match

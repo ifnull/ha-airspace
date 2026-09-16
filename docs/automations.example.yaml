@@ -236,6 +236,11 @@
 #
 #          - name: drone_nearby
 #            match:
+#              flags: ["drone"]            # REQUIRED for a drone-only rule — every
+#                                          #   other key is geometric, so without it
+#                                          #   a low helicopter or light aircraft
+#                                          #   trips this too. Derived automatically
+#                                          #   for Remote ID tracks.
 #              max_alt_agl_ft: 1640        # ~500 m: typical DJI max-altitude ceiling
 #              max_distance_nm: 1.5        # ~2.8 km. Deliberately generous: Remote ID
 #                                          #   reception already caps the real range,

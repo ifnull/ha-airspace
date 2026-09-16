@@ -10,6 +10,17 @@ Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
 ## [1.1.7] — 2026-09-16
+### Added
+- Enrichment: a derived **`drone`** flag on every Remote ID track, usable in
+  alert rules like any other flag (`match: { flags: ["drone"] }`). Alert
+  `MatchBlock` keys are otherwise **purely geometric** — distance, altitude,
+  closing vector — so a rule named `drone_nearby` assembled from only those
+  matched *any* low, close track and pushed light aircraft and helicopters as
+  drones. Compose `flags: ["drone"]` to make such a rule actually drone-only.
+  The flag is automatic; it is not declared under `enrichment.flags`.
+  Backwards-compatible: existing rules keep their current behavior until the
+  flag is added to them.
+
 ### Fixed
 - Alerts: a restart no longer replays the last alert as a new one. Retained
   `alert/<rule>/active` outlives the process — a rule that was `on` when the

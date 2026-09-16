@@ -139,6 +139,37 @@ class TestRuleMatches:
         assert not rule_matches(_state(alt_baro_ft=None), match, elevation_m_for=lambda _n: 200.0)
 
 
+class TestDroneOnlyRule:
+    """Regression: `drone_nearby` built from geometry alone fired on manned
+    aircraft. Observed in the field on N1629A (hex a0fcb0, a PIAT at 1575 ft
+    and 3.70 nm) — a light twin pushed as a drone. `flags: ["drone"]` is the
+    only thing that makes such a rule drone-only."""
+
+    _GEOMETRIC_ONLY = MatchBlock(max_alt_agl_ft=1640, max_distance_nm=4.0, watchpoint="home")
+    _DRONE_ONLY = MatchBlock(
+        flags=["drone"], max_alt_agl_ft=1640, max_distance_nm=4.0, watchpoint="home"
+    )
+
+    def _aircraft(self) -> AircraftState:
+        # The real N1629A geometry from the misfire.
+        return _state(hex_code="a0fcb0", alt_baro_ft=1575, distance_home=3.698)
+
+    def _drone(self) -> AircraftState:
+        st = _drone_state(agl_ft=278.9, distance_home=0.721)
+        st.flags = {"drone"}
+        return st
+
+    def test_geometric_rule_catches_manned_aircraft(self) -> None:
+        # Documents *why* the flag is needed — this is the bug, not the fix.
+        assert rule_matches(self._aircraft(), self._GEOMETRIC_ONLY, elevation_m_for=lambda _n: 0.0)
+
+    def test_drone_flag_excludes_manned_aircraft(self) -> None:
+        assert not rule_matches(self._aircraft(), self._DRONE_ONLY, elevation_m_for=lambda _n: 0.0)
+
+    def test_drone_flag_still_matches_a_drone(self) -> None:
+        assert rule_matches(self._drone(), self._DRONE_ONLY, elevation_m_for=lambda _n: 0.0)
+
+
 class TestAlertStatesSnapshot:
     """``alert_states`` names every configured rule, not just the matching ones
     — the on-connect hook needs to assert ``off`` for rules whose retained
