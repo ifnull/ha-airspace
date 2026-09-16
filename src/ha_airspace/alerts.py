@@ -294,5 +294,18 @@ class AlertEvaluator:
         per-rule ``binary_sensor`` active topic."""
         return {rule for rule, _hex in self._active}
 
+    def alert_states(self) -> dict[str, bool]:
+        """Every *configured* rule name -> whether it currently has a match.
+
+        Unlike ``active_rules`` this names rules that are inactive too, so a
+        caller can assert the full truth rather than only the positives. Used on
+        broker (re)connect to overwrite retained ``alert/<rule>/active`` values
+        that outlived the process: a rule that was ``on`` when we died stays
+        retained ``on``, and HA replays that as a fresh ENTER when availability
+        returns. Synchronous and allocation-only, so it is a consistent snapshot
+        without locking — no await point can interleave a poll into it."""
+        active = self.active_rules()
+        return {rule.name: rule.name in active for rule in self._config.rules}
+
 
 __all__ = ["AlertEvaluator", "AlertEvent", "AlertTransition", "rule_matches"]

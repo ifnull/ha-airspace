@@ -139,6 +139,41 @@ class TestRuleMatches:
         assert not rule_matches(_state(alt_baro_ft=None), match, elevation_m_for=lambda _n: 200.0)
 
 
+class TestAlertStatesSnapshot:
+    """``alert_states`` names every configured rule, not just the matching ones
+    — the on-connect hook needs to assert ``off`` for rules whose retained
+    ``on`` outlived the process."""
+
+    _CONFIG = AlertsConfig(
+        rules=[
+            AlertRule(name="drone_nearby", match=MatchBlock(max_distance_nm=0.5)),
+            AlertRule(name="military_close", match=MatchBlock(flags=["military"])),
+        ]
+    )
+
+    def _evaluator(self) -> AlertEvaluator:
+        return AlertEvaluator(self._CONFIG, elevation_m_for=_no_elevation)
+
+    def test_lists_every_configured_rule_when_nothing_matches(self) -> None:
+        # Fresh process: nothing tracked yet, so every rule must read False —
+        # silence here is what leaves a stale retained "on" in place.
+        assert self._evaluator().alert_states() == {
+            "drone_nearby": False,
+            "military_close": False,
+        }
+
+    def test_reflects_the_active_set(self) -> None:
+        ev = self._evaluator()
+        ev.evaluate([_state(distance_home=0.1)], [])
+        assert ev.alert_states() == {"drone_nearby": True, "military_close": False}
+
+    def test_returns_to_false_after_exit(self) -> None:
+        ev = self._evaluator()
+        ev.evaluate([_state(distance_home=0.1)], [])
+        ev.evaluate([_state(distance_home=9.0)], [])
+        assert ev.alert_states()["drone_nearby"] is False
+
+
 class TestDroneAltitudeGate:
     """A Remote ID track has no barometric altitude, so an AGL-gated rule must
     read the natively broadcast AGL. Regression: drone_nearby / drone_conflict

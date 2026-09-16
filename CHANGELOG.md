@@ -9,6 +9,19 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [1.1.7] — 2026-09-16
+### Fixed
+- Alerts: a restart no longer replays the last alert as a new one. Retained
+  `alert/<rule>/active` outlives the process — a rule that was `on` when the
+  service exited stayed retained `on` — and `on_connect` published
+  `status: online` before any evaluation had run. Home Assistant therefore
+  flipped the `binary_sensor` `unavailable -> on` off a stale value and fired
+  the notification automation for a detection that never happened. The connect
+  hook now asserts the genuine current state of **every configured rule** while
+  still marked offline, before availability flips. It publishes the real active
+  set rather than a blanket clear, so a mid-run broker reconnect (where rules
+  are legitimately active) does not flap them off and straight back on.
+
 ## [1.1.6] — 2026-09-15
 ### Fixed
 - Alerts: `max_alt_agl_ft` now resolves height above ground from a drone's

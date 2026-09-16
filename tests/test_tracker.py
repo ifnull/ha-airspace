@@ -198,6 +198,27 @@ def _make_tracker(
 # ---------------------------------------------------------------------------
 
 
+class TestAlertStatesDelegation:
+    """The on-connect hook reads alert truth through the tracker, so it must
+    work with and without an evaluator configured."""
+
+    def test_empty_without_evaluator(self) -> None:
+        tracker = _make_tracker(FakePublisher(), Clock(_T0))
+        assert tracker.alert_states() == {}
+
+    def test_delegates_to_the_evaluator(self) -> None:
+        config = AlertsConfig(
+            rules=[AlertRule(name="drone_nearby", match=MatchBlock(max_distance_nm=0.5))]
+        )
+        tracker = AircraftTracker(
+            FakePublisher(),  # type: ignore[arg-type]
+            [_HOME],
+            clock=Clock(_T0),
+            alerts=AlertEvaluator(config, elevation_m_for=lambda _n: None),
+        )
+        assert tracker.alert_states() == {"drone_nearby": False}
+
+
 class TestIngest:
     async def test_new_hex_creates_state(self, publisher: FakePublisher, clock: Clock) -> None:
         tracker = _make_tracker(publisher, clock)

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 import structlog
@@ -102,13 +102,29 @@ class Publisher:
     # On-connect hook (status:online + discovery republish)
     # ------------------------------------------------------------------
 
-    async def on_connect(self, *, sw_version: str | None = None) -> None:
+    async def on_connect(
+        self,
+        *,
+        sw_version: str | None = None,
+        alert_states: Mapping[str, bool] | None = None,
+    ) -> None:
         """Run after every successful broker connect.
 
         Order matters:
-          1. Publish ``airspace/status: online`` retained, so HA flips the
+          1. Overwrite every ``alert/<rule>/active`` with the caller's current
+             truth, while we are still marked offline. Retained alert state
+             outlives the process: a rule that was ``on`` when we exited stays
+             retained ``on``, so flipping availability first makes HA replay it
+             as a brand-new ENTER and fire the automation for a detection that
+             never happened. ``client.py`` already guards ``status`` this way
+             ("never sees stale ``online``"); the alert topics need it too.
+             ``alert_states`` must be the *genuine* current set, not a blanket
+             clear — on a mid-run broker reconnect rules are legitimately
+             active, and asserting ``off`` there would flap them off and
+             straight back on.
+          2. Publish ``airspace/status: online`` retained, so HA flips the
              availability sensors before discovery payloads land.
-          2. Publish the full discovery payload set (idempotent on
+          3. Publish the full discovery payload set (idempotent on
              retained topics; protects against the broker losing
              retained state on a restart).
 
@@ -120,6 +136,8 @@ class Publisher:
         self._last_receiver_status.clear()
         self._nearest_was_empty = False
         self._nearest_drone_was_empty = False
+        for rule, active in (alert_states or {}).items():
+            await self.publish_alert_active(rule, active=active)
         await self._client.publish(
             f"{self._base}/status",
             b"online",
