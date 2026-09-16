@@ -8,17 +8,21 @@ message) yields a track with neither, which correctly matches nothing. This
 says, per poll, which of those fields are actually present.
 
 Usage: uv run scripts/watch_rid.py [url]
+
+Defaults to the feed on localhost; pass the URL (or set RID_URL) when
+dump3411 runs on another host.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 import urllib.request
 from typing import Any
 
-DEFAULT_URL = "http://192.168.1.16:8754/data/remoteid.json"
+DEFAULT_URL = os.environ.get("RID_URL", "http://127.0.0.1:8754/data/remoteid.json")
 
 
 def poll(url: str) -> list[dict[str, Any]]:
