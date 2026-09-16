@@ -21,6 +21,13 @@ the major version; a removed/renamed/retyped field does.
   Backwards-compatible: existing rules keep their current behavior until the
   flag is added to them.
 
+  **Not every drone-named rule wants it.** `drone_nearby` tracks someone
+  else's drone, so it does. `drone_conflict` tracks a low *manned* aircraft
+  inbound over the area your own drone is flying in, so that you can land —
+  the drone there is yours and is never tracked. Adding the flag to
+  `drone_conflict` would silence exactly the traffic it exists to warn about.
+  The example config now spells out which subject each rule watches.
+
 ### Fixed
 - Alerts: a restart no longer replays the last alert as a new one. Retained
   `alert/<rule>/active` outlives the process — a rule that was `on` when the
