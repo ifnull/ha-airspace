@@ -9,6 +9,40 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [1.1.6] — 2026-09-15
+### Fixed
+- Alerts: `max_alt_agl_ft` now resolves height above ground from a drone's
+  **broadcast Remote ID altitude** instead of barometric altitude alone.
+  Remote ID has no barometric altimeter, so a drone track's `alt_baro_ft` is
+  always `null` — the gate returned false unconditionally and **every
+  AGL-bounded rule was unsatisfiable for drones**. Both drone rules we document
+  (`drone_conflict`, `drone_nearby`) carry `max_alt_agl_ft`, so in practice they
+  could only ever trip on manned aircraft. AGL now comes from the drone's own
+  `agl_ft` (height above takeoff, more direct than the MSL-minus-elevation
+  approximation used for aircraft), falling back to `alt_geom_ft` when a
+  Location message omits it. Manned aircraft remain strictly barometric, so
+  existing tuned thresholds are unchanged.
+
+### Changed
+- Examples: the drone rule thresholds were widened and reconciled.
+  `config.example.yaml` and `docs/automations.example.yaml` had given different
+  values for the same `drone_nearby` rule (`0.5`/`1000` vs `0.34`/`1640`), and
+  both distance bounds were tight enough to exclude a drone under a nautical
+  mile out. A too-tight bound fails silently — the rule never matches, which is
+  indistinguishable from no drone being present.
+
+### Added
+- `scripts/watch_rid.py`: prints what the Remote ID feed actually carries per
+  poll and labels each drone `ALERTABLE` vs `BASIC-ID-ONLY`, separating a
+  transmitter sending Basic ID only (no position, no altitude — correctly
+  matches nothing) from a threshold that excludes it.
+
+### Docs
+- `docs/automations.example.yaml` now warns that an automation triggered by an
+  alert entity must not read `sensor.airspace_nearest_drone`: on reconnect the
+  alert entity becomes available first, so such a condition fails every
+  restart-triggered edge and looks exactly like the alert never firing.
+
 ## [1.1.5] — 2026-08-31
 ### Fixed
 - Photos: a **failed** Planespotters lookup is no longer cached as a confirmed
