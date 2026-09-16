@@ -250,6 +250,19 @@
 #        `info` topic carries the Remote ID fields for the triggering drone,
 #        so this always describes the drone that actually tripped the rule —
 #        including when a second, nearer drone is also up.
+#
+#    (c) DON'T MIX THIS TRIGGER WITH #4's CONDITIONS. An automation triggered by
+#        an ALERT entity must not read `sensor.airspace_nearest_drone` in its
+#        conditions or message. On reconnect, Home Assistant sets up the
+#        retained `homeassistant/binary_sensor/...` discovery before the
+#        `.../sensor/...` one, so the alert entity goes `unavailable -> on`
+#        while nearest_drone is still `unavailable`. A condition reading
+#        nearest_drone then evaluates false and the automation silently stops —
+#        the trace shows `failed_conditions` at `condition/0`, which looks
+#        exactly like the alert never fired. It needs no such guard anyway:
+#        every field it would borrow is already on the alert entity per (b).
+#        (#4 is safe because it BOTH triggers on and reads nearest_drone, and
+#        the binary_sensors its second condition checks are up by then.)
 # ---------------------------------------------------------------------------
 - id: airspace_drone_nearby_notify
   alias: "Airspace · drone nearby · notify"
