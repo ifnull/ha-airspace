@@ -9,6 +9,23 @@ The **published MQTT payload contract** is versioned separately via
 Additive, optional payload fields are backwards-compatible and do **not** bump
 the major version; a removed/renamed/retyped field does.
 
+## [1.1.8] — 2026-09-30
+### Added
+- Enrichment: **`db_metadata.type_name`**, the human name for the aircraft's
+  ICAO type designator (`BE20` → `BEECH 200 Super King Air`, `T38` →
+  `Northrop T-38C Talon`). It comes from a per-designator table built from the
+  Mictronics `long_type` column (the most common name per type, ~1.8k types),
+  so it also names aircraft absent from the per-hex DB that broadcast their
+  own type. Requires `enable_databases` with the Mictronics source; ADSBex's
+  `model` is not used because FAA-sourced rows carry bare registry text there
+  (`"200"`). Additive payload field; `schema_version` is unchanged.
+
+### Changed
+- Alert notification blueprint: shows the type name instead of the bare
+  designator, falling back to the code when no name is known. **Re-import the
+  blueprint in Home Assistant** to pick this up. The automation and dashboard
+  examples prefer `type_name` too.
+
 ## [1.1.7] — 2026-09-16
 ### Added
 - Enrichment: a derived **`drone`** flag on every Remote ID track, usable in

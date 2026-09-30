@@ -69,6 +69,24 @@ class TestMictronicsParser:
         assert "ae0001" in db
         assert len(db) == 1
 
+    def test_type_names_pick_most_common_long_type(self) -> None:
+        raw = gzip.compress(
+            b"a00001;N1;T38;00;NORTHROP T-38 Talon;;;\n"
+            b"a00002;N2;T38;00;T-38;;;\n"
+            b"a00003;N3;T38;00;NORTHROP T-38 Talon;;;\n"
+            b"a00004;N4;BE20;00;;;;\n"
+            b"a00005;N5;BE20;00;BEECH 200 Super King Air;;;\n"
+        )
+        names: dict[str, str] = {}
+        parse_mictronics(raw, type_names=names)
+        assert names == {"T38": "NORTHROP T-38 Talon", "BE20": "BEECH 200 Super King Air"}
+
+    def test_type_names_not_stored_per_hex(self) -> None:
+        # The name lives in the per-type table only; entry dicts stay lean.
+        raw = gzip.compress(b"a00001;N1;T38;00;NORTHROP T-38 Talon;;;\n")
+        db = parse_mictronics(raw, type_names={})
+        assert db["a00001"] == {"reg": "N1", "type": "T38"}
+
 
 # ---------------------------------------------------------------------------
 # ADSBexchange parser
@@ -165,6 +183,13 @@ class TestDatabaseStore:
         assert old == {}
         assert store.lookup("ae292b") == {"mil": True}
 
+    def test_swap_without_type_names_clears_them(self) -> None:
+        store = DatabaseStore()
+        store.swap({}, {"T38": "NORTHROP T-38 Talon"})
+        assert store.type_names == {"T38": "NORTHROP T-38 Talon"}
+        store.swap({})
+        assert store.type_names == {}
+
 
 # ---------------------------------------------------------------------------
 # DatabaseLoader
@@ -200,6 +225,8 @@ class TestDatabaseLoader:
         assert meta.get("model") == "E-6B Mercury"  # ADSBex
         # 004002 is Mictronics-only.
         assert store.lookup("004002")["reg"] == "Z-WPA"
+        # Mictronics long_type feeds the per-designator name table.
+        assert store.type_names["B732"] == "BOEING 737-200"
 
     async def test_adsbex_wins_on_conflict(self) -> None:
         # Both sources define `type` for ae292b (Mictronics "E6", ADSBex "E6").

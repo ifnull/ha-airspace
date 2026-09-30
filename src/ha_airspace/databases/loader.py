@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from typing import Protocol
 
 import httpx
 import structlog
@@ -39,9 +40,20 @@ from ha_airspace.databases.mictronics import parse_mictronics
 
 log = structlog.get_logger(__name__)
 
-_Parser = Callable[[bytes, dict[str, dict[str, object]]], dict[str, dict[str, object]]]
-"""``(raw_gzip, accumulator) -> accumulator``. Both parsers merge in place so a
-refresh holds exactly one copy of the merged DB (see ``refresh_once``)."""
+
+class _Parser(Protocol):
+    """``(raw_gzip, accumulator, *, type_names) -> accumulator``. Both parsers
+    merge in place so a refresh holds exactly one copy of the merged DB (see
+    ``refresh_once``); ``type_names`` collects the per-designator name table."""
+
+    def __call__(
+        self,
+        raw_gzip: bytes,
+        into: dict[str, dict[str, object]] | None = None,
+        *,
+        type_names: dict[str, str] | None = None,
+    ) -> dict[str, dict[str, object]]: ...
+
 
 # Parser dispatch by source name. A source whose name is not here is skipped
 # with a warning (config validation does not constrain names to these, so a
@@ -70,15 +82,29 @@ class DatabaseStore:
 
     def __init__(self) -> None:
         self._current: dict[str, dict[str, object]] = {}
+        self._type_names: dict[str, str] = {}
 
     @property
     def current(self) -> dict[str, dict[str, object]]:
         return self._current
 
-    def swap(self, new: dict[str, dict[str, object]]) -> None:
-        """Atomically replace the dict. The previous one is dropped once no
-        reader references it."""
+    @property
+    def type_names(self) -> dict[str, str]:
+        """ICAO type designator -> human name (``BE20`` -> ``BEECH 200 Super
+        King Air``). Rebound alongside ``current``; the two are not swapped as
+        one unit, but a reader pairing a new hex dict with the previous name
+        table only ever sees a slightly older name for a type — harmless."""
+        return self._type_names
+
+    def swap(
+        self,
+        new: dict[str, dict[str, object]],
+        type_names: dict[str, str] | None = None,
+    ) -> None:
+        """Atomically replace the dict (and the type-name table). The previous
+        ones are dropped once no reader references them."""
         self._current = new
+        self._type_names = type_names if type_names is not None else {}
 
     def lookup(self, hex_code: str) -> dict[str, object]:
         """Metadata for one hex (lowercase), or ``{}`` if unknown."""
@@ -126,6 +152,7 @@ class DatabaseLoader:
         good copy in place.
         """
         merged: dict[str, dict[str, object]] = {}
+        type_names: dict[str, str] = {}
         any_ok = False
         # Process low-to-high priority so a higher-priority source's keys
         # overwrite the earlier ones — the parsers merge per-key into `merged`,
@@ -136,18 +163,21 @@ class DatabaseLoader:
             key=lambda s: _PRIORITY.get(s.name, 0),
         )
         for source in ordered:
-            if await self._load_source(source, merged):
+            if await self._load_source(source, merged, type_names):
                 any_ok = True
 
         if not any_ok:
             log.warning("db_refresh_failed_all_sources", keeping_previous=True)
             return False
-        self._store.swap(merged)
-        log.info("db_refreshed", aircraft=len(merged))
+        self._store.swap(merged, type_names)
+        log.info("db_refreshed", aircraft=len(merged), type_names=len(type_names))
         return True
 
     async def _load_source(
-        self, source: DatabaseSourceConfig, merged: dict[str, dict[str, object]]
+        self,
+        source: DatabaseSourceConfig,
+        merged: dict[str, dict[str, object]],
+        type_names: dict[str, str],
     ) -> bool:
         """Download one source and merge it into ``merged`` in place. Returns
         True on success. A download/parse failure is logged and swallowed —
@@ -169,7 +199,7 @@ class DatabaseLoader:
             return False
         try:
             # CPU-bound parse of a large file -> executor, never the loop.
-            await asyncio.to_thread(parser, raw, merged)
+            await asyncio.to_thread(parser, raw, merged, type_names=type_names)
         except Exception as exc:  # noqa: BLE001 — a corrupt file is non-fatal
             log.warning("db_parse_failed", source=source.name, error=str(exc))
             return False

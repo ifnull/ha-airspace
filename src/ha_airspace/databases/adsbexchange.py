@@ -51,6 +51,8 @@ _BOOL_FIELDS: tuple[tuple[str, str], ...] = (
 def parse_adsbexchange(
     raw_gzip: bytes,
     into: dict[str, dict[str, object]] | None = None,
+    *,
+    type_names: dict[str, str] | None = None,
 ) -> dict[str, dict[str, object]]:
     """Parse the gzip'd newline-delimited JSON into ``{hex_lower: {fields}}``.
 
@@ -60,6 +62,11 @@ def parse_adsbexchange(
     ``into`` merges straight into a caller-owned accumulator instead of
     allocating a second full dict; see ``parse_mictronics`` for why the
     loader needs it.
+
+    ``type_names`` is accepted for the loader's uniform parser signature and
+    left untouched: basic-ac-db has no per-type name. Its ``model`` is
+    per-registration, and for FAA-sourced rows it is bare registry text
+    (``BE20`` -> ``"200"`` / ``"A200"``), so it cannot seed a type table.
     """
     result: dict[str, dict[str, object]] = {} if into is None else into
     # Dedup the repeating string fields (see parse_mictronics). `model` and

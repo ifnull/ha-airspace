@@ -82,7 +82,7 @@ views:
               {% set cpa = state_attr(s,'predicted_closest_approach_nm') -%}
               {% set gs = state_attr(s,'ground_speed_kt') -%}
               ## {{ (state_attr(s,'country_flag') ~ ' ') if state_attr(s,'country_flag') else '' }}{{ '[' ~ (state_attr(s,'flight') or state_attr(s,'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(s,'hex') ~ ')' if state_attr(s,'hex') else (state_attr(s,'flight') or '?') }}
-              **{{ db.get('model') or state_attr(s,'aircraft_type') or 'unknown type' }}**{{ ' · ' ~ db.get('ownop') if db.get('ownop') }}
+              **{{ db.get('type_name') or db.get('model') or state_attr(s,'aircraft_type') or 'unknown type' }}**{{ ' · ' ~ db.get('ownop') if db.get('ownop') }}
 
               - **Distance:** {{ '%.1f'|format(states(s)|float) }} nm{{ ' · brg ' ~ brg|round(0)|int ~ '°' if brg is not none }}
               - **Altitude:** {{ state_attr(s,'alt_baro_ft') or '—' }} ft
@@ -163,7 +163,7 @@ views:
                           {% set cpa = state_attr(s,'predicted_closest_approach_nm') -%}
                           {% set gs = state_attr(s,'ground_speed_kt') -%}
                           ## {{ (state_attr(s,'country_flag') ~ ' ') if state_attr(s,'country_flag') else '' }}{{ '[' ~ (state_attr(s,'flight') or state_attr(s,'hex')) ~ '](https://globe.adsbexchange.com/?icao=' ~ state_attr(s,'hex') ~ ')' if state_attr(s,'hex') else (state_attr(s,'flight') or '?') }}
-                          **{{ db.get('model') or state_attr(s,'aircraft_type') or 'unknown type' }}**{{ ' · ' ~ db.get('ownop') if db.get('ownop') }}
+                          **{{ db.get('type_name') or db.get('model') or state_attr(s,'aircraft_type') or 'unknown type' }}**{{ ' · ' ~ db.get('ownop') if db.get('ownop') }}
 
                           - **Distance:** {{ '%.1f'|format(states(s)|float) }} nm{{ ' · brg ' ~ brg|round(0)|int ~ '°' if brg is not none }}
                           - **Altitude:** {{ state_attr(s,'alt_baro_ft') or '—' }} ft

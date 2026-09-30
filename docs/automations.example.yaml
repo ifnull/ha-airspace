@@ -216,7 +216,8 @@
         title: "⚠️ Low aircraft inbound — land the drone"
         message: >-
           {% set a = 'binary_sensor.airspace_alert_drone_conflict' -%}
-          {{ state_attr(a,'flight') or state_attr(a,'hex') }}{{ ' · ' ~ state_attr(a,'aircraft_type') if state_attr(a,'aircraft_type') }}
+          {% set t = (state_attr(a,'db_metadata') or {}).get('type_name') or state_attr(a,'aircraft_type') -%}
+          {{ state_attr(a,'flight') or state_attr(a,'hex') }}{{ ' · ' ~ t if t }}
           · {{ state_attr(a,'alt_baro_ft') or '?' }} ft
           {% set d = (state_attr(a,'distance_to') or {}).get('home') -%}
           {{ '· ' ~ '%.1f'|format(d) ~ ' nm now' if d is not none }}
