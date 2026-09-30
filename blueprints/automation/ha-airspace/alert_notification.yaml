@@ -94,7 +94,11 @@ variables:
   flight: >-
     {{ state_attr(alert_entity, 'flight') or state_attr(alert_entity, 'hex') or 'unknown' }}
   registration: "{{ state_attr(alert_entity, 'registration') }}"
-  aircraft_type: "{{ state_attr(alert_entity, 'aircraft_type') }}"
+  # Prefer the designator's human name (T38 -> "NORTHROP T-38 Talon") from the
+  # reference DB; fall back to the bare ICAO code when there's no name for it.
+  aircraft_type: >-
+    {{ (state_attr(alert_entity, 'db_metadata') or {}).get('type_name')
+       or state_attr(alert_entity, 'aircraft_type') }}
   country_flag: "{{ state_attr(alert_entity, 'country_flag') }}"
   altitude: "{{ state_attr(alert_entity, 'alt_baro_ft') }}"
   # distance_to / bearing_to are dicts keyed by watchpoint name.

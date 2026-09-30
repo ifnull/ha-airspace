@@ -311,3 +311,23 @@ def test_drone_message_degrades_to_bare_drone() -> None:
         operator_location_type=None,
     )
     assert rendered.strip() == "Drone"
+
+
+@pytest.mark.parametrize(
+    ("attrs", "expected"),
+    [
+        (
+            {"aircraft_type": "T38", "db_metadata": {"type_name": "NORTHROP T-38 Talon"}},
+            "NORTHROP T-38 Talon",
+        ),
+        ({"aircraft_type": "T38", "db_metadata": {}}, "T38"),
+        ({"aircraft_type": "T38", "db_metadata": None}, "T38"),
+    ],
+)
+def test_aircraft_type_prefers_db_type_name(attrs: dict[str, Any], expected: str) -> None:
+    env = jinja2.Environment()
+    template = _load(_ALERT_BLUEPRINT)["variables"]["aircraft_type"]
+    rendered = env.from_string(template).render(
+        alert_entity="binary_sensor.x", state_attr=lambda _entity, key: attrs.get(key)
+    )
+    assert rendered.strip() == expected
