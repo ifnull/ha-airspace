@@ -79,6 +79,14 @@ class Enricher:
             db_type = state.db_metadata.get("type")
             if isinstance(db_type, str) and db_type and state.canonical.aircraft_type is None:
                 state.canonical = replace(state.canonical, aircraft_type=db_type)
+            # Human name for the designator (BE20 -> "BEECH 200 Super King Air")
+            # so notifications needn't print a bare ICAO code. Keyed by type,
+            # not hex, so it also covers aircraft missing from the per-hex DB
+            # that broadcast `t` themselves.
+            type_code = state.canonical.aircraft_type
+            type_name = self._db_store.type_names.get(type_code) if type_code else None
+            if type_name:
+                state.db_metadata["type_name"] = type_name
         state.flags = evaluate_flags(state, self._config.flags)
         # Intrinsic, not rule-driven: a Remote ID track *is* a drone. Applied
         # here because this is the single owner of the flags assignment

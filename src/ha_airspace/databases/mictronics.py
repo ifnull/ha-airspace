@@ -22,6 +22,9 @@ Format: gzip'd, semicolon-delimited, **no header**, ~620k rows. Columns
 
   So ``"10"`` = military only, ``"0001"`` = LADD, ``"0010"`` = PIA. A char
   that is not ``0``/``1`` is treated as unset (defensive).
+* ``long_type`` — ICAO Doc 8643 style name, e.g. ``BEECH 200 Super King Air``
+  (present on ~86% of typed rows). Not stored per hex — see ``type_names``
+  on ``parse_mictronics``.
 * trailing fields — unused here.
 
 Output: ``dict[hex_lower, dict]`` with the canonical keys the enricher and
@@ -36,6 +39,7 @@ from __future__ import annotations
 
 import gzip
 import io
+from collections import Counter
 
 # dbFlags bit position -> canonical key (LSB-first: index into the string).
 _DBFLAG_KEYS: tuple[str, ...] = ("mil", "interesting", "pia", "ladd")
@@ -44,6 +48,8 @@ _DBFLAG_KEYS: tuple[str, ...] = ("mil", "interesting", "pia", "ladd")
 def parse_mictronics(
     raw_gzip: bytes,
     into: dict[str, dict[str, object]] | None = None,
+    *,
+    type_names: dict[str, str] | None = None,
 ) -> dict[str, dict[str, object]]:
     """Parse the gzip'd Mictronics CSV into ``{hex_lower: {fields}}``.
 
@@ -59,6 +65,14 @@ def parse_mictronics(
     merged + the next source's parsed simultaneously OOM-killed the add-on
     on a 2 GB Pi. The default (``None``) allocates a fresh dict, which is
     what the standalone/pure-function callers and tests expect.
+
+    ``type_names``, when given, is filled with ``{type_designator: name}`` —
+    the most common ``long_type`` seen for each designator. This is a
+    per-*type* table (~1.8k entries) rather than a per-hex field on purpose:
+    adding a key to every one of ~600k entry dicts costs real RSS on a Pi, and
+    the name only depends on the type anyway. Taking the most common name also
+    fills rows whose own ``long_type`` is blank and smooths over one-off
+    spellings (``T-38`` vs ``NORTHROP T-38 Talon``).
     """
     result: dict[str, dict[str, object]] = {} if into is None else into
     # Type designators repeat heavily across 620k rows (a few thousand
@@ -68,6 +82,8 @@ def parse_mictronics(
     # `reg` is deliberately not deduped: tail numbers are ~unique, so a
     # dedup table for them is pure overhead.
     seen_types: dict[str, str] = {}
+    # (type, long_type) -> row count; only tallied when the caller wants names.
+    name_counts: Counter[tuple[str, str]] = Counter()
     with gzip.open(io.BytesIO(raw_gzip), mode="rt", encoding="utf-8", errors="replace") as fh:
         for line in fh:
             row = line.rstrip("\n").split(";")
@@ -83,6 +99,10 @@ def parse_mictronics(
             type_code = row[2].strip()
             if type_code:
                 entry["type"] = seen_types.setdefault(type_code, type_code)
+                if type_names is not None and len(row) > 4:
+                    long_type = row[4].strip()
+                    if long_type:
+                        name_counts[type_code, long_type] += 1
             entry.update(_parse_dbflags(row[3]))
             if entry:
                 existing = result.get(hex_code)
@@ -90,6 +110,13 @@ def parse_mictronics(
                     result[hex_code] = entry
                 else:
                     existing.update(entry)
+    if type_names is not None:
+        # most_common() sorts descending, so the first name recorded for a
+        # type is its most frequent one.
+        best: dict[str, str] = {}
+        for (type_code, long_type), _count in name_counts.most_common():
+            best.setdefault(type_code, long_type)
+        type_names.update(best)
     return result
 
 

@@ -344,7 +344,7 @@ line-of-sight receiver further out.
 
 After the merger updates `AircraftState`, run enrichment:
 
-1. **DB join (Phase 2a).** Look up hex in Mictronics + ADSBex, populate `db_metadata` with merged fields (registration, type code, operator, military flag, etc.). Conflicts resolved by source priority (ADSBex's `mil` flag wins over Mictronics if they disagree, since ADSBex updates more frequently for military).
+1. **DB join (Phase 2a).** Look up hex in Mictronics + ADSBex, populate `db_metadata` with merged fields (registration, type code, operator, military flag, etc.), plus `type_name` — the type designator's human name (`BE20` → `BEECH 200 Super King Air`), looked up in a small per-designator table built from the most common Mictronics `long_type` for each type (not stored per hex, to keep RSS flat on a Pi). Conflicts resolved by source priority (ADSBex's `mil` flag wins over Mictronics if they disagree, since ADSBex updates more frequently for military).
 2. **Geometry.** Compute distance/bearing from each configured watchpoint (see Configuration). Haversine is fine; vincenty is overkill. `state.distance_to` and `state.bearing_to` are dicts keyed by watchpoint name.
 3. **Flag evaluation (Phase 2a).** Apply each flag rule from config; populate `state.flags`.
 4. **Alert evaluation (Phase 2a).** Apply each alert rule; produce alert events for state transitions (rule entered/exited). After EXIT, a per-rule cooldown (default 60s) blocks re-ENTER for the same hex to prevent thrashing alerts when a flag oscillates.

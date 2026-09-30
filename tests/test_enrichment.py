@@ -140,6 +140,37 @@ def test_db_metadata_reassigned_each_pass() -> None:
     assert state.db_metadata == {}
 
 
+def test_type_name_added_from_backfilled_type() -> None:
+    store = DatabaseStore()
+    store.swap({"ae292b": {"type": "T38"}}, {"T38": "NORTHROP T-38 Talon"})
+    enricher = Enricher(EnrichmentConfig(), db_store=store)
+    state = _mil_state("ae292b")
+    enricher.enrich(state)
+    assert state.db_metadata == {"type": "T38", "type_name": "NORTHROP T-38 Talon"}
+
+
+def test_type_name_from_broadcast_type_when_hex_not_in_db() -> None:
+    # Named by designator, so a hex missing from the per-hex DB still gets one.
+    store = DatabaseStore()
+    store.swap({}, {"BE20": "BEECH 200 Super King Air"})
+    enricher = Enricher(EnrichmentConfig(), db_store=store)
+    obs = AircraftObservation(
+        hex="a00001", observed_at=_T0, seen_by="rx", band="1090", aircraft_type="BE20"
+    )
+    state = AircraftState.from_first_observation(obs)
+    enricher.enrich(state)
+    assert state.db_metadata == {"type_name": "BEECH 200 Super King Air"}
+
+
+def test_type_name_absent_for_unnamed_type() -> None:
+    store = DatabaseStore()
+    store.swap({"ae292b": {"type": "ZZZZ"}}, {"T38": "NORTHROP T-38 Talon"})
+    enricher = Enricher(EnrichmentConfig(), db_store=store)
+    state = _mil_state("ae292b")
+    enricher.enrich(state)
+    assert "type_name" not in state.db_metadata
+
+
 # ---------------------------------------------------------------------------
 # Derived `drone` flag
 # ---------------------------------------------------------------------------
